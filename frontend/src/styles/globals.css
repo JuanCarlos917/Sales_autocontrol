@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply box-border; }
+  body { @apply m-0 p-0 font-sans; }
+  ::-webkit-scrollbar { @apply w-1.5 h-1.5; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg bg-accent text-[#0D1117] font-semibold text-sm 
+           hover:bg-accent-hover transition-colors cursor-pointer border-none font-sans;
+  }
+  .btn-ghost {
+    @apply px-3 py-2 rounded-lg border border-border bg-transparent text-[#8B949E] 
+           text-sm hover:bg-surface-hover transition-colors cursor-pointer font-sans;
+  }
+  .btn-danger {
+    @apply px-3 py-1.5 rounded border border-[#F8514930] bg-transparent text-[#F85149]
+           text-xs hover:bg-[#F8514915] transition-colors cursor-pointer font-sans;
+  }
+  .input-field {
+    @apply w-full px-3 py-2.5 rounded-lg border border-border bg-[#0F1419] text-[#E6EDF3]
+           text-sm font-sans outline-none transition-colors focus:border-border-focus;
+  }
+  .label-sm {
+    @apply block text-[11px] text-[#6E7681] uppercase tracking-wider font-medium mb-1.5;
+  }
+  .card {
+    @apply bg-surface border border-border rounded-xl p-5;
+  }
+  .card-title {
+    @apply text-sm font-bold text-[#E6EDF3] mb-4 tracking-tight;
+  }
+  .plate-text {
+    @apply font-mono text-lg font-bold text-accent tracking-wide;
+  }
+  .stage-badge {
+    @apply px-2.5 py-1 rounded-md text-[11px] font-semibold;
+  }
+  .portal-badge {
+    @apply px-2 py-0.5 rounded text-[10px] font-semibold leading-4;
+  }
+  .kpi-card {
+    @apply bg-surface border border-border rounded-xl p-4;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in { animation: fadeIn 0.2s ease; }
+  .animate-slide-up { animation: slideUp 0.3s ease; }
+  .animate-scale-in { animation: scaleIn 0.2s ease; }
+  .animate-pulse-dot { animation: pulseDot 2s infinite; }
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes scaleIn { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes loadSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }

@@ -1,0 +1,169 @@
+// ═══════════════════════════════════════════════════════════════
+// AutoControl — Database Schema (Prisma)
+// Fuente de verdad para todas las tablas y relaciones
+// ═══════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Usuarios ──
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  pin           String?
+  name          String?
+  role          Role      @default(ADMIN)
+  isActive      Boolean   @default(true)
+  lastLogin     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vehicles      Vehicle[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+// ── Vehículos (Tabla Principal) ──
+model Vehicle {
+  id                    String        @id @default(cuid())
+  plate                 String
+  brand                 String?
+  model                 String?
+  year                  Int?
+  color                 String?
+  km                    Int?
+  stage                 VehicleStage  @default(NEGOCIANDO)
+
+  // Financiero
+  purchasePrice         Decimal?      @db.Decimal(15, 2)
+  listedPrice           Decimal?      @db.Decimal(15, 2)
+  salePrice             Decimal?      @db.Decimal(15, 2)
+  participation         Decimal       @default(1.0) @db.Decimal(5, 4)
+
+  // Fechas
+  purchaseDate          DateTime?
+  saleDate              DateTime?
+
+  // Cruce de vehículo
+  receivedVehicle       Boolean       @default(false)
+  receivedVehiclePlate  String?
+  receivedVehicleValue  Decimal?      @db.Decimal(15, 2)
+
+  // Publicación
+  publishedPortals      String[]      @default([])
+
+  // Metadata
+  notes                 String?
+  userId                String
+  user                  User          @relation(fields: [userId], references: [id])
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  expenses              Expense[]
+  documents             Document[]
+
+  @@index([userId, stage])
+  @@index([plate])
+  @@map("vehicles")
+}
+
+enum VehicleStage {
+  NEGOCIANDO
+  COMPRADO
+  ALISTAMIENTO
+  PUBLICADO
+  DISPONIBLE
+  VENDIDO
+}
+
+// ── Gastos (Control de Fuga) ──
+model Expense {
+  id          String          @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  category    ExpenseCategory
+  amount      Decimal         @db.Decimal(15, 2)
+  description String?
+  notes       String?
+  date        DateTime?
+  paid        Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([vehicleId])
+  @@index([category])
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  MECANICA
+  ESTETICA
+  IMPUESTOS
+  TRAMITE
+  COMISION
+  PARQUEADERO
+  PUBLICIDAD
+  COMBUSTIBLE
+  OTRO
+}
+
+// ── Documentos y Fotos ──
+model Document {
+  id          String       @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type        DocumentType
+  filename    String
+  filepath    String
+  mimetype    String?
+  size        Int?
+  notes       String?
+  createdAt   DateTime     @default(now())
+
+  @@index([vehicleId])
+  @@map("documents")
+}
+
+enum DocumentType {
+  TARJETA_PROPIEDAD
+  SOAT
+  TECNOMECANICA
+  PERITAJE
+  CERTIFICADO_TRADICION
+  CONTRATO
+  FOTO_VEHICULO
+  OTRO
+}
+
+// ── Configuración del Sistema ──
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+
+  @@map("settings")
+}
