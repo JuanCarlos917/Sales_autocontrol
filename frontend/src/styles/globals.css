@@ -23,9 +23,12 @@
     @apply px-3 py-1.5 rounded border border-[#F8514930] bg-transparent text-[#F85149]
            text-xs hover:bg-[#F8514915] transition-colors cursor-pointer font-sans;
   }
-  .input-field {
+  .input-field, .input {
     @apply w-full px-3 py-2.5 rounded-lg border border-border bg-[#0F1419] text-[#E6EDF3]
            text-sm font-sans outline-none transition-colors focus:border-border-focus;
+  }
+  .input option {
+    @apply bg-[#0F1419] text-[#E6EDF3];
   }
   .label-sm {
     @apply block text-[11px] text-[#6E7681] uppercase tracking-wider font-medium mb-1.5;

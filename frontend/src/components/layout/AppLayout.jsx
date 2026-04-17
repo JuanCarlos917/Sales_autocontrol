@@ -7,11 +7,13 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import Toast from '@/components/shared/Toast';
+import { AlertsIndicator } from '@/components/shared/AlertsPanel';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Pipeline', icon: '▦', end: true },
   { to: '/dashboard', label: 'Dashboard', icon: '◩' },
   { to: '/vehicles', label: 'Vehículos', icon: '☰' },
+  { to: '/treasury', label: 'Tesorería', icon: '◈' },
   { to: '/expenses', label: 'Gastos', icon: '⊘' },
   { to: '/settings', label: 'Config', icon: '⚙' },
 ];
@@ -92,6 +94,9 @@ export default function AppLayout() {
               <button onClick={() => setSidebarOpen(true)} className="text-xl text-[#E6EDF3]">☰</button>
             )}
             <h1 className="text-lg font-bold text-[#E6EDF3] tracking-tight">{pageTitle}</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <AlertsIndicator />
           </div>
         </header>
 

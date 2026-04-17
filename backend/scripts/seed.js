@@ -51,6 +51,20 @@ async function main() {
   }
   console.log('  ✅ Configuración inicial creada');
 
+  // Treasury accounts
+  const defaultAccounts = [
+    { name: 'Caja Principal', type: 'CASH', initialBalance: 0 },
+    { name: 'Cuenta Bancolombia', type: 'SAVINGS', bank: 'Bancolombia', initialBalance: 0 },
+  ];
+
+  for (const acc of defaultAccounts) {
+    const existingAccount = await prisma.account.findFirst({ where: { name: acc.name } });
+    if (!existingAccount) {
+      await prisma.account.create({ data: acc });
+    }
+  }
+  console.log('  ✅ Cuentas de tesorería creadas');
+
   console.log('\n🎉 Seed completado!\n');
 }
 

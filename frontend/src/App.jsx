@@ -12,6 +12,14 @@ import VehiclesPage from '@/pages/VehiclesPage';
 import VehicleDetailPage from '@/pages/VehicleDetailPage';
 import ExpensesPage from '@/pages/ExpensesPage';
 import SettingsPage from '@/pages/SettingsPage';
+// Treasury
+import TreasuryPage from '@/pages/treasury/TreasuryPage';
+import AccountsPage from '@/pages/treasury/AccountsPage';
+import ThirdPartiesPage from '@/pages/treasury/ThirdPartiesPage';
+import TransactionsPage from '@/pages/treasury/TransactionsPage';
+import CashCountPage from '@/pages/treasury/CashCountPage';
+// Alerts
+import AlertsPage from '@/pages/AlertsPage';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -46,7 +54,13 @@ export default function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="vehicles" element={<VehiclesPage />} />
           <Route path="vehicles/:id" element={<VehicleDetailPage />} />
+          <Route path="treasury" element={<TreasuryPage />} />
+          <Route path="treasury/accounts" element={<AccountsPage />} />
+          <Route path="treasury/third-parties" element={<ThirdPartiesPage />} />
+          <Route path="treasury/transactions" element={<TransactionsPage />} />
+          <Route path="treasury/cash-count" element={<CashCountPage />} />
           <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="alerts" element={<AlertsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 

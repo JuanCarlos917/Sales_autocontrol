@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, EXPENSE_CATEGORIES, formatCurrency, formatPercent } from '@/lib/constants';
 import api from '@/lib/api';
+import AlertsPanel from '@/components/shared/AlertsPanel';
 
 export default function DashboardPage() {
   const { fetchDashboard, dashboard } = useApp();
@@ -37,7 +38,10 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      {/* Alerts */}
+      {/* System Alerts Panel */}
+      <AlertsPanel compact />
+
+      {/* Vehicle Age Alerts (Quick View) */}
       {alerts.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-2">
           {alerts.map(a => (

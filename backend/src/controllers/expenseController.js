@@ -29,10 +29,62 @@ const create = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const createWithPayment = async (req, res, next) => {
+  try {
+    const expense = await expenseService.createWithPayment(req.body, req.user.id);
+    res.status(201).json(expense);
+  } catch (err) { next(err); }
+};
+
+/**
+ * POST /expenses/with-treasury
+ * Crear gasto con integración completa de tesorería
+ */
+const createWithTreasury = async (req, res, next) => {
+  try {
+    const result = await expenseService.createWithTreasury(req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (err) { next(err); }
+};
+
 const update = async (req, res, next) => {
   try {
     const expense = await expenseService.update(req.params.id, req.body, req.user.id);
     res.json(expense);
+  } catch (err) { next(err); }
+};
+
+/**
+ * POST /expenses/:id/pay
+ * Registrar pago de gasto (total o parcial)
+ */
+const payExpense = async (req, res, next) => {
+  try {
+    const result = await expenseService.payExpense(req.params.id, req.body, req.user.id);
+    res.json(result);
+  } catch (err) { next(err); }
+};
+
+/**
+ * GET /expenses/:id/payment-status
+ * Obtener estado de pago de un gasto
+ */
+const getPaymentStatus = async (req, res, next) => {
+  try {
+    const status = await expenseService.getPaymentStatus(req.params.id, req.user.id);
+    res.json(status);
+  } catch (err) { next(err); }
+};
+
+/**
+ * GET /expenses/unpaid
+ * Obtener gastos pendientes de pago
+ */
+const getUnpaid = async (req, res, next) => {
+  try {
+    const { vehicleId } = req.query;
+    const expenses = await expenseService.getUnpaidExpenses(req.user.id, vehicleId || null);
+    res.json(expenses);
   } catch (err) { next(err); }
 };
 
@@ -43,4 +95,15 @@ const remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, getByVehicle, create, update, remove };
+module.exports = {
+  getAll,
+  getByVehicle,
+  create,
+  createWithPayment,
+  createWithTreasury,
+  update,
+  payExpense,
+  getPaymentStatus,
+  getUnpaid,
+  remove
+};
