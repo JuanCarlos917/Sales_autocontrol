@@ -191,7 +191,7 @@ const settingsSchema = Joi.object({
 // ── Account Schemas ──
 const accountSchema = Joi.object({
   name: Joi.string().max(100).required().messages({ 'any.required': 'Nombre es requerido' }),
-  type: Joi.string().valid('CASH', 'SAVINGS').required(),
+  type: Joi.string().valid('CASH', 'BANK').required(),
   bank: Joi.string().max(100).allow('', null),
   accountNumber: Joi.string().max(50).allow('', null),
   initialBalance: Joi.number().min(0).default(0),
@@ -208,7 +208,7 @@ const accountUpdateSchema = Joi.object({
 // ── ThirdParty Schemas ──
 const thirdPartySchema = Joi.object({
   name: Joi.string().max(200).required().messages({ 'any.required': 'Nombre es requerido' }),
-  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'PARTNER').required(),
+  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'BOTH').required(),
   document: Joi.string().max(20).allow('', null),
   phone: Joi.string().max(20).allow('', null),
   email: Joi.string().email().allow('', null),
@@ -219,7 +219,7 @@ const thirdPartySchema = Joi.object({
 // ── Transaction Schemas ──
 const incomeSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
-  category: Joi.string().valid('VEHICLE_SALE', 'VEHICLE_SALE_PARTIAL', 'CAPITAL_CONTRIBUTION', 'OTHER_INCOME').required(),
+  category: Joi.string().valid('VEHICLE_SALE', 'VEHICLE_SALE_PARTIAL', 'COMMISSION', 'CAPITAL_CONTRIBUTION', 'OTHER_INCOME').required(),
   amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   description: Joi.string().max(500).allow('', null),
   reference: Joi.string().max(100).allow('', null),
@@ -230,7 +230,7 @@ const incomeSchema = Joi.object({
 
 const expenseTreasurySchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
-  category: Joi.string().valid('VEHICLE_PURCHASE', 'VEHICLE_EXPENSE', 'OPERATING_EXPENSE', 'OTHER_EXPENSE').required(),
+  category: Joi.string().valid('VEHICLE_PURCHASE', 'VEHICLE_EXPENSE', 'FIXED_EXPENSE', 'OPERATING_EXPENSE', 'OTHER_EXPENSE').required(),
   amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   description: Joi.string().max(500).allow('', null),
   reference: Joi.string().max(100).allow('', null),

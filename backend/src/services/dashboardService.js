@@ -4,6 +4,7 @@
 
 const prisma = require('../config/database');
 const { calculateVehicleMetrics, projectProfit } = require('../utils/financial');
+const accountService = require('./accountService');
 
 class DashboardService {
   async getOverview(userId) {
@@ -34,7 +35,6 @@ class DashboardService {
     const avgROI = sold.length ? sold.reduce((s, x) => s + (x.metrics.roi || 0), 0) / sold.length : 0;
 
     const totalExpenses = vehicles.reduce((s, v) => s + v.expenses.reduce((es, e) => es + Number(e.amount), 0), 0);
-    const unpaidExpenses = vehicles.reduce((s, v) => s + v.expenses.filter(e => !e.paid).reduce((es, e) => es + Number(e.amount), 0), 0);
 
     // Pipeline distribution
     const stages = ['NEGOCIANDO', 'COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'];
@@ -62,8 +62,29 @@ class DashboardService {
       }))
       .sort((a, b) => b.days - a.days);
 
+    // Saldo total de tesorería
+    const treasuryBalance = await accountService.getTotalBalance();
+
+    // Diferencia de caja: treasuryBalance vs ganancia neta esperada
+    // Si cashDifference > 0: tienes más dinero del esperado (capital inicial, otros ingresos)
+    // Si cashDifference < 0: falta dinero (gastos no registrados, dinero no depositado)
+    const cashDifference = treasuryBalance - totalProfit;
+
     return {
-      kpis: { totalInvested, totalRevenue, totalProfit, totalMyProfit, avgDays, avgROI, totalExpenses, unpaidExpenses, totalVehicles: vehicles.length, soldCount: sold.length, activeCount: active.length },
+      kpis: {
+        totalInvested,
+        totalRevenue,
+        totalProfit,
+        totalMyProfit,
+        avgDays,
+        avgROI,
+        totalExpenses,
+        totalVehicles: vehicles.length,
+        soldCount: sold.length,
+        activeCount: active.length,
+        treasuryBalance,
+        cashDifference,
+      },
       pipeline,
       expensesByCategory,
       alerts,

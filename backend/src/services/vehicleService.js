@@ -88,11 +88,34 @@ class VehicleService {
       updateData.saleDate = new Date();
     }
 
-    return prisma.vehicle.update({
+    const vehicle = await prisma.vehicle.update({
       where: { id },
       data: updateData,
       include: VEHICLE_INCLUDE,
     });
+
+    // Auto-crear transacción de ingreso al vender
+    if (stage === 'VENDIDO' && existing.stage !== 'VENDIDO' && vehicle.salePrice) {
+      const cashAccount = await prisma.account.findFirst({
+        where: { type: 'CASH', isActive: true },
+      });
+
+      if (cashAccount) {
+        await prisma.transaction.create({
+          data: {
+            accountId: cashAccount.id,
+            type: 'INCOME',
+            category: 'VEHICLE_SALE',
+            amount: vehicle.salePrice,
+            description: `Venta de vehículo ${vehicle.plate}`,
+            vehicleId: vehicle.id,
+            createdBy: userId,
+          },
+        });
+      }
+    }
+
+    return vehicle;
   }
 
   async delete(id, userId) {

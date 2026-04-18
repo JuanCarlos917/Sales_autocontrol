@@ -30,8 +30,12 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Auth endpoints get stricter limits
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+// Auth endpoints get stricter limits (higher in dev for testing)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: config.nodeEnv === 'development' ? 500 : 20,
+  message: { error: 'Demasiadas solicitudes de autenticación, intenta más tarde' },
+});
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/pin-login', authLimiter);
 

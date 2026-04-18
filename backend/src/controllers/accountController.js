@@ -23,7 +23,7 @@ const getOne = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    const account = await accountService.create(req.body);
+    const account = await accountService.create(req.body, req.user.id);
     res.status(201).json(account);
   } catch (err) { next(err); }
 };

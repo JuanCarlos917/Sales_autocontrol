@@ -30,8 +30,34 @@ class AccountService {
     return { ...account, currentBalance };
   }
 
-  async create(data) {
-    return prisma.account.create({ data });
+  async create(data, userId) {
+    const { initialBalance, ...accountData } = data;
+    const initialBalanceNum = parseFloat(initialBalance) || 0;
+
+    // Crear cuenta con saldo inicial
+    const account = await prisma.account.create({
+      data: {
+        ...accountData,
+        initialBalance: initialBalanceNum,
+        currentBalance: initialBalanceNum,
+      },
+    });
+
+    // Si hay saldo inicial, crear transacción de ingreso
+    if (initialBalanceNum > 0 && userId) {
+      await prisma.transaction.create({
+        data: {
+          accountId: account.id,
+          type: 'INCOME',
+          category: 'OTHER_INCOME',
+          amount: initialBalanceNum,
+          description: 'Saldo inicial de cuenta',
+          createdBy: userId,
+        },
+      });
+    }
+
+    return { ...account, currentBalance: initialBalanceNum };
   }
 
   async update(id, data) {
@@ -64,7 +90,8 @@ class AccountService {
       select: { type: true, amount: true },
     });
 
-    let balance = parseFloat(account.initialBalance) || 0;
+    // Saldo se calcula solo de transacciones (initialBalance genera su propia transacción)
+    let balance = 0;
     for (const tx of transactions) {
       const amount = parseFloat(tx.amount);
       if (tx.type === 'INCOME' || tx.type === 'TRANSFER_IN') {
