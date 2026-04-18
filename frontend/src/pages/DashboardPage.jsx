@@ -28,7 +28,6 @@ export default function DashboardPage() {
     { label: 'Ganancia Neta', value: formatCurrency(kpis.totalProfit), color: kpis.totalProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
     { label: 'Mi Ganancia Total', value: formatCurrency(kpis.totalMyProfit), color: 'text-[#BC8CFF]' },
     { label: 'Saldo en Caja', value: formatCurrency(kpis.treasuryBalance), color: 'text-[#58A6FF]' },
-    { label: 'Diferencia Caja', value: formatCurrency(kpis.cashDifference), color: kpis.cashDifference >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
     { label: 'Vendidos', value: kpis.soldCount, color: 'text-[#3FB950]' },
     { label: 'ROI Promedio', value: formatPercent(kpis.avgROI), color: kpis.avgROI >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
   ];

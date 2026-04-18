@@ -22,22 +22,23 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Rate Limiting ──
-const limiter = rateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.max,
-  message: { error: 'Demasiadas solicitudes, intenta más tarde' },
-});
-app.use('/api/', limiter);
+// ── Rate Limiting (disabled in development) ──
+if (config.nodeEnv !== 'development') {
+  const limiter = rateLimit({
+    windowMs: config.rateLimit.windowMs,
+    max: config.rateLimit.max,
+    message: { error: 'Demasiadas solicitudes, intenta más tarde' },
+  });
+  app.use('/api/', limiter);
 
-// Auth endpoints get stricter limits (higher in dev for testing)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: config.nodeEnv === 'development' ? 500 : 20,
-  message: { error: 'Demasiadas solicitudes de autenticación, intenta más tarde' },
-});
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/pin-login', authLimiter);
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { error: 'Demasiadas solicitudes de autenticación, intenta más tarde' },
+  });
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/pin-login', authLimiter);
+}
 
 // ── Parsing ──
 app.use(express.json({ limit: '10mb' }));

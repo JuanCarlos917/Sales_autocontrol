@@ -65,11 +65,6 @@ class DashboardService {
     // Saldo total de tesorería
     const treasuryBalance = await accountService.getTotalBalance();
 
-    // Diferencia de caja: treasuryBalance vs ganancia neta esperada
-    // Si cashDifference > 0: tienes más dinero del esperado (capital inicial, otros ingresos)
-    // Si cashDifference < 0: falta dinero (gastos no registrados, dinero no depositado)
-    const cashDifference = treasuryBalance - totalProfit;
-
     return {
       kpis: {
         totalInvested,
@@ -83,7 +78,6 @@ class DashboardService {
         soldCount: sold.length,
         activeCount: active.length,
         treasuryBalance,
-        cashDifference,
       },
       pipeline,
       expensesByCategory,
