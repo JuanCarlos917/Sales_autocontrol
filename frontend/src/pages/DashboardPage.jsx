@@ -27,10 +27,10 @@ export default function DashboardPage() {
     { label: 'Ingresos Totales', value: formatCurrency(kpis.totalRevenue), color: 'text-accent' },
     { label: 'Ganancia Neta', value: formatCurrency(kpis.totalProfit), color: kpis.totalProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
     { label: 'Mi Ganancia Total', value: formatCurrency(kpis.totalMyProfit), color: 'text-[#BC8CFF]' },
+    { label: 'Saldo en Caja', value: formatCurrency(kpis.treasuryBalance), color: 'text-[#58A6FF]' },
+    { label: 'Diferencia Caja', value: formatCurrency(kpis.cashDifference), color: kpis.cashDifference >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
     { label: 'Vendidos', value: kpis.soldCount, color: 'text-[#3FB950]' },
-    { label: 'Promedio Días', value: `${kpis.avgDays}d`, color: kpis.avgDays > 30 ? 'text-[#F85149]' : 'text-accent' },
     { label: 'ROI Promedio', value: formatPercent(kpis.avgROI), color: kpis.avgROI >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
-    { label: 'Deuda Pendiente', value: formatCurrency(kpis.unpaidExpenses), color: kpis.unpaidExpenses > 0 ? 'text-[#F85149]' : 'text-[#6E7681]' },
   ];
 
   const sortedExpCats = Object.entries(expensesByCategory).sort(([, a], [, b]) => b - a);

@@ -450,7 +450,6 @@ export default function VehicleDetailPage() {
           <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
           <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
           <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
-          <FinCard label="Deuda Pendiente" value={formatCurrency(m.unpaidExpenses)} color={m.unpaidExpenses > 0 ? 'text-[#F85149]' : 'text-[#6E7681]'} />
           {vehicle.stage === 'VENDIDO' && <>
             <FinCard label="Valor de Venta" value={formatCurrency(vehicle.salePrice)} color="text-[#3FB950]" />
             <FinCard label="GANANCIA NETA" value={formatCurrency(m.netProfit)} color={m.netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} highlight />
