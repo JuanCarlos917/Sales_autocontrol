@@ -4,6 +4,18 @@
 
 const prisma = require('../config/database');
 
+// Parsea una fecha string (YYYY-MM-DD) a Date en zona horaria de Colombia
+// Evita el problema de que new Date("2026-04-19") se interprete como UTC
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  // Si es un string de fecha simple (YYYY-MM-DD), agregar hora del mediodia
+  // para evitar problemas de zona horaria
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(dateStr + 'T12:00:00');
+  }
+  return new Date(dateStr);
+};
+
 /**
  * Obtener todas las CxC/CxP con filtros
  */
@@ -26,7 +38,7 @@ const getAll = async (filters = {}) => {
   const payables = await prisma.payable.findMany({
     where,
     include: {
-      vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+      vehicle: { select: { id: true, plate: true, brand: true, model: true, year: true } },
       expense: { select: { id: true, category: true, description: true } },
       thirdParty: { select: { id: true, name: true, type: true } },
       payments: {
@@ -52,7 +64,7 @@ const getById = async (id) => {
   const payable = await prisma.payable.findUnique({
     where: { id },
     include: {
-      vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+      vehicle: { select: { id: true, plate: true, brand: true, model: true, year: true } },
       expense: { select: { id: true, category: true, description: true } },
       thirdParty: { select: { id: true, name: true, type: true } },
       payments: {
@@ -161,7 +173,7 @@ const addPayment = async (payableId, paymentData, userId) => {
         category: transactionCategory,
         amount: paymentAmount,
         description: description || `Pago ${isReceivable ? 'recibido' : 'realizado'}: ${payable.description || ''}`,
-        date: date ? new Date(date) : new Date(),
+        date: parseLocalDate(date),
         vehicleId: payable.vehicleId,
         thirdPartyId: payable.thirdPartyId,
         createdBy: userId

@@ -9,6 +9,7 @@ const accountService = require('./accountService');
 const TRANSACTION_INCLUDE = {
   account: { select: { id: true, name: true, type: true } },
   thirdParty: { select: { id: true, name: true, type: true } },
+  vehicle: { select: { id: true, plate: true, brand: true, model: true } },
 };
 
 class TransactionService {

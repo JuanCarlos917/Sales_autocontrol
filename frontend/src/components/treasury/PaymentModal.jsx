@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '@/components/shared/Modal';
 import { accountsApi } from '@/lib/treasuryApi';
-import { formatCurrency } from '@/lib/constants';
+import { formatCurrency, getLocalDateString } from '@/lib/constants';
 
 export default function PaymentModal({
   isOpen,
@@ -22,7 +22,7 @@ export default function PaymentModal({
   const [form, setForm] = useState({
     accountId: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     description: defaultDescription,
   });
   const [warning, setWarning] = useState(null);
@@ -36,7 +36,7 @@ export default function PaymentModal({
       setForm({
         accountId: '',
         amount: pendingAmount > 0 ? pendingAmount.toString() : '',
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalDateString(),
         description: defaultDescription,
       });
       setWarning(null);

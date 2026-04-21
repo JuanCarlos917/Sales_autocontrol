@@ -58,6 +58,8 @@
   .animate-slide-up { animation: slideUp 0.3s ease; }
   .animate-scale-in { animation: scaleIn 0.2s ease; }
   .animate-pulse-dot { animation: pulseDot 2s infinite; }
+  .animate-ring-pulse { animation: ringPulse 1.6s ease-in-out infinite; }
+  .animate-shake { animation: shake 0.5s ease-in-out 1; }
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -66,3 +68,7 @@
 @keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @keyframes loadSlide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+@keyframes ringPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}

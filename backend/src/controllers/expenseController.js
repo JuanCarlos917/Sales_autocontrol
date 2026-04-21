@@ -22,23 +22,9 @@ const getByVehicle = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-const create = async (req, res, next) => {
-  try {
-    const expense = await expenseService.create(req.body, req.user.id);
-    res.status(201).json(expense);
-  } catch (err) { next(err); }
-};
-
-const createWithPayment = async (req, res, next) => {
-  try {
-    const expense = await expenseService.createWithPayment(req.body, req.user.id);
-    res.status(201).json(expense);
-  } catch (err) { next(err); }
-};
-
 /**
- * POST /expenses/with-treasury
- * Crear gasto con integración completa de tesorería
+ * POST /expenses  (y /expenses/with-treasury)
+ * Crear gasto con integración obligatoria de tesorería
  */
 const createWithTreasury = async (req, res, next) => {
   try {
@@ -98,8 +84,6 @@ const remove = async (req, res, next) => {
 module.exports = {
   getAll,
   getByVehicle,
-  create,
-  createWithPayment,
   createWithTreasury,
   update,
   payExpense,

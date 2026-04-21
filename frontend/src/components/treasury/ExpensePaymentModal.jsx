@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import Modal from '@/components/shared/Modal';
 import { accountsApi, thirdPartiesApi } from '@/lib/treasuryApi';
-import { formatCurrency } from '@/lib/constants';
+import { formatCurrency, getLocalDateString } from '@/lib/constants';
 
 const EXPENSE_CATEGORIES = [
   { id: 'MECANICA', label: 'Mecanica' },
@@ -35,7 +35,7 @@ export default function ExpensePaymentModal({
     category: 'MECANICA',
     amount: '',
     description: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     accountId: '',
     thirdPartyId: '',
     dueDate: '',
@@ -71,7 +71,7 @@ export default function ExpensePaymentModal({
       category: 'MECANICA',
       amount: '',
       description: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       accountId: accounts[0]?.id || '',
       thirdPartyId: '',
       dueDate: '',

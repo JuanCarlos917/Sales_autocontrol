@@ -5,8 +5,9 @@
 
 import { useState, useEffect } from 'react';
 import Modal from '@/components/shared/Modal';
-import { accountsApi, thirdPartiesApi } from '@/lib/treasuryApi';
-import { formatCurrency } from '@/lib/constants';
+import { accountsApi } from '@/lib/treasuryApi';
+import { formatCurrency, getLocalDateString } from '@/lib/constants';
+import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
 
 const PAYMENT_TYPES = [
   { id: 'CASH', label: 'Efectivo', icon: '💵' },
@@ -24,13 +25,13 @@ export default function SalePaymentModal({
   loading = false,
 }) {
   const [accounts, setAccounts] = useState([]);
-  const [thirdParties, setThirdParties] = useState([]);
   const [step, setStep] = useState(1); // 1: tipo pago, 2: detalles
+  const [errors, setErrors] = useState({});
   const [paymentType, setPaymentType] = useState('CASH');
   const [form, setForm] = useState({
     salePrice: '',
-    saleDate: new Date().toISOString().split('T')[0],
-    thirdPartyId: '',
+    saleDate: getLocalDateString(),
+    buyerId: '',
     // Pago efectivo/transferencia
     cashAccountId: '',
     cashAmount: '',
@@ -56,12 +57,8 @@ export default function SalePaymentModal({
 
   const loadData = async () => {
     try {
-      const [accountsRes, thirdPartiesRes] = await Promise.all([
-        accountsApi.getAll(),
-        thirdPartiesApi.getAll(),
-      ]);
+      const accountsRes = await accountsApi.getAll();
       setAccounts(accountsRes.data.filter(a => a.isActive));
-      setThirdParties(thirdPartiesRes.data.filter(tp => tp.type === 'CLIENT'));
     } catch (err) {
       console.error('Error loading data:', err);
     }
@@ -70,10 +67,11 @@ export default function SalePaymentModal({
   const resetForm = () => {
     setStep(1);
     setPaymentType('CASH');
+    setErrors({});
     setForm({
-      salePrice: vehicle?.listedPrice?.toString() || '',
-      saleDate: new Date().toISOString().split('T')[0],
-      thirdPartyId: '',
+      salePrice: vehicle?.salePrice?.toString() || vehicle?.listedPrice?.toString() || '',
+      saleDate: getLocalDateString(),
+      buyerId: vehicle?.buyerId || '',
       cashAccountId: accounts[0]?.id || '',
       cashAmount: '',
       tradeInPlate: '',
@@ -90,10 +88,7 @@ export default function SalePaymentModal({
 
   const handleTypeSelect = (type) => {
     setPaymentType(type);
-    // Pre-fill cash amount for simple payments
-    if (type === 'CASH' || type === 'TRANSFER') {
-      setForm(f => ({ ...f, cashAmount: f.salePrice }));
-    }
+    // No pre-llenar monto para que el usuario ingrese lo que realmente recibe
     setStep(2);
   };
 
@@ -119,16 +114,28 @@ export default function SalePaymentModal({
     e.preventDefault();
 
     const summary = calculateSummary();
+    const newErrors = {};
+
     if (summary.salePrice <= 0) {
-      alert('El precio de venta debe ser mayor a 0');
+      newErrors.salePrice = 'El precio de venta debe ser mayor a 0';
+    }
+
+    if (!form.buyerId) {
+      newErrors.buyerId = 'Debe seleccionar un cliente (comprador)';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
+    setErrors({});
     const saleData = {
       salePrice: summary.salePrice,
       paymentType,
       saleDate: form.saleDate || null,
-      thirdPartyId: form.thirdPartyId || null,
+      buyerId: form.buyerId,
+      thirdPartyId: form.buyerId,
     };
 
     // Agregar pago en efectivo/transferencia
@@ -174,6 +181,16 @@ export default function SalePaymentModal({
     >
       {step === 1 ? (
         <div className="space-y-4">
+          {/* Info del vehículo */}
+          {vehicle?.metrics?.realCost > 0 && (
+            <div className="bg-[#161B22] rounded-lg p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[#6E7681]">Inversión Total</span>
+                <span className="font-mono">{formatCurrency(vehicle.metrics.realCost)}</span>
+              </div>
+            </div>
+          )}
+
           {/* Precio de venta */}
           <div>
             <label className="block text-sm text-[#8B949E] mb-1">Precio de Venta *</label>
@@ -186,6 +203,13 @@ export default function SalePaymentModal({
               required
             />
           </div>
+
+          {/* Advertencia de pérdida */}
+          {form.salePrice && vehicle?.metrics?.realCost > 0 && parseFloat(form.salePrice) < vehicle.metrics.realCost && (
+            <div className="text-sm p-3 rounded-lg bg-[#D29922]/10 text-[#D29922] border border-[#D29922]/30">
+              Venderás con pérdida de {formatCurrency(vehicle.metrics.realCost - parseFloat(form.salePrice))}
+            </div>
+          )}
 
           {/* Tipo de pago */}
           <div>
@@ -243,19 +267,18 @@ export default function SalePaymentModal({
                 className="input w-full"
               />
             </div>
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Cliente</label>
-              <select
-                value={form.thirdPartyId}
-                onChange={(e) => setForm({ ...form, thirdPartyId: e.target.value })}
-                className="input w-full"
-              >
-                <option value="">Sin cliente</option>
-                {thirdParties.map((tp) => (
-                  <option key={tp.id} value={tp.id}>{tp.name}</option>
-                ))}
-              </select>
-            </div>
+            <ThirdPartySelector
+              value={form.buyerId}
+              onChange={(id) => {
+                setForm({ ...form, buyerId: id });
+                if (errors.buyerId) setErrors({ ...errors, buyerId: null });
+              }}
+              filterType="CLIENT"
+              label="Cliente (comprador) *"
+              placeholder="Seleccionar cliente..."
+              required={true}
+              error={errors.buyerId}
+            />
           </div>
 
           {/* Pago efectivo/transferencia */}

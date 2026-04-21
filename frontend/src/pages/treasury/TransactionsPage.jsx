@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { transactionsApi, accountsApi, thirdPartiesApi, transfersApi } from '@/lib/treasuryApi';
-import { formatCurrency, formatDate } from '@/lib/constants';
+import { formatCurrency, formatDate, getLocalDateString } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
 
 const INCOME_CATEGORIES = [
@@ -21,6 +21,22 @@ const EXPENSE_CATEGORIES = [
   { id: 'OTHER_EXPENSE', label: 'Otro Gasto' },
 ];
 
+const CATEGORY_LABELS = {
+  VEHICLE_PURCHASE: 'Compra de Vehículo',
+  VEHICLE_SALE: 'Venta de Vehículo',
+  VEHICLE_SALE_PARTIAL: 'Abono de Venta',
+  VEHICLE_EXPENSE: 'Gasto de Vehículo',
+  FIXED_EXPENSE: 'Gasto Fijo',
+  OPERATING_EXPENSE: 'Gasto Operativo',
+  COMMISSION: 'Comisión',
+  CAPITAL_CONTRIBUTION: 'Aporte de Capital',
+  OTHER_INCOME: 'Otro Ingreso',
+  OTHER_EXPENSE: 'Otro Gasto',
+  TRANSFER: 'Transferencia',
+};
+
+const getCategoryLabel = (category) => CATEGORY_LABELS[category] || category || '—';
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -35,7 +51,7 @@ export default function TransactionsPage() {
     amount: '',
     description: '',
     thirdPartyId: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     // Transfer fields
     fromAccountId: '',
     toAccountId: '',
@@ -100,7 +116,7 @@ export default function TransactionsPage() {
       amount: '',
       description: '',
       thirdPartyId: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       fromAccountId: accounts[0]?.id || '',
       toAccountId: accounts.length > 1 ? accounts[1]?.id : accounts[0]?.id || '',
     });
@@ -216,22 +232,36 @@ export default function TransactionsPage() {
               <th className="text-left p-3">Fecha</th>
               <th className="text-left p-3">Tipo</th>
               <th className="text-left p-3 hidden md:table-cell">Cuenta</th>
-              <th className="text-left p-3">Descripcion</th>
+              <th className="text-left p-3">Placa</th>
+              <th className="text-left p-3">Categoria</th>
+              <th className="text-left p-3 hidden lg:table-cell">Descripcion</th>
               <th className="text-right p-3">Monto</th>
             </tr>
           </thead>
           <tbody>
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-t border-border hover:bg-surface-hover">
-                <td className="p-3 text-[#8B949E]">{formatDate(tx.date)}</td>
+                <td className="p-3 text-[#8B949E] whitespace-nowrap">{formatDate(tx.date)}</td>
                 <td className="p-3">
                   <span className={`text-xs font-medium ${getTypeColor(tx.type)}`}>
                     {getTypeLabel(tx.type)}
                   </span>
                 </td>
                 <td className="p-3 text-[#E6EDF3] hidden md:table-cell">{tx.account?.name}</td>
-                <td className="p-3 text-[#E6EDF3]">{tx.description || tx.category}</td>
-                <td className={`p-3 text-right font-semibold ${getTypeColor(tx.type)}`}>
+                <td className="p-3">
+                  {tx.vehicle?.plate ? (
+                    <span className="plate-badge inline-block px-2 py-0.5 rounded font-mono text-xs font-semibold bg-[#1F6FEB]/15 text-[#58A6FF]">
+                      {tx.vehicle.plate}
+                    </span>
+                  ) : (
+                    <span className="text-[#6E7681] text-xs">—</span>
+                  )}
+                </td>
+                <td className="p-3 text-[#E6EDF3] text-xs">{getCategoryLabel(tx.category)}</td>
+                <td className="p-3 text-[#E6EDF3] hidden lg:table-cell truncate max-w-[280px]">
+                  {tx.description || <span className="text-[#6E7681]">—</span>}
+                </td>
+                <td className={`p-3 text-right font-semibold whitespace-nowrap ${getTypeColor(tx.type)}`}>
                   {tx.type === 'INCOME' || tx.type === 'TRANSFER_IN' ? '+' : '-'}
                   {formatCurrency(tx.amount)}
                 </td>
@@ -239,7 +269,7 @@ export default function TransactionsPage() {
             ))}
             {transactions.length === 0 && (
               <tr>
-                <td colSpan="5" className="p-6 text-center text-[#8B949E]">No hay movimientos</td>
+                <td colSpan="7" className="p-6 text-center text-[#8B949E]">No hay movimientos</td>
               </tr>
             )}
           </tbody>

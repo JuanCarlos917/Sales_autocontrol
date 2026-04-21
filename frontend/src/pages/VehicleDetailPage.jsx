@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import api from '@/lib/api';
 import { STAGES, EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
-import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
 import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi, payablesApi, expenseTreasuryApi } from '@/lib/payablesApi';
@@ -13,11 +12,27 @@ import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/component
 export default function VehicleDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { moveVehicle, deleteVehicle, deleteExpense, deleteDocument } = useApp();
   const [vehicle, setVehicle] = useState(null);
-  const [tab, setTab] = useState('resumen');
+  const [tab, setTab] = useState(searchParams.get('tab') || 'resumen');
   const [showEditForm, setShowEditForm] = useState(false);
-  const [showExpenseForm, setShowExpenseForm] = useState(false);
+
+  // Cerrar formulario de edición y limpiar URL
+  const closeEditForm = () => {
+    setShowEditForm(false);
+    if (searchParams.get('edit') || searchParams.get('highlight')) {
+      searchParams.delete('edit');
+      searchParams.delete('highlight');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
+
+  // Campos a destacar en rojo cuando se viene desde la alerta del Kanban
+  const highlightFields = (searchParams.get('highlight') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
   const [showDocForm, setShowDocForm] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   // Tesorería
@@ -71,6 +86,13 @@ export default function VehicleDetailPage() {
     loadAccounts();
     loadPaymentStatus();
   }, [id]);
+
+  // Abrir formulario de edición si viene con ?edit=true
+  useEffect(() => {
+    if (searchParams.get('edit') === 'true' && vehicle) {
+      setShowEditForm(true);
+    }
+  }, [searchParams, vehicle]);
 
   const reloadAll = () => {
     loadVehicle();
@@ -221,18 +243,41 @@ export default function VehicleDetailPage() {
 
       {/* Tab Content */}
       {tab === 'resumen' && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <ProfitSummary vehicle={vehicle} metrics={m} />
+          <div className="grid grid-cols-2 gap-4">
           <InfoItem label="Precio de Compra" value={formatCurrency(vehicle.purchasePrice)} />
           <InfoItem label="Fecha de Compra" value={formatDate(vehicle.purchaseDate)} />
           <InfoItem label="Precio Publicado" value={vehicle.listedPrice ? formatCurrency(vehicle.listedPrice) : '—'} />
-          <InfoItem label="Precio de Venta" value={vehicle.salePrice ? formatCurrency(vehicle.salePrice) : '—'} />
-          <InfoItem label="Fecha de Venta" value={formatDate(vehicle.saleDate)} />
+          {['PUBLICADO', 'DISPONIBLE', 'VENDIDO'].includes(vehicle.stage) && (
+            <>
+              <InfoItem label="Precio de Venta" value={vehicle.salePrice ? formatCurrency(vehicle.salePrice) : '—'} />
+              <InfoItem label="Fecha de Venta" value={formatDate(vehicle.saleDate)} />
+            </>
+          )}
           <InfoItem label="Participación" value={`${((vehicle.participation || 1) * 100)}%`} />
+          <InfoItem
+            label="Proveedor"
+            value={vehicle.supplier ? vehicle.supplier.name : <span className="text-amber-400">Sin asignar</span>}
+          />
+          {(vehicle.participation || 1) < 1 && (
+            <InfoItem
+              label={`Socio (${((vehicle.participation || 1) * 100).toFixed(0)}%)`}
+              value={vehicle.partner ? vehicle.partner.name : <span className="text-amber-400">Sin asignar</span>}
+            />
+          )}
+          {vehicle.stage === 'VENDIDO' && (
+            <InfoItem
+              label="Comprador"
+              value={vehicle.buyer ? vehicle.buyer.name : <span className="text-amber-400">Sin asignar</span>}
+            />
+          )}
           {vehicle.receivedVehicle && <>
             <InfoItem label="Cruce Placa" value={vehicle.receivedVehiclePlate || '—'} />
             <InfoItem label="Valor Cruce" value={formatCurrency(vehicle.receivedVehicleValue)} />
           </>}
           {vehicle.notes && <div className="col-span-2"><InfoItem label="Notas" value={vehicle.notes} /></div>}
+          </div>
         </div>
       )}
 
@@ -240,10 +285,7 @@ export default function VehicleDetailPage() {
         <div>
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Total: {formatCurrency(m.totalExpenses)}</span>
-            <div className="flex gap-2">
-              <button onClick={() => setShowExpenseForm(true)} className="btn-ghost text-sm">+ Simple</button>
-              <button onClick={() => setShowExpenseTreasuryModal(true)} className="btn-primary text-sm">+ Con Tesoreria</button>
-            </div>
+            <button onClick={() => setShowExpenseTreasuryModal(true)} className="btn-primary text-sm">+ Gasto</button>
           </div>
           {expenses.length === 0 ? <p className="text-center text-[#6E7681] py-10">Sin gastos registrados</p> : (
             <div className="space-y-2">
@@ -410,52 +452,39 @@ export default function VehicleDetailPage() {
             )}
           </div>
 
-          {/* Resumen */}
-          {vehicleTransactions.length > 0 && (
-            <div className="p-4 bg-surface-hover rounded-lg">
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-xs text-[#8B949E] mb-1">Total Pagado</div>
-                  <div className="text-lg font-bold text-red-400">
-                    {formatCurrency(vehicleTransactions.filter(t => t.type === 'EXPENSE' || t.type === 'TRANSFER_OUT').reduce((s, t) => s + parseFloat(t.amount), 0))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-[#8B949E] mb-1">Total Cobrado</div>
-                  <div className="text-lg font-bold text-green-400">
-                    {formatCurrency(vehicleTransactions.filter(t => t.type === 'INCOME' || t.type === 'TRANSFER_IN').reduce((s, t) => s + parseFloat(t.amount), 0))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-[#8B949E] mb-1">Balance</div>
-                  <div className="text-lg font-bold text-accent">
-                    {formatCurrency(
-                      vehicleTransactions.filter(t => t.type === 'INCOME' || t.type === 'TRANSFER_IN').reduce((s, t) => s + parseFloat(t.amount), 0) -
-                      vehicleTransactions.filter(t => t.type === 'EXPENSE' || t.type === 'TRANSFER_OUT').reduce((s, t) => s + parseFloat(t.amount), 0)
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Resumen — Inversión realizada / Pendiente por pagar / Pendiente por cobrar */}
+          <InvestmentSummary
+            vehicleTransactions={vehicleTransactions}
+            paymentStatus={paymentStatus}
+            expenses={expenses}
+          />
         </div>
       )}
 
       {tab === 'financiero' && (
-        <div className="grid grid-cols-2 gap-3">
-          <FinCard label="Valor de Compra" value={formatCurrency(vehicle.purchasePrice)} />
-          <FinCard label="Total Gastos Variables" value={formatCurrency(m.totalExpenses)} color="text-[#D29922]" />
-          <FinCard label="Gastos Fijos Prorrateados" value={formatCurrency(m.fixedProrated)} sub={`${m.daysInInventory}d`} />
-          <FinCard label="COSTO REAL TOTAL" value={formatCurrency(m.realCostWithFixed)} color="text-accent" highlight />
-          <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
-          <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
-          <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
-          {vehicle.stage === 'VENDIDO' && <>
-            <FinCard label="Valor de Venta" value={formatCurrency(vehicle.salePrice)} color="text-[#3FB950]" />
-            <FinCard label="GANANCIA NETA" value={formatCurrency(m.netProfit)} color={m.netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} highlight />
-            <FinCard label="ROI" value={formatPercent(m.roi)} color={m.roi >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} />
-            <FinCard label="MI GANANCIA REAL" value={formatCurrency(m.myProfit)} color="text-accent" highlight sub={`Part: ${((vehicle.participation || 1) * 100)}%`} />
-          </>}
+        <div className="space-y-4">
+          <ProfitSummary vehicle={vehicle} metrics={m} />
+          <div className="grid grid-cols-2 gap-3">
+            <FinCard label="Valor de Compra" value={formatCurrency(vehicle.purchasePrice)} />
+            <FinCard label="Total Gastos Variables" value={formatCurrency(m.totalExpenses)} color="text-[#D29922]" />
+            <FinCard label="Gastos Fijos Prorrateados" value={formatCurrency(m.fixedProrated)} sub={`${m.daysInInventory}d`} />
+            <FinCard label="COSTO REAL TOTAL" value={formatCurrency(m.realCostWithFixed)} color="text-accent" highlight />
+            <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
+            <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
+            <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
+            {vehicle.partnerId && m.partnerContribution > 0 && (
+              <>
+                <FinCard label="Aporte Socio" value={formatCurrency(m.partnerContribution)} color="text-[#BC8CFF]" sub={vehicle.partner?.name} />
+                <FinCard label="Mi Capital" value={formatCurrency(m.myCapital)} color="text-accent" sub="Descontado de tesorería" />
+              </>
+            )}
+            {vehicle.stage === 'VENDIDO' && (
+              <>
+                <FinCard label="Valor de Venta" value={formatCurrency(vehicle.salePrice)} color="text-[#3FB950]" />
+                <FinCard label="ROI" value={formatPercent(m.roi)} color={m.roi >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} />
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -520,8 +549,7 @@ export default function VehicleDetailPage() {
       </div>
 
       {/* Modals */}
-      {showEditForm && <VehicleFormModal vehicle={vehicle} onClose={() => { setShowEditForm(false); reloadAll(); }} />}
-      {showExpenseForm && <ExpenseFormModal vehicleId={id} onClose={() => { setShowExpenseForm(false); reloadAll(); }} />}
+      {showEditForm && <VehicleFormModal vehicle={vehicle} highlightFields={highlightFields} onClose={() => { closeEditForm(); reloadAll(); }} />}
       {showDocForm && <DocumentFormModal vehicleId={id} onClose={() => { setShowDocForm(false); reloadAll(); }} />}
 
       {/* Modal de Venta */}
@@ -579,6 +607,119 @@ function FinCard({ label, value, color = '', highlight, sub }) {
       <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">{label}</div>
       <div className={`font-mono font-bold ${highlight ? 'text-xl' : 'text-base'} ${color}`}>{value}</div>
       {sub && <div className="text-[11px] text-[#6E7681] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ProfitSummary({ vehicle, metrics }) {
+  const m = metrics || {};
+  const netProfit = Number(m.netProfit) || 0;
+  const myProfit = Number(m.myProfit ?? netProfit) || 0;
+  const partnerProfit = Number(m.partnerProfit) || 0;
+  const isProjected = !!m.isProjectedProfit;
+  const hasPartner = !!vehicle.partnerId && parseFloat(vehicle.participation || 1) < 1;
+  const hasRefPrice = m.referencePrice > 0 || vehicle.stage === 'VENDIDO';
+  const profitColor = netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
+  const myColor = myProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
+
+  if (!hasRefPrice) {
+    return (
+      <div className="p-4 rounded-xl border border-border bg-[#0F1419]">
+        <div className="text-[11px] text-[#6E7681] uppercase tracking-wider mb-1">Ganancia Proyectada</div>
+        <div className="text-sm text-[#8B949E]">
+          Agrega un precio publicado o de venta para ver la ganancia estimada.
+        </div>
+      </div>
+    );
+  }
+
+  const label = isProjected ? 'Ganancia Proyectada' : 'Ganancia Neta';
+  const pctMine = ((parseFloat(vehicle.participation || 1)) * 100).toFixed(0);
+  const pctPartner = (100 - parseFloat(pctMine)).toFixed(0);
+
+  return (
+    <div className={`p-4 rounded-xl border ${isProjected ? 'border-accent/20 bg-accent/5' : 'border-[#3FB950]/30 bg-[#3FB950]/5'}`}>
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+            {label} {isProjected && <span className="text-accent">(estimada)</span>}
+          </div>
+          <div className={`font-mono font-bold text-2xl ${profitColor}`}>
+            {formatCurrency(netProfit)}
+          </div>
+          {m.roi !== undefined && m.roi !== null && (
+            <div className="text-[11px] text-[#8B949E] mt-0.5">ROI: {formatPercent(m.roi)}</div>
+          )}
+        </div>
+        {isProjected && (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold">
+            PROYECTADO
+          </span>
+        )}
+      </div>
+      {hasPartner && (
+        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
+          <div>
+            <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+              Tu Ganancia ({pctMine}%)
+            </div>
+            <div className={`font-mono font-bold text-lg ${myColor}`}>
+              {formatCurrency(myProfit)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+              {vehicle.partner?.name || 'Socio'} ({pctPartner}%)
+            </div>
+            <div className="font-mono font-bold text-lg text-[#BC8CFF]">
+              {formatCurrency(partnerProfit)}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvestmentSummary({ vehicleTransactions, paymentStatus, expenses }) {
+  const invested = vehicleTransactions
+    .filter(t => t.type === 'EXPENSE' || t.type === 'TRANSFER_OUT')
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
+
+  const purchasePending = parseFloat(paymentStatus?.purchase?.pendingAmount || 0);
+  const expensePending = (expenses || [])
+    .filter(e => !e.paid)
+    .reduce((s, e) => s + parseFloat(e.amount), 0);
+  const totalPending = purchasePending + expensePending;
+
+  const salePending = parseFloat(paymentStatus?.sale?.pendingAmount || 0);
+
+  return (
+    <div className="p-4 bg-surface-hover rounded-lg">
+      <div className="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Inversión realizada</div>
+          <div className="text-lg font-bold text-accent">{formatCurrency(invested)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">Ya salió de tesorería</div>
+        </div>
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Pendiente por pagar</div>
+          <div className="text-lg font-bold text-red-400">{formatCurrency(totalPending)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">
+            {purchasePending > 0 && `Compra: ${formatCurrency(purchasePending)}`}
+            {purchasePending > 0 && expensePending > 0 && ' · '}
+            {expensePending > 0 && `Gastos: ${formatCurrency(expensePending)}`}
+            {totalPending === 0 && 'Todo al día'}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Pendiente por cobrar</div>
+          <div className="text-lg font-bold text-amber-400">{formatCurrency(salePending)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">
+            {salePending > 0 ? 'Venta financiada' : 'Sin saldos pendientes'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

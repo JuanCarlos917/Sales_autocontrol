@@ -62,6 +62,18 @@ export const formatDate = (d) => {
   return new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Obtiene la fecha local en formato YYYY-MM-DD (para inputs type="date")
+// Usa la zona horaria de Colombia (America/Bogota)
+export const getLocalDateString = (date = new Date()) => {
+  const d = new Date(date);
+  // Ajustar a zona horaria de Colombia
+  const colombiaDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+  const year = colombiaDate.getFullYear();
+  const month = String(colombiaDate.getMonth() + 1).padStart(2, '0');
+  const day = String(colombiaDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const getStage = (id) => STAGES.find(s => s.id === id) || STAGES[0];
 
 export const getCategory = (id) => EXPENSE_CATEGORIES.find(c => c.id === id);

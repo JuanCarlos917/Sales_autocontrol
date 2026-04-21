@@ -3,38 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
-import { PurchasePaymentModal } from '@/components/treasury';
-import { vehicleTreasuryApi } from '@/lib/payablesApi';
 
 export default function VehiclesPage() {
   const { vehicles, fetchVehicles } = useApp();
   const [filter, setFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [processingPurchase, setProcessingPurchase] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
 
   const filtered = filter === 'all' ? vehicles : vehicles.filter(v => v.stage === filter);
-
-  const handlePurchaseSubmit = async (data) => {
-    setProcessingPurchase(true);
-    try {
-      const result = await vehicleTreasuryApi.createWithPurchase(data);
-      setShowPurchaseModal(false);
-      fetchVehicles();
-      // Navegar al vehículo creado
-      if (result.data?.vehicle?.id) {
-        navigate(`/vehicles/${result.data.vehicle.id}`);
-      }
-    } catch (err) {
-      console.error('Error creating purchase:', err);
-      alert(err.response?.data?.error || 'Error al registrar la compra');
-    } finally {
-      setProcessingPurchase(false);
-    }
-  };
 
   return (
     <div>
@@ -53,8 +31,7 @@ export default function VehiclesPage() {
           })}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowForm(true)} className="btn-ghost text-sm">+ Simple</button>
-          <button onClick={() => setShowPurchaseModal(true)} className="btn-primary">+ Compra</button>
+          <button onClick={() => setShowForm(true)} className="btn-primary">+ Vehículo</button>
         </div>
       </div>
 
@@ -95,14 +72,6 @@ export default function VehiclesPage() {
       )}
 
       {showForm && <VehicleFormModal onClose={() => setShowForm(false)} />}
-
-      {/* Modal de Compra con Tesorería */}
-      <PurchasePaymentModal
-        isOpen={showPurchaseModal}
-        onClose={() => setShowPurchaseModal(false)}
-        onSubmit={handlePurchaseSubmit}
-        loading={processingPurchase}
-      />
     </div>
   );
 }

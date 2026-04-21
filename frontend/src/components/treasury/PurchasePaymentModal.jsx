@@ -4,8 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import Modal from '@/components/shared/Modal';
-import { accountsApi, thirdPartiesApi } from '@/lib/treasuryApi';
-import { formatCurrency } from '@/lib/constants';
+import { accountsApi } from '@/lib/treasuryApi';
+import { formatCurrency, getLocalDateString } from '@/lib/constants';
+import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
 
 export default function PurchasePaymentModal({
   isOpen,
@@ -15,9 +16,9 @@ export default function PurchasePaymentModal({
   loading = false,
 }) {
   const [accounts, setAccounts] = useState([]);
-  const [thirdParties, setThirdParties] = useState([]);
   const [payNow, setPayNow] = useState(true);
   const [warning, setWarning] = useState(null);
+  const [errors, setErrors] = useState({});
   const [form, setForm] = useState({
     // Datos del vehiculo
     plate: '',
@@ -27,12 +28,16 @@ export default function PurchasePaymentModal({
     color: '',
     km: '',
     purchasePrice: '',
-    purchaseDate: new Date().toISOString().split('T')[0],
+    purchaseDate: getLocalDateString(),
     notes: '',
+    // Socio
+    partnerId: '',
+    partnerContribution: '',
+    partnerAssumesExpenses: true,
     // Datos del pago
     accountId: '',
     paymentAmount: '',
-    thirdPartyId: '',
+    supplierId: '',
     dueDate: '',
   });
 
@@ -48,11 +53,14 @@ export default function PurchasePaymentModal({
           color: vehicleData.color || '',
           km: vehicleData.km?.toString() || '',
           purchasePrice: vehicleData.purchasePrice?.toString() || '',
-          purchaseDate: vehicleData.purchaseDate?.split('T')[0] || new Date().toISOString().split('T')[0],
+          purchaseDate: vehicleData.purchaseDate?.split('T')[0] || getLocalDateString(),
           notes: vehicleData.notes || '',
+          partnerId: vehicleData.partnerId || '',
+          partnerContribution: vehicleData.partnerContribution?.toString() || '',
+          partnerAssumesExpenses: vehicleData.partnerAssumesExpenses ?? true,
           accountId: '',
           paymentAmount: vehicleData.purchasePrice?.toString() || '',
-          thirdPartyId: '',
+          supplierId: vehicleData.supplierId || '',
           dueDate: '',
         });
       } else {
@@ -63,12 +71,8 @@ export default function PurchasePaymentModal({
 
   const loadData = async () => {
     try {
-      const [accountsRes, thirdPartiesRes] = await Promise.all([
-        accountsApi.getAll(),
-        thirdPartiesApi.getAll(),
-      ]);
+      const accountsRes = await accountsApi.getAll();
       setAccounts(accountsRes.data.filter(a => a.isActive));
-      setThirdParties(thirdPartiesRes.data.filter(tp => tp.type === 'SUPPLIER'));
       if (accountsRes.data.length > 0) {
         setForm(f => ({ ...f, accountId: accountsRes.data[0].id }));
       }
@@ -80,6 +84,7 @@ export default function PurchasePaymentModal({
   const resetForm = () => {
     setPayNow(true);
     setWarning(null);
+    setErrors({});
     setForm({
       plate: '',
       brand: '',
@@ -88,18 +93,35 @@ export default function PurchasePaymentModal({
       color: '',
       km: '',
       purchasePrice: '',
-      purchaseDate: new Date().toISOString().split('T')[0],
+      purchaseDate: getLocalDateString(),
       notes: '',
+      partnerId: '',
+      partnerContribution: '',
+      partnerAssumesExpenses: true,
       accountId: accounts[0]?.id || '',
       paymentAmount: '',
-      thirdPartyId: '',
+      supplierId: '',
       dueDate: '',
     });
   };
 
   const handlePriceChange = (value) => {
-    setForm({ ...form, purchasePrice: value, paymentAmount: value });
-    checkBalance(form.accountId, value);
+    const partnerAmt = parseFloat(form.partnerContribution) || 0;
+    const myOwed = Math.max(0, (parseFloat(value) || 0) - partnerAmt);
+    setForm({ ...form, purchasePrice: value, paymentAmount: myOwed ? myOwed.toString() : value });
+    checkBalance(form.accountId, myOwed || value);
+  };
+
+  const handlePartnerContributionChange = (value) => {
+    const price = parseFloat(form.purchasePrice) || 0;
+    const partnerAmt = parseFloat(value) || 0;
+    const myOwed = Math.max(0, price - partnerAmt);
+    setForm((prev) => ({
+      ...prev,
+      partnerContribution: value,
+      paymentAmount: myOwed ? myOwed.toString() : prev.paymentAmount,
+    }));
+    checkBalance(form.accountId, myOwed);
   };
 
   const handlePaymentAmountChange = (value) => {
@@ -134,13 +156,29 @@ export default function PurchasePaymentModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.plate || !form.purchasePrice) {
-      alert('Placa y precio de compra son requeridos');
+    const newErrors = {};
+    if (!form.plate) {
+      newErrors.plate = 'La placa es requerida';
+    }
+    if (!form.purchasePrice) {
+      newErrors.purchasePrice = 'El precio de compra es requerido';
+    }
+    if (!form.supplierId) {
+      newErrors.supplierId = 'Debe seleccionar un proveedor';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
+    setErrors({});
     const purchasePrice = parseFloat(form.purchasePrice);
     const paymentAmount = parseFloat(form.paymentAmount) || 0;
+    const partnerAmt = form.partnerId ? parseFloat(form.partnerContribution) || 0 : 0;
+    const participation = purchasePrice > 0 && partnerAmt > 0
+      ? Math.max(0, Math.min(1, (purchasePrice - partnerAmt) / purchasePrice))
+      : 1;
 
     const data = {
       vehicle: {
@@ -154,6 +192,11 @@ export default function PurchasePaymentModal({
         purchaseDate: form.purchaseDate || null,
         notes: form.notes || null,
         stage: 'COMPRADO',
+        supplierId: form.supplierId,
+        partnerId: form.partnerId || null,
+        partnerContribution: partnerAmt > 0 ? partnerAmt : null,
+        participation,
+        partnerAssumesExpenses: !!form.partnerAssumesExpenses,
       },
       payment: null,
     };
@@ -162,13 +205,12 @@ export default function PurchasePaymentModal({
       data.payment = {
         accountId: form.accountId,
         amount: paymentAmount,
-        thirdPartyId: form.thirdPartyId || null,
+        thirdPartyId: form.supplierId,
         dueDate: form.dueDate || null,
       };
     } else if (!payNow) {
-      // Si no paga ahora, puede especificar fecha de vencimiento
       data.payment = {
-        thirdPartyId: form.thirdPartyId || null,
+        thirdPartyId: form.supplierId,
         dueDate: form.dueDate || null,
       };
     }
@@ -178,7 +220,12 @@ export default function PurchasePaymentModal({
 
   const purchasePrice = parseFloat(form.purchasePrice) || 0;
   const paymentAmount = parseFloat(form.paymentAmount) || 0;
-  const pendingAmount = payNow ? Math.max(0, purchasePrice - paymentAmount) : purchasePrice;
+  const partnerAmt = form.partnerId ? parseFloat(form.partnerContribution) || 0 : 0;
+  const myOwedAmount = Math.max(0, purchasePrice - partnerAmt);
+  const pendingAmount = payNow ? Math.max(0, myOwedAmount - paymentAmount) : myOwedAmount;
+  const suggestedPercent = purchasePrice > 0 && partnerAmt > 0
+    ? Math.round(Math.max(0, Math.min(100, ((purchasePrice - partnerAmt) / purchasePrice) * 100)))
+    : 100;
 
   return (
     <Modal
@@ -256,20 +303,72 @@ export default function PurchasePaymentModal({
                 className="input w-full"
               />
             </div>
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Vendedor</label>
-              <select
-                value={form.thirdPartyId}
-                onChange={(e) => setForm({ ...form, thirdPartyId: e.target.value })}
-                className="input w-full"
-              >
-                <option value="">Sin vendedor</option>
-                {thirdParties.map((tp) => (
-                  <option key={tp.id} value={tp.id}>{tp.name}</option>
-                ))}
-              </select>
-            </div>
+            <ThirdPartySelector
+              value={form.supplierId}
+              onChange={(id) => {
+                setForm({ ...form, supplierId: id });
+                if (errors.supplierId) setErrors({ ...errors, supplierId: null });
+              }}
+              filterType="SUPPLIER"
+              label="Proveedor (vendedor) *"
+              placeholder="Seleccionar proveedor..."
+              required={true}
+              error={errors.supplierId}
+            />
           </div>
+        </div>
+
+        {/* Socio (opcional) */}
+        <div className="border border-border rounded-lg p-3 space-y-3">
+          <h4 className="text-sm font-semibold text-[#E6EDF3]">Socio (opcional)</h4>
+          <ThirdPartySelector
+            value={form.partnerId}
+            onChange={(id) => setForm({ ...form, partnerId: id || '' })}
+            filterType="PARTNER"
+            label="Socio"
+            placeholder="Sin socio..."
+          />
+          {form.partnerId && (
+            <>
+              <p className="text-[11px] text-[#6E7681]">
+                El aporte del socio NO descuenta de tu tesorería — solo se registra como dato.
+                Tu participación sugerida: <span className="text-[#E6EDF3] font-semibold">{suggestedPercent}%</span>.
+              </p>
+              <div>
+                <label className="block text-sm text-[#8B949E] mb-1">Aporte del socio (COP)</label>
+                <input
+                  type="number"
+                  value={form.partnerContribution}
+                  onChange={(e) => handlePartnerContributionChange(e.target.value)}
+                  className="input w-full"
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+              {purchasePrice > 0 && partnerAmt > 0 && (
+                <div className="text-xs text-[#8B949E]">
+                  Tu aporte efectivo: <span className="text-[#E6EDF3] font-semibold">{formatCurrency(myOwedAmount)}</span>
+                  <span className="opacity-75"> (solo esto se descuenta de tu tesorería)</span>
+                </div>
+              )}
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.partnerAssumesExpenses}
+                  onChange={(e) => setForm({ ...form, partnerAssumesExpenses: e.target.checked })}
+                  className="mt-0.5 rounded border-border"
+                />
+                <span className="text-[#8B949E]">
+                  Los gastos se prorratean con el socio (pro-rata).
+                  <span className="block text-[10px] text-[#6E7681] mt-0.5">
+                    {form.partnerAssumesExpenses
+                      ? 'El socio asume su parte de los gastos en la liquidación.'
+                      : 'Tú asumes el 100% de los gastos; el socio recibe su % sobre la utilidad bruta.'}
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
         </div>
 
         {/* Pago */}
@@ -316,15 +415,15 @@ export default function PurchasePaymentModal({
                   onChange={(e) => handlePaymentAmountChange(e.target.value)}
                   className="input w-full"
                   min="1"
-                  max={purchasePrice}
+                  max={myOwedAmount || purchasePrice}
                 />
-                {purchasePrice > 0 && (
+                {myOwedAmount > 0 && (
                   <button
                     type="button"
-                    onClick={() => handlePaymentAmountChange(form.purchasePrice)}
+                    onClick={() => handlePaymentAmountChange(myOwedAmount.toString())}
                     className="text-xs text-accent hover:underline mt-1"
                   >
-                    Pagar total
+                    Pagar total ({formatCurrency(myOwedAmount)})
                   </button>
                 )}
               </div>
@@ -348,6 +447,18 @@ export default function PurchasePaymentModal({
                 <span className="text-[#8B949E]">Precio de compra:</span>
                 <span className="text-[#E6EDF3]">{formatCurrency(purchasePrice)}</span>
               </div>
+              {partnerAmt > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-[#8B949E]">Aporte socio:</span>
+                    <span className="text-sky-400">-{formatCurrency(partnerAmt)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-1 mt-1">
+                    <span className="text-[#8B949E]">Tu aporte:</span>
+                    <span className="text-[#E6EDF3]">{formatCurrency(myOwedAmount)}</span>
+                  </div>
+                </>
+              )}
               {payNow && paymentAmount > 0 && (
                 <div className="flex justify-between">
                   <span className="text-[#8B949E]">Pago inicial:</span>
@@ -388,7 +499,7 @@ export default function PurchasePaymentModal({
           <button
             type="submit"
             className="btn-primary flex-1"
-            disabled={loading || !form.plate || !form.purchasePrice}
+            disabled={loading || !form.plate || !form.purchasePrice || !form.supplierId}
           >
             {loading ? 'Procesando...' : 'Registrar Compra'}
           </button>

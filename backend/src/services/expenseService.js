@@ -29,47 +29,46 @@ class ExpenseService {
     });
   }
 
-  async create(data, userId) {
-    // Verify vehicle ownership
-    const vehicle = await prisma.vehicle.findFirst({ where: { id: data.vehicleId, userId } });
-    if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
-
-    return prisma.expense.create({ data });
-  }
-
   /**
-   * Crea un gasto con integración completa de tesorería
+   * Crea un gasto con integración obligatoria de tesorería.
+   * Todos los gastos deben estar asociados a una cuenta y descontar de tesorería
+   * (pagados) o registrarse como CxP pendiente.
+   *
    * @param {Object} data - Datos del gasto
-   * @param {boolean} data.isPaid - Si el gasto ya está pagado
-   * @param {string} data.accountId - Cuenta de donde sale el pago (requerido si isPaid=true)
+   * @param {string} data.accountId - Cuenta asociada (siempre obligatoria)
+   * @param {boolean} data.isPaid - Si el gasto ya está pagado (default: true)
    * @param {string} data.thirdPartyId - Tercero/proveedor (opcional)
    * @param {Date} data.dueDate - Fecha de vencimiento si no está pagado
    * @param {string} userId - ID del usuario
    */
   async createWithTreasury(data, userId) {
-    const { accountId, isPaid, thirdPartyId, dueDate, ...expenseData } = data;
+    const { accountId, isPaid = true, thirdPartyId, dueDate, ...expenseData } = data;
+
+    if (!accountId) {
+      throw new AppError('Debe seleccionar una cuenta de tesorería para registrar el gasto', 400);
+    }
 
     // Verify vehicle ownership
     const vehicle = await prisma.vehicle.findFirst({ where: { id: expenseData.vehicleId, userId } });
     if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
 
-    // Si está pagado, requiere cuenta
-    if (isPaid && !accountId) {
-      throw new AppError('Debe seleccionar una cuenta para registrar el pago', 400);
+    // Validar que la cuenta exista y esté activa
+    const account = await prisma.account.findUnique({ where: { id: accountId } });
+    if (!account || !account.isActive) {
+      throw new AppError('La cuenta seleccionada no existe o está inactiva', 400);
     }
 
     let warning = null;
 
-    // Verificar saldo si está pagado (warning only, no bloquear)
-    if (isPaid && accountId) {
+    // Verificar saldo solo si está pagado (warning only, no bloquear)
+    if (isPaid) {
       const accountService = require('./accountService');
-      const account = await prisma.account.findUnique({ where: { id: accountId } });
       const currentBalance = await accountService.calculateBalance(accountId);
 
       if (currentBalance < expenseData.amount) {
         warning = {
           type: 'NEGATIVE_BALANCE',
-          message: `La cuenta "${account?.name}" quedará con saldo negativo`,
+          message: `La cuenta "${account.name}" quedará con saldo negativo`,
           currentBalance,
           newBalance: currentBalance - expenseData.amount
         };
@@ -77,11 +76,11 @@ class ExpenseService {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Crear el gasto
       const expense = await tx.expense.create({
         data: {
           ...expenseData,
-          paid: isPaid || false
+          accountId,
+          paid: !!isPaid,
         }
       });
 
@@ -89,7 +88,6 @@ class ExpenseService {
       let payable = null;
 
       if (isPaid) {
-        // 2a. Si está pagado: crear transacción de egreso
         transaction = await tx.transaction.create({
           data: {
             accountId,
@@ -105,7 +103,6 @@ class ExpenseService {
           },
         });
       } else {
-        // 2b. Si no está pagado: crear CxP
         payable = await tx.payable.create({
           data: {
             type: 'PAYABLE',
@@ -126,29 +123,6 @@ class ExpenseService {
     });
 
     return { ...result, warning };
-  }
-
-  /**
-   * Crea un gasto con movimiento de tesorería asociado (legacy - mantener compatibilidad)
-   */
-  async createWithPayment(data, userId) {
-    const { accountId, ...expenseData } = data;
-
-    // Verify vehicle ownership
-    const vehicle = await prisma.vehicle.findFirst({ where: { id: expenseData.vehicleId, userId } });
-    if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
-
-    // Si no hay cuenta, crear gasto sin movimiento de tesorería
-    if (!accountId) {
-      return prisma.expense.create({ data: expenseData });
-    }
-
-    // Usar el nuevo método
-    return this.createWithTreasury({
-      ...expenseData,
-      accountId,
-      isPaid: true
-    }, userId).then(r => r.expense);
   }
 
   /**
@@ -373,11 +347,30 @@ class ExpenseService {
   async delete(id, userId) {
     const expense = await prisma.expense.findFirst({
       where: { id },
-      include: { vehicle: { select: { userId: true } } },
+      include: {
+        vehicle: { select: { userId: true } },
+        payable: { include: { payments: true } },
+      },
     });
     if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
 
-    await prisma.expense.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      // Limpiar pagos y payable asociados (reversan saldo a través de las transacciones vinculadas)
+      if (expense.payable) {
+        const paymentTxIds = expense.payable.payments.map(p => p.transactionId);
+        await tx.payablePayment.deleteMany({ where: { payableId: expense.payable.id } });
+        if (paymentTxIds.length > 0) {
+          await tx.transaction.deleteMany({ where: { id: { in: paymentTxIds } } });
+        }
+        await tx.payable.delete({ where: { id: expense.payable.id } });
+      }
+
+      // Limpiar transacción de egreso directa (gasto pagado al momento)
+      await tx.transaction.deleteMany({ where: { expenseId: id } });
+
+      await tx.expense.delete({ where: { id } });
+    });
+
     return { deleted: true };
   }
 }

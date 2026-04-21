@@ -64,10 +64,13 @@ model Vehicle {
   km                    Int?
   stage                 VehicleStage  @default(NEGOCIANDO)
 
+  negotiatedValue       Decimal?      @db.Decimal(15, 2)
   purchasePrice         Decimal?      @db.Decimal(15, 2)
   listedPrice           Decimal?      @db.Decimal(15, 2)
   salePrice             Decimal?      @db.Decimal(15, 2)
   participation         Decimal       @default(1.0) @db.Decimal(5, 4)
+  partnerContribution   Decimal?      @db.Decimal(15, 2)
+  partnerAssumesExpenses Boolean      @default(true)
 
   purchaseDate          DateTime?
   saleDate              DateTime?
@@ -78,6 +81,14 @@ model Vehicle {
 
   publishedPortals      String[]      @default([])
 
+  // Terceros asociados al vehículo
+  supplierId            String?
+  supplier              ThirdParty?   @relation("VehicleSupplier", fields: [supplierId], references: [id])
+  partnerId             String?
+  partner               ThirdParty?   @relation("VehiclePartner", fields: [partnerId], references: [id])
+  buyerId               String?
+  buyer                 ThirdParty?   @relation("VehicleBuyer", fields: [buyerId], references: [id])
+
   notes                 String?
   userId                String
   user                  User          @relation(fields: [userId], references: [id])
@@ -87,9 +98,13 @@ model Vehicle {
   expenses              Expense[]
   documents             Document[]
   payables              Payable[]
+  transactions          Transaction[]
 
   @@index([userId, stage])
   @@index([plate])
+  @@index([supplierId])
+  @@index([partnerId])
+  @@index([buyerId])
   @@map("vehicles")
 }
 
@@ -110,6 +125,8 @@ model Expense {
   id          String          @id @default(cuid())
   vehicleId   String
   vehicle     Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account         @relation(fields: [accountId], references: [id])
   category    ExpenseCategory
   amount      Decimal         @db.Decimal(15, 2)
   description String?
@@ -123,6 +140,7 @@ model Expense {
 
   @@index([vehicleId])
   @@index([category])
+  @@index([accountId])
   @@map("expenses")
 }
 
@@ -201,6 +219,7 @@ model Account {
   transfersFrom   Transfer[]    @relation("TransferFrom")
   transfersTo     Transfer[]    @relation("TransferTo")
   cashCounts      CashCount[]
+  expenses        Expense[]
 
   @@map("accounts")
 }
@@ -226,8 +245,11 @@ model ThirdParty {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  transactions Transaction[]
-  payables     Payable[]
+  transactions        Transaction[]
+  payables            Payable[]
+  vehiclesAsSupplier  Vehicle[]     @relation("VehicleSupplier")
+  vehiclesAsPartner   Vehicle[]     @relation("VehiclePartner")
+  vehiclesAsBuyer     Vehicle[]     @relation("VehicleBuyer")
 
   @@map("third_parties")
 }
@@ -235,6 +257,7 @@ model ThirdParty {
 enum ThirdPartyType {
   CLIENT
   SUPPLIER
+  PARTNER
   BOTH
 }
 
@@ -253,6 +276,7 @@ model Transaction {
   reference    String?
   date         DateTime            @default(now())
   vehicleId    String?
+  vehicle      Vehicle?            @relation(fields: [vehicleId], references: [id])
   thirdPartyId String?
   thirdParty   ThirdParty?         @relation(fields: [thirdPartyId], references: [id])
   transferId   String?

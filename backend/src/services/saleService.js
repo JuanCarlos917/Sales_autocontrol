@@ -34,9 +34,13 @@ const registerSale = async (vehicleId, saleData, userId) => {
     cashPayment,
     tradeIn,
     financing,
-    thirdPartyId,
+    buyerId,
+    thirdPartyId, // Deprecated, usar buyerId
     saleDate
   } = saleData;
+
+  // Usar buyerId si está presente, sino fallback a thirdPartyId
+  const clientId = buyerId || thirdPartyId;
 
   // Obtener el vehículo
   const vehicle = await prisma.vehicle.findUnique({
@@ -68,12 +72,13 @@ const registerSale = async (vehicleId, saleData, userId) => {
         stage: 'VENDIDO',
         salePrice: salePriceNum,
         saleDate: saleDate ? new Date(saleDate) : new Date(),
+        buyerId: clientId || null,
         // Si hay cruce, guardar datos
         receivedVehicle: tradeIn ? true : false,
         receivedVehiclePlate: tradeIn?.plate || null,
         receivedVehicleValue: tradeIn?.value || null
       },
-      include: { expenses: true, documents: true }
+      include: { expenses: true, documents: true, buyer: true }
     });
 
     // 2. Procesar pago en efectivo/transferencia
@@ -91,7 +96,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
           description: `Venta vehículo ${vehicle.plate}`,
           date: saleDate ? new Date(saleDate) : new Date(),
           vehicleId: vehicleId,
-          thirdPartyId: thirdPartyId || null,
+          thirdPartyId: clientId || null,
           createdBy: userId
         }
       });
@@ -146,7 +151,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
           dueDate: financing?.dueDate ? new Date(financing.dueDate) : null,
           description: `Venta vehículo ${vehicle.plate}`,
           vehicleId: vehicleId,
-          thirdPartyId: thirdPartyId || null,
+          thirdPartyId: clientId || null,
           createdBy: userId
         }
       });

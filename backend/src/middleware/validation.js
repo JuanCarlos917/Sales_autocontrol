@@ -59,6 +59,7 @@ const vehicleSchema = Joi.object({
   color: Joi.string().max(30).allow('', null),
   km: Joi.number().integer().min(0).allow(null),
   stage: Joi.string().valid('NEGOCIANDO', 'COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO').default('NEGOCIANDO'),
+  negotiatedValue: Joi.number().min(0).allow(null),
   purchasePrice: Joi.number().min(0).allow(null),
   listedPrice: Joi.number().min(0).allow(null),
   salePrice: Joi.number().min(0).allow(null),
@@ -70,11 +71,48 @@ const vehicleSchema = Joi.object({
   receivedVehicleValue: Joi.number().min(0).allow(null),
   publishedPortals: Joi.array().items(Joi.string()).default([]),
   notes: Joi.string().max(2000).allow('', null),
+  // Terceros asociados
+  supplierId: Joi.string().allow(null),
+  partnerId: Joi.string().allow(null),
+  buyerId: Joi.string().allow(null),
+  // Socio
+  partnerContribution: Joi.number().min(0).allow(null),
+  partnerAssumesExpenses: Joi.boolean().default(true),
 });
 
 const vehicleStageSchema = Joi.object({
   stage: Joi.string().valid('NEGOCIANDO', 'COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO').required(),
 });
+
+// Schema para actualizaciones parciales (no requiere plate)
+const vehicleUpdateSchema = Joi.object({
+  plate: Joi.string().max(10),
+  brand: Joi.string().max(50).allow('', null),
+  model: Joi.string().max(50).allow('', null),
+  year: Joi.number().integer().min(1980).max(2030).allow(null),
+  color: Joi.string().max(30).allow('', null),
+  km: Joi.number().integer().min(0).allow(null),
+  stage: Joi.string().valid('NEGOCIANDO', 'COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'),
+  negotiatedValue: Joi.number().min(0).allow(null),
+  purchasePrice: Joi.number().min(0).allow(null),
+  listedPrice: Joi.number().min(0).allow(null),
+  salePrice: Joi.number().min(0).allow(null),
+  participation: Joi.number().min(0).max(1),
+  purchaseDate: Joi.date().allow(null),
+  saleDate: Joi.date().allow(null),
+  receivedVehicle: Joi.boolean(),
+  receivedVehiclePlate: Joi.string().max(10).allow('', null),
+  receivedVehicleValue: Joi.number().min(0).allow(null),
+  publishedPortals: Joi.array().items(Joi.string()),
+  notes: Joi.string().max(2000).allow('', null),
+  // Terceros asociados
+  supplierId: Joi.string().allow(null),
+  partnerId: Joi.string().allow(null),
+  buyerId: Joi.string().allow(null),
+  // Socio
+  partnerContribution: Joi.number().min(0).allow(null),
+  partnerAssumesExpenses: Joi.boolean(),
+}).min(1); // Requiere al menos un campo
 
 // ── Vehicle Purchase Schema (compra con pago) ──
 const vehiclePurchaseSchema = Joi.object({
@@ -86,15 +124,42 @@ const vehiclePurchaseSchema = Joi.object({
     color: Joi.string().max(30).allow('', null),
     km: Joi.number().integer().min(0).allow(null),
     stage: Joi.string().valid('NEGOCIANDO', 'COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO').default('COMPRADO'),
+    negotiatedValue: Joi.number().min(0).allow(null),
     purchasePrice: Joi.number().min(0).allow(null),
     listedPrice: Joi.number().min(0).allow(null),
     participation: Joi.number().min(0).max(1).default(1),
     purchaseDate: Joi.date().allow(null),
     notes: Joi.string().max(2000).allow('', null),
+    supplierId: Joi.string().required().messages({ 'any.required': 'Proveedor es requerido' }),
+    partnerId: Joi.string().allow(null),
+    partnerContribution: Joi.number().min(0).allow(null),
+    partnerAssumesExpenses: Joi.boolean().default(true),
   }).required(),
   payment: Joi.object({
     accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida para el pago' }),
     amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+    thirdPartyId: Joi.string().allow(null),
+    date: Joi.date().allow(null),
+    dueDate: Joi.date().allow(null),
+  }).allow(null),
+});
+
+// ── Vehicle Confirm Purchase Schema (pasar de NEGOCIANDO a COMPRADO) ──
+const vehicleConfirmPurchaseSchema = Joi.object({
+  vehicle: Joi.object({
+    purchasePrice: Joi.number().positive().required().messages({ 'any.required': 'Precio de compra es requerido' }),
+    purchaseDate: Joi.date().allow(null),
+    listedPrice: Joi.number().min(0).allow(null),
+    supplierId: Joi.string().allow(null),
+    partnerId: Joi.string().allow(null),
+    partnerContribution: Joi.number().min(0).allow(null),
+    participation: Joi.number().min(0).max(1).allow(null),
+    partnerAssumesExpenses: Joi.boolean().allow(null),
+    notes: Joi.string().max(2000).allow('', null),
+  }).required(),
+  payment: Joi.object({
+    accountId: Joi.string().allow(null),
+    amount: Joi.number().min(0).allow(null),
     thirdPartyId: Joi.string().allow(null),
     date: Joi.date().allow(null),
     dueDate: Joi.date().allow(null),
@@ -114,7 +179,8 @@ const vehicleSaleSchema = Joi.object({
   salePrice: Joi.number().positive().required().messages({ 'any.required': 'Precio de venta es requerido' }),
   paymentType: Joi.string().valid('CASH', 'TRANSFER', 'TRADE_IN', 'FINANCED', 'MIXED').required(),
   saleDate: Joi.date().allow(null),
-  thirdPartyId: Joi.string().allow(null),
+  buyerId: Joi.string().required().messages({ 'any.required': 'Cliente (comprador) es requerido' }),
+  thirdPartyId: Joi.string().allow(null), // Deprecated, usar buyerId
   // Pago en efectivo/transferencia
   cashPayment: Joi.object({
     accountId: Joi.string().required(),
@@ -157,6 +223,7 @@ const expenseSchema = Joi.object({
 });
 
 // ── Expense with Treasury Schema ──
+// accountId SIEMPRE obligatorio: todo gasto debe estar asociado a una cuenta
 const expenseWithTreasurySchema = Joi.object({
   vehicleId: Joi.string().required(),
   category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'COMISION', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO').required(),
@@ -164,9 +231,8 @@ const expenseWithTreasurySchema = Joi.object({
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(1000).allow('', null),
   date: Joi.date().allow(null),
-  // Campos de tesorería
-  isPaid: Joi.boolean().required().messages({ 'any.required': 'Debe indicar si el gasto está pagado' }),
-  accountId: Joi.string().when('isPaid', { is: true, then: Joi.required(), otherwise: Joi.allow(null) }),
+  isPaid: Joi.boolean().default(true),
+  accountId: Joi.string().required().messages({ 'any.required': 'Debe seleccionar una cuenta de tesorería' }),
   thirdPartyId: Joi.string().allow(null),
   dueDate: Joi.date().allow(null),
 });
@@ -208,7 +274,7 @@ const accountUpdateSchema = Joi.object({
 // ── ThirdParty Schemas ──
 const thirdPartySchema = Joi.object({
   name: Joi.string().max(200).required().messages({ 'any.required': 'Nombre es requerido' }),
-  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'BOTH').required(),
+  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'PARTNER', 'BOTH').required(),
   document: Joi.string().max(20).allow('', null),
   phone: Joi.string().max(20).allow('', null),
   email: Joi.string().email().allow('', null),
@@ -295,8 +361,10 @@ module.exports = {
     register: registerSchema,
     changePassword: changePasswordSchema,
     vehicle: vehicleSchema,
+    vehicleUpdate: vehicleUpdateSchema,
     vehicleStage: vehicleStageSchema,
     vehiclePurchase: vehiclePurchaseSchema,
+    vehicleConfirmPurchase: vehicleConfirmPurchaseSchema,
     vehiclePayment: vehiclePaymentSchema,
     vehicleSale: vehicleSaleSchema,
     vehicleCollection: vehicleCollectionSchema,

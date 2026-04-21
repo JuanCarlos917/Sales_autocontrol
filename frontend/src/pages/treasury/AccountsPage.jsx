@@ -9,7 +9,7 @@ import Modal from '@/components/shared/Modal';
 
 const ACCOUNT_TYPES = [
   { id: 'CASH', label: 'Efectivo / Caja' },
-  { id: 'SAVINGS', label: 'Cuenta de Ahorros' },
+  { id: 'BANK', label: 'Cuenta de Ahorros' },
 ];
 
 export default function AccountsPage() {
@@ -139,7 +139,7 @@ export default function AccountsPage() {
               ))}
             </select>
           </div>
-          {form.type === 'SAVINGS' && (
+          {form.type === 'BANK' && (
             <>
               <div>
                 <label className="block text-sm text-[#8B949E] mb-1">Banco</label>

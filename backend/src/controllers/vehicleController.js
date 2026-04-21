@@ -70,6 +70,23 @@ const createWithPurchase = async (req, res, next) => {
 };
 
 /**
+ * POST /vehicles/:id/confirm-purchase
+ * Confirmar compra de un vehículo en NEGOCIANDO
+ */
+const confirmPurchase = async (req, res, next) => {
+  try {
+    const { vehicle: vehicleData, payment: paymentData } = req.body;
+    const result = await purchaseService.confirmPurchase(
+      req.params.id,
+      vehicleData,
+      paymentData,
+      req.user.id
+    );
+    res.status(200).json(result);
+  } catch (err) { next(err); }
+};
+
+/**
  * POST /vehicles/:id/payments
  * Registrar pago adicional a compra de vehículo
  */
@@ -159,6 +176,7 @@ module.exports = {
   updateStage,
   remove,
   createWithPurchase,
+  confirmPurchase,
   addPayment,
   getPaymentStatus,
   registerSale,

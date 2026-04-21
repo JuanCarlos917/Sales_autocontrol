@@ -35,6 +35,9 @@ export const vehicleTreasuryApi = {
   // Crear vehiculo con flujo de compra
   createWithPurchase: (data) => api.post('/vehicles/purchase', data),
 
+  // Confirmar compra de un vehiculo en NEGOCIANDO
+  confirmPurchase: (vehicleId, data) => api.post(`/vehicles/${vehicleId}/confirm-purchase`, data),
+
   // Obtener estado de pagos de un vehiculo
   getPaymentStatus: (vehicleId) => api.get(`/vehicles/${vehicleId}/payment-status`),
 
