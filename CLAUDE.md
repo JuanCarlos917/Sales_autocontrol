@@ -1,5 +1,27 @@
 # CLAUDE.md — AutoControl Project Context
 
+## Reglas de comportamiento del agente
+
+- Piensa antes de actuar. Lee los archivos antes de escribir código.
+- Edita solo lo que cambia. Nunca reescribas archivos enteros.
+- No releas archivos que ya hayas leído salvo que hayan cambiado.
+- No repitas código sin cambios en tus respuestas.
+- Sin preámbulos, sin resúmenes al final, sin explicar lo obvio.
+- Testea antes de dar por terminado.
+
+## Skills obligatorias por tipo de cambio
+
+Antes de iniciar cualquier desarrollo, invocar las siguientes skills según el escenario. No son opcionales.
+
+- **Feature nuevo o bugfix** → invocar `tdd-workflow` ANTES de escribir código (test primero).
+- **Cambios al schema de Prisma** → invocar `database-migrations` antes de generar la migración.
+- **Endpoints nuevos o modificados** → invocar `api-design` al diseñar el contrato (paginación, errores, status codes).
+- **Flujos críticos de UI o nuevas pantallas** → invocar `e2e-testing` para agregar/actualizar Playwright.
+- **Antes de marcar un cambio como completo** → invocar `verification-loop` (build + lint + tests + security).
+- **Queries Postgres lentas, nuevos índices o cambios de tablas con datos** → invocar `postgres-best-practices`.
+
+Si el cambio toca varios escenarios, invocar todas las que apliquen, en el orden listado.
+
 ## Proyecto
 AutoControl es un sistema de gestión financiera para compra y venta de vehículos en Colombia.
 Stack: React 18 + Vite + TailwindCSS (frontend) | Node.js + Express + Prisma + PostgreSQL (backend).
