@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const config = require('../config');
@@ -124,9 +125,10 @@ class AuthService {
   // ── Helpers internos ──
 
   async _generateTokens(userId) {
-    const accessToken = jwt.sign({ userId }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
+    const jti = crypto.randomUUID();
+    const accessToken = jwt.sign({ userId, jti }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
 
-    const refreshToken = jwt.sign({ userId, type: 'refresh' }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiresIn });
+    const refreshToken = jwt.sign({ userId, type: 'refresh', jti }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiresIn });
 
     // Guardar refresh token en DB
     const expiresAt = new Date();
