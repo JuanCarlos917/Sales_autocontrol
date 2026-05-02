@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/test';
 
 const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
 

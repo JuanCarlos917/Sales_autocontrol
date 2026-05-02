@@ -59,3 +59,38 @@ export interface VehicleInput {
 export async function apiCreateVehicle(token: string, data: VehicleInput): Promise<{ id: string; plate: string }> {
   return postJson('/vehicles', data, token);
 }
+
+export interface ConfirmPurchasePayload {
+  vehicle: {
+    purchasePrice: number;
+    supplierId?: string | null;
+    listedPrice?: number | null;
+  };
+  payment: {
+    accountId?: string | null;
+    amount?: number | null;
+    thirdPartyId?: string | null;
+    dueDate?: string | null;
+  };
+}
+
+export async function apiConfirmPurchase(
+  token: string,
+  vehicleId: string,
+  payload: ConfirmPurchasePayload,
+): Promise<unknown> {
+  return postJson(`/vehicles/${vehicleId}/confirm-purchase`, payload, token);
+}
+
+export interface Payable {
+  id: string;
+  vehicleId: string | null;
+  type: 'PAYABLE' | 'RECEIVABLE';
+  status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  totalAmount: string | number;
+  paidAmount: string | number;
+}
+
+export async function apiListPayables(token: string): Promise<Payable[]> {
+  return getJson('/payables', token);
+}

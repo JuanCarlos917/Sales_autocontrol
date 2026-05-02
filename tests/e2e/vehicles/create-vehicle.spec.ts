@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/test';
 import { loginAsAdmin } from '../../fixtures/auth';
 
 test.describe('Vehículos — crear en NEGOCIANDO', () => {

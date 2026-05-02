@@ -48,7 +48,7 @@ export default function PaymentModal({
       const { data } = await accountsApi.getAll();
       setAccounts(data.filter(a => a.isActive));
       if (data.length > 0) {
-        setForm(f => ({ ...f, accountId: data[0].id }));
+        setForm(f => (f.accountId ? f : { ...f, accountId: data[0].id }));
       }
     } catch (err) {
       console.error('Error loading accounts:', err);
@@ -148,6 +148,7 @@ export default function PaymentModal({
             onChange={(e) => handleAccountChange(e.target.value)}
             className="input w-full"
             required
+            data-testid="payment-modal-account"
           >
             <option value="">Seleccionar cuenta</option>
             {accounts.map((a) => (
@@ -225,6 +226,7 @@ export default function PaymentModal({
             type="submit"
             className={`btn-primary flex-1 ${isIncome ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
             disabled={loading || !form.accountId || !form.amount}
+            data-testid="payment-modal-submit"
           >
             {loading ? 'Procesando...' : isIncome ? 'Registrar Cobro' : 'Registrar Pago'}
           </button>

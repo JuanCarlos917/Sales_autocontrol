@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/test';
 import { loginAsAdmin } from '../../fixtures/auth';
 import { apiCreateVehicle, apiGetAccount } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
@@ -39,7 +39,13 @@ test.describe('Tesorería — confirmar compra desde VehicleDetailPage', () => {
     await expect(accountSelect).toBeVisible({ timeout: 5_000 });
     await accountSelect.selectOption(TEST_SEED_IDS.accountCash);
 
-    await page.getByTestId('vehicle-form-submit').click();
+    await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes('/confirm-purchase') && resp.status() === 200,
+        { timeout: 10_000 },
+      ),
+      page.getByTestId('vehicle-form-submit').click(),
+    ]);
 
     await page.goto('/');
     await expect(

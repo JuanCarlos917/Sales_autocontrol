@@ -286,6 +286,7 @@ export default function PayablesPage() {
                   {payable.status !== 'PAID' && payable.status !== 'CANCELLED' && (
                     <button
                       onClick={(e) => handlePaymentClick(e, payable)}
+                      data-testid={`payable-pay-${payable.id}`}
                       className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors ${
                         isReceivable
                           ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'

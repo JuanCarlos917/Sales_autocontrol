@@ -183,7 +183,7 @@ export default function TransactionsPage() {
         <div className="flex gap-2">
           <button onClick={() => openModal('income')} className="btn-primary text-sm bg-green-600 hover:bg-green-700">+ Ingreso</button>
           <button onClick={() => openModal('expense')} className="btn-primary text-sm bg-red-600 hover:bg-red-700">+ Egreso</button>
-          <button onClick={() => openModal('transfer')} className="btn-ghost text-sm">↔ Transferencia</button>
+          <button onClick={() => openModal('transfer')} className="btn-ghost text-sm" data-testid="transactions-transfer-button">↔ Transferencia</button>
         </div>
       </div>
 
@@ -292,6 +292,7 @@ export default function TransactionsPage() {
                   onChange={(e) => setForm({ ...form, fromAccountId: e.target.value })}
                   className="input w-full"
                   required
+                  data-testid="transfer-from-account"
                 >
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
@@ -305,6 +306,7 @@ export default function TransactionsPage() {
                   onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
                   className="input w-full"
                   required
+                  data-testid="transfer-to-account"
                 >
                   {accounts.filter(a => a.id !== form.fromAccountId).map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
@@ -364,6 +366,7 @@ export default function TransactionsPage() {
               className="input w-full"
               min="1"
               required
+              data-testid="transactions-modal-amount"
             />
           </div>
           <div>
@@ -386,7 +389,7 @@ export default function TransactionsPage() {
           </div>
           <div className="flex gap-2 pt-2">
             <button type="button" onClick={() => setShowModal(false)} className="btn-ghost flex-1">Cancelar</button>
-            <button type="submit" className="btn-primary flex-1">Guardar</button>
+            <button type="submit" className="btn-primary flex-1" data-testid="transactions-modal-submit">Guardar</button>
           </div>
         </form>
       </Modal>
