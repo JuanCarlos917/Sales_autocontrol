@@ -201,6 +201,7 @@ export default function SalePaymentModal({
               className="input w-full text-lg font-semibold"
               min="1"
               required
+              data-testid="sale-price"
             />
           </div>
 
@@ -221,6 +222,7 @@ export default function SalePaymentModal({
                   type="button"
                   onClick={() => handleTypeSelect(type.id)}
                   disabled={!form.salePrice}
+                  data-testid={`sale-payment-type-${type.id}`}
                   className={`p-3 rounded-lg border text-left transition-colors ${
                     !form.salePrice
                       ? 'border-border bg-surface opacity-50 cursor-not-allowed'
@@ -295,6 +297,7 @@ export default function SalePaymentModal({
                     onChange={(e) => setForm({ ...form, cashAccountId: e.target.value })}
                     className="input w-full"
                     required
+                    data-testid="sale-cash-account"
                   >
                     <option value="">Seleccionar</option>
                     {accounts.map((a) => (
@@ -311,6 +314,7 @@ export default function SalePaymentModal({
                     className="input w-full"
                     min="1"
                     required
+                    data-testid="sale-cash-amount"
                   />
                 </div>
               </div>
@@ -423,6 +427,7 @@ export default function SalePaymentModal({
               type="submit"
               className="btn-primary flex-1 bg-green-600 hover:bg-green-700"
               disabled={loading}
+              data-testid="sale-submit"
             >
               {loading ? 'Procesando...' : 'Confirmar Venta'}
             </button>

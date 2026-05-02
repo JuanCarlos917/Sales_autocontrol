@@ -22,8 +22,8 @@ app.use(cors({
   credentials: true,
 }));
 
-// ── Rate Limiting (disabled in development) ──
-if (config.nodeEnv !== 'development') {
+// ── Rate Limiting (disabled in development and test) ──
+if (!['development', 'test'].includes(config.nodeEnv)) {
   const limiter = rateLimit({
     windowMs: config.rateLimit.windowMs,
     max: config.rateLimit.max,

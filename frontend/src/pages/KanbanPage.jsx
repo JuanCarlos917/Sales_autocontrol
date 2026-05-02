@@ -253,7 +253,7 @@ export default function KanbanPage() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-[#8B949E]">{vehicles.length} vehículo{vehicles.length !== 1 ? 's' : ''} en el pipeline</p>
-        <button onClick={() => setShowForm(true)} className="btn-primary">+ Vehículo</button>
+        <button onClick={() => setShowForm(true)} className="btn-primary" data-testid="kanban-create-vehicle">+ Vehículo</button>
       </div>
 
       {/* Contenedor con botones de navegación */}
@@ -294,6 +294,7 @@ export default function KanbanPage() {
 
           return (
             <div key={stage.id}
+              data-testid={`kanban-column-${stage.id}`}
               onDragOver={e => { e.preventDefault(); setDragOver(stage.id); }}
               onDragLeave={() => setDragOver(null)}
               onDrop={e => handleDrop(e, stage.id)}
@@ -334,6 +335,7 @@ export default function KanbanPage() {
 
                   return (
                     <div key={v.id} draggable
+                      data-testid={`vehicle-card-${v.plate}`}
                       onDragStart={e => e.dataTransfer.setData('vid', v.id)}
                       onClick={() => navigate(`/vehicles/${v.id}`)}
                       className="bg-[#161B22] border border-border rounded-lg p-3.5 cursor-pointer transition-all hover:border-accent/30 hover:-translate-y-0.5 !cursor-pointer"

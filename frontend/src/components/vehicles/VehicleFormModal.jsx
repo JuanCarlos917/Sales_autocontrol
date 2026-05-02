@@ -328,8 +328,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Input label="Placa *" value={f.plate} onChange={e => s('plate', e.target.value.toUpperCase())} placeholder="ABC123" />
-        <Select label="Estado" value={f.stage} onChange={e => s('stage', e.target.value)} options={STAGES.map(st => ({ value: st.id, label: st.label }))} />
+        <Input label="Placa *" value={f.plate} onChange={e => s('plate', e.target.value.toUpperCase())} placeholder="ABC123" data-testid="vehicle-form-plate" />
+        <Select label="Estado" value={f.stage} onChange={e => s('stage', e.target.value)} options={STAGES.map(st => ({ value: st.id, label: st.label }))} data-testid="vehicle-form-stage" />
         <Input label="Marca" value={f.brand} onChange={e => s('brand', e.target.value)} placeholder="Chevrolet" />
         <Input label="Modelo" value={f.model} onChange={e => s('model', e.target.value)} placeholder="Spark GT" />
         <Input label="Año" type="number" value={f.year} onChange={e => s('year', e.target.value)} placeholder="2020" />
@@ -357,6 +357,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="25000000"
             error={highlight('negotiatedValue')}
             autoFocus={!!highlight('negotiatedValue')}
+            data-testid="vehicle-form-negotiated-value"
           />
         )}
 
@@ -381,6 +382,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
               disabled={priceLocked}
               autoFocus={(isConfirmingPurchase && !f.purchasePrice) || !!highlight('purchasePrice')}
               error={highlight('purchasePrice')}
+              data-testid="vehicle-form-purchase-price"
             />
             <Input
               label="Fecha de Compra"
@@ -567,6 +569,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
                   onChange={e => setAccountId(e.target.value)}
                   className="input w-full"
                   required
+                  data-testid="vehicle-form-payment-account"
                 >
                   <option value="">Seleccionar cuenta</option>
                   {accounts.map(a => (
@@ -658,7 +661,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
 
       <div className="flex justify-end gap-2 mt-5">
         <button onClick={onClose} className="btn-ghost">Cancelar</button>
-        <button onClick={handleSave} disabled={loading} className="btn-primary">{loading ? 'Guardando...' : vehicle ? 'Guardar Cambios' : 'Registrar Vehículo'}</button>
+        <button onClick={handleSave} disabled={loading} className="btn-primary" data-testid="vehicle-form-submit">{loading ? 'Guardando...' : vehicle ? 'Guardar Cambios' : 'Registrar Vehículo'}</button>
       </div>
     </Modal>
   );

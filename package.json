@@ -1,0 +1,16 @@
+{
+  "name": "autocontrol-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "E2E tests for AutoControl (root-level Playwright)",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "pg": "^8.13.0"
+  }
+}

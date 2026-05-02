@@ -5,3 +5,9 @@ dist/
 backups/
 *.log
 nginx/ssl/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
