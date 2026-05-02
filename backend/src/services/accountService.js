@@ -39,7 +39,6 @@ class AccountService {
       data: {
         ...accountData,
         initialBalance: initialBalanceNum,
-        currentBalance: initialBalanceNum,
       },
     });
 

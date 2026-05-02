@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const prisma = require('../config/database');
+const accountService = require('./accountService');
 
 const ALERT_TYPES = {
   NEGATIVE_BALANCE: 'negative_balance',
@@ -72,13 +73,8 @@ class AlertService {
    * Verificar cuentas con saldo negativo
    */
   async checkNegativeBalances() {
-    const accounts = await prisma.account.findMany({
-      where: {
-        isActive: true,
-        currentBalance: { lt: 0 },
-      },
-      select: { id: true, name: true, type: true, currentBalance: true },
-    });
+    const allAccounts = await accountService.findAll({ isActive: true });
+    const accounts = allAccounts.filter(a => parseFloat(a.currentBalance) < 0);
 
     return accounts.map(account => ({
       id: `${ALERT_TYPES.NEGATIVE_BALANCE}_${account.id}`,
@@ -98,12 +94,8 @@ class AlertService {
    * Verificar saldo bajo (< umbral configurable)
    */
   async checkLowBalance(threshold = 1000000) {
-    const totalBalance = await prisma.account.aggregate({
-      where: { isActive: true },
-      _sum: { currentBalance: true },
-    });
-
-    const total = parseFloat(totalBalance._sum?.currentBalance || 0);
+    const accounts = await accountService.findAll({ isActive: true });
+    const total = accounts.reduce((sum, a) => sum + parseFloat(a.currentBalance), 0);
 
     if (total > 0 && total < threshold) {
       return [{
