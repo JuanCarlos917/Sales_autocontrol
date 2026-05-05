@@ -94,3 +94,59 @@ export interface Payable {
 export async function apiListPayables(token: string): Promise<Payable[]> {
   return getJson('/payables', token);
 }
+
+export interface LoanInstallmentInput {
+  sequence: number;
+  dueDate: string;
+  plannedAmount: number;
+}
+
+export interface LoanCreateInput {
+  borrowerId: string;
+  originAccountId: string;
+  principalAmount: number;
+  description?: string | null;
+  installments: LoanInstallmentInput[];
+}
+
+export interface Loan {
+  id: string;
+  borrowerId: string;
+  principalAmount: string | number;
+  paidAmount: string | number;
+  extraReceived: string | number;
+  status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  installments: Array<{
+    id: string;
+    sequence: number;
+    plannedAmount: string | number;
+    paidAmount: string | number;
+    status: 'PENDING' | 'PARTIAL' | 'PAID';
+    dueDate: string;
+  }>;
+  isOverdue: boolean;
+}
+
+export async function apiCreateLoan(token: string, data: LoanCreateInput): Promise<Loan> {
+  return postJson('/loans', data, token);
+}
+
+export async function apiListLoans(token: string): Promise<Loan[]> {
+  return getJson('/loans', token);
+}
+
+export async function apiGetLoan(token: string, id: string): Promise<Loan> {
+  return getJson(`/loans/${id}`, token);
+}
+
+export interface LoanPaymentInput {
+  accountId: string;
+  principalAmount: number;
+  extraAmount?: number;
+  date?: string | null;
+  notes?: string | null;
+}
+
+export async function apiAddLoanPayment(token: string, loanId: string, data: LoanPaymentInput): Promise<Loan> {
+  return postJson(`/loans/${loanId}/payments`, data, token);
+}
