@@ -136,6 +136,122 @@ class LoanService {
     if (!loan) throw new AppError('Préstamo no encontrado', 404);
     return annotateOverdue(loan);
   }
+
+  async addPayment(loanId, { accountId, principalAmount, extraAmount, date, notes }, userId) {
+    const principal = parseFloat(principalAmount || 0);
+    const extra = parseFloat(extraAmount || 0);
+
+    if (principal + extra <= 0) {
+      throw new AppError('El pago debe tener monto > 0 (principal o extra)', 400);
+    }
+
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: { installments: { orderBy: { sequence: 'asc' } }, borrower: true },
+    });
+    if (!loan) throw new AppError('Préstamo no encontrado', 404);
+    if (loan.status === 'CANCELLED') throw new AppError('Préstamo cancelado', 400);
+    if (loan.status === 'PAID') throw new AppError('Préstamo ya está totalmente pagado', 400);
+
+    const remaining = parseFloat(loan.principalAmount) - parseFloat(loan.paidAmount);
+    if (principal > remaining + 0.001) {
+      throw new AppError(`El monto principal (${principal}) excede el saldo pendiente (${remaining}). Usá el campo extra para el sobrante.`, 400);
+    }
+
+    const account = await prisma.account.findUnique({ where: { id: accountId } });
+    if (!account || !account.isActive) throw new AppError('Cuenta destino no encontrada o inactiva', 404);
+
+    const paymentDate = date ? new Date(date) : new Date();
+
+    let remainingPrincipal = principal;
+    const installmentUpdates = [];
+    for (const inst of loan.installments) {
+      if (remainingPrincipal <= 0) break;
+      const owed = parseFloat(inst.plannedAmount) - parseFloat(inst.paidAmount);
+      if (owed <= 0) continue;
+      const apply = Math.min(owed, remainingPrincipal);
+      const newPaid = parseFloat(inst.paidAmount) + apply;
+      installmentUpdates.push({
+        id: inst.id,
+        newPaid,
+        newStatus: recomputeInstallmentStatus(inst.plannedAmount, newPaid),
+      });
+      remainingPrincipal -= apply;
+    }
+
+    const newLoanPaid = parseFloat(loan.paidAmount) + principal;
+    const newLoanExtra = parseFloat(loan.extraReceived) + extra;
+    const newLoanStatus = recomputeLoanStatus(loan.principalAmount, newLoanPaid);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const payment = await tx.loanPayment.create({
+        data: {
+          loanId,
+          accountId,
+          principalAmount: principal,
+          extraAmount: extra,
+          date: paymentDate,
+          notes: notes || null,
+          createdBy: userId,
+        },
+      });
+
+      if (principal > 0) {
+        await tx.transaction.create({
+          data: {
+            accountId,
+            type: 'INCOME',
+            category: 'LOAN_REPAYMENT',
+            amount: principal,
+            description: `Pago préstamo: ${loan.borrower.name}`,
+            date: paymentDate,
+            thirdPartyId: loan.borrowerId,
+            loanId,
+            loanPaymentId: payment.id,
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (extra > 0) {
+        await tx.transaction.create({
+          data: {
+            accountId,
+            type: 'INCOME',
+            category: 'LOAN_EXTRA_INCOME',
+            amount: extra,
+            description: `Ingreso extra del préstamo: ${loan.borrower.name}`,
+            date: paymentDate,
+            thirdPartyId: loan.borrowerId,
+            loanId,
+            loanPaymentId: payment.id,
+            createdBy: userId,
+          },
+        });
+      }
+
+      for (const u of installmentUpdates) {
+        await tx.loanInstallment.update({
+          where: { id: u.id },
+          data: { paidAmount: u.newPaid, status: u.newStatus },
+        });
+      }
+
+      const updatedLoan = await tx.loan.update({
+        where: { id: loanId },
+        data: {
+          paidAmount: newLoanPaid,
+          extraReceived: newLoanExtra,
+          status: newLoanStatus,
+        },
+        include: LOAN_INCLUDE,
+      });
+
+      return updatedLoan;
+    });
+
+    return annotateOverdue(result);
+  }
 }
 
 module.exports = new LoanService();
