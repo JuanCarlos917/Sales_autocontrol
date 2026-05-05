@@ -9,6 +9,7 @@ const TYPE_LABELS = {
   SUPPLIER: 'Proveedor',
   CLIENT: 'Cliente',
   PARTNER: 'Socio',
+  EMPLOYEE: 'Empleado',
   BOTH: 'Cliente/Proveedor',
 };
 
@@ -16,6 +17,7 @@ const TYPE_COLORS = {
   SUPPLIER: 'text-blue-400',
   CLIENT: 'text-green-400',
   PARTNER: 'text-purple-400',
+  EMPLOYEE: 'text-amber-400',
   BOTH: 'text-amber-400',
 };
 
@@ -223,6 +225,7 @@ export default function ThirdPartySelector({
                     <option value="SUPPLIER">Proveedor</option>
                     <option value="CLIENT">Cliente</option>
                     <option value="PARTNER">Socio</option>
+                    <option value="EMPLOYEE">Empleado</option>
                     <option value="BOTH">Cliente/Proveedor</option>
                   </select>
                 </div>
