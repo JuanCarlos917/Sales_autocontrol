@@ -276,6 +276,11 @@ export default function TreasuryPage() {
           <div className="text-sm text-[#E6EDF3]">Arqueo</div>
           <div className="text-xs text-[#6E7681] mt-1">Verificar efectivo</div>
         </Link>
+        <Link to="/treasury/loans" className="card p-4 text-center hover:bg-surface-hover transition-colors">
+          <div className="text-2xl mb-2">💸</div>
+          <div className="text-sm text-[#E6EDF3]">Préstamos</div>
+          <div className="text-xs text-[#6E7681] mt-1">Internos a terceros</div>
+        </Link>
       </div>
     </div>
   );

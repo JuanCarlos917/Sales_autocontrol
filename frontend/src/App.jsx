@@ -19,6 +19,7 @@ import ThirdPartiesPage from '@/pages/treasury/ThirdPartiesPage';
 import TransactionsPage from '@/pages/treasury/TransactionsPage';
 import CashCountPage from '@/pages/treasury/CashCountPage';
 import PayablesPage from '@/pages/treasury/PayablesPage';
+import LoansPage from '@/pages/treasury/LoansPage';
 // Alerts
 import AlertsPage from '@/pages/AlertsPage';
 
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="treasury/transactions" element={<TransactionsPage />} />
           <Route path="treasury/cash-count" element={<CashCountPage />} />
           <Route path="treasury/payables" element={<PayablesPage />} />
+          <Route path="treasury/loans" element={<LoansPage />} />
           <Route path="expenses" element={<ExpensesPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="settings" element={<SettingsPage />} />
