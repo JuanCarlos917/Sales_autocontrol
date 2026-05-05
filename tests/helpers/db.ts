@@ -42,8 +42,9 @@ async function seedAccountsAndParties(client: Client) {
     `INSERT INTO third_parties (id, name, type, "isActive", "createdAt", "updatedAt")
      VALUES
        ($1, 'Proveedor Test', 'SUPPLIER', true, NOW(), NOW()),
-       ($2, 'Cliente Test', 'CLIENT', true, NOW(), NOW())`,
-    [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer],
+       ($2, 'Cliente Test', 'CLIENT', true, NOW(), NOW()),
+       ($3, 'Empleado Test', 'EMPLOYEE', true, NOW(), NOW())`,
+    [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer, TEST_SEED_IDS.employee],
   );
 }
 
