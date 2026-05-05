@@ -12,3 +12,7 @@ export { default as PayablesList } from './PayablesList';
 export { default as BalanceCard } from './BalanceCard';
 export { default as PayablesWidget, ReceivablesWidget, PayablesWidgetCxP } from './PayablesWidget';
 export { default as CashFlowChart } from './CashFlowChart';
+
+// Loans
+export { default as NewLoanModal } from './NewLoanModal';
+export { default as LoanPaymentModal } from './LoanPaymentModal';
