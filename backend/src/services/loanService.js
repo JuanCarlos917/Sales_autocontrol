@@ -114,6 +114,28 @@ class LoanService {
 
     return annotateOverdue(result);
   }
+
+  async list({ status, borrowerId, overdueOnly } = {}) {
+    const where = {};
+    if (status) where.status = status;
+    if (borrowerId) where.borrowerId = borrowerId;
+    const loans = await prisma.loan.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: LOAN_INCLUDE,
+    });
+    const annotated = loans.map(annotateOverdue);
+    return overdueOnly ? annotated.filter((l) => l.isOverdue) : annotated;
+  }
+
+  async findById(id) {
+    const loan = await prisma.loan.findUnique({
+      where: { id },
+      include: LOAN_INCLUDE,
+    });
+    if (!loan) throw new AppError('Préstamo no encontrado', 404);
+    return annotateOverdue(loan);
+  }
 }
 
 module.exports = new LoanService();
