@@ -252,6 +252,20 @@ class LoanService {
 
     return annotateOverdue(result);
   }
+
+  async cancel(loanId) {
+    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
+    if (!loan) throw new AppError('Préstamo no encontrado', 404);
+    if (loan.status !== 'PENDING') {
+      throw new AppError('Solo se pueden cancelar préstamos sin pagos (status PENDING)', 400);
+    }
+    const updated = await prisma.loan.update({
+      where: { id: loanId },
+      data: { status: 'CANCELLED' },
+      include: LOAN_INCLUDE,
+    });
+    return annotateOverdue(updated);
+  }
 }
 
 module.exports = new LoanService();
