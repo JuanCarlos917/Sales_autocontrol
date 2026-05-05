@@ -353,6 +353,36 @@ const payablePaymentSchema = Joi.object({
   description: Joi.string().max(500).allow('', null),
 });
 
+// ── Loan Schemas ──
+const loanInstallmentSchema = Joi.object({
+  sequence: Joi.number().integer().positive().required(),
+  dueDate: Joi.date().required(),
+  plannedAmount: Joi.number().positive().required(),
+});
+
+const loanCreateSchema = Joi.object({
+  borrowerId: Joi.string().required().messages({ 'any.required': 'Deudor es requerido' }),
+  originAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
+  principalAmount: Joi.number().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
+  description: Joi.string().max(500).allow('', null),
+  notes: Joi.string().max(2000).allow('', null),
+  disbursementDate: Joi.date().allow(null),
+  installments: Joi.array().items(loanInstallmentSchema).min(1).required(),
+});
+
+const loanPaymentSchema = Joi.object({
+  accountId: Joi.string().required().messages({ 'any.required': 'Cuenta destino es requerida' }),
+  principalAmount: Joi.number().min(0).required(),
+  extraAmount: Joi.number().min(0).default(0),
+  date: Joi.date().allow(null),
+  notes: Joi.string().max(500).allow('', null),
+}).custom((value, helpers) => {
+  if ((value.principalAmount || 0) + (value.extraAmount || 0) <= 0) {
+    return helpers.error('any.invalid', { message: 'El pago debe tener monto > 0 (principal o extra)' });
+  }
+  return value;
+}, 'principal+extra > 0');
+
 module.exports = {
   validate,
   schemas: {
@@ -384,5 +414,8 @@ module.exports = {
     // CxC / CxP
     payable: payableSchema,
     payablePayment: payablePaymentSchema,
+    // Loans
+    loanCreate: loanCreateSchema,
+    loanPayment: loanPaymentSchema,
   },
 };
