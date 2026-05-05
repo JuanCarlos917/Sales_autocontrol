@@ -59,3 +59,12 @@ export const treasuryReportsApi = {
   getProjection: () => api.get('/treasury/reports/projection'),
   getVehicleTransactions: (vehicleId) => api.get(`/treasury/reports/vehicle/${vehicleId}`),
 };
+
+// ── Préstamos internos ──
+export const loansApi = {
+  getAll: (params) => api.get('/loans', { params }),
+  getOne: (id) => api.get(`/loans/${id}`),
+  create: (data) => api.post('/loans', data),
+  addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
+  cancel: (id) => api.post(`/loans/${id}/cancel`),
+};
