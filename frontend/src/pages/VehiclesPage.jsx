@@ -30,7 +30,9 @@ export default function VehiclesPage() {
             );
           })}
         </div>
-        <button onClick={() => setShowForm(true)} className="btn-primary">+ Vehículo</button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowForm(true)} className="btn-primary">+ Vehículo</button>
+        </div>
       </div>
 
       {filtered.length === 0 ? (

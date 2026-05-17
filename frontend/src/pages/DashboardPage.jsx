@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, EXPENSE_CATEGORIES, formatCurrency, formatPercent } from '@/lib/constants';
 import api from '@/lib/api';
+import AlertsPanel from '@/components/shared/AlertsPanel';
 
 export default function DashboardPage() {
   const { fetchDashboard, dashboard } = useApp();
@@ -26,10 +27,9 @@ export default function DashboardPage() {
     { label: 'Ingresos Totales', value: formatCurrency(kpis.totalRevenue), color: 'text-accent' },
     { label: 'Ganancia Neta', value: formatCurrency(kpis.totalProfit), color: kpis.totalProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
     { label: 'Mi Ganancia Total', value: formatCurrency(kpis.totalMyProfit), color: 'text-[#BC8CFF]' },
+    { label: 'Saldo en Caja', value: formatCurrency(kpis.treasuryBalance), color: 'text-[#58A6FF]' },
     { label: 'Vendidos', value: kpis.soldCount, color: 'text-[#3FB950]' },
-    { label: 'Promedio Días', value: `${kpis.avgDays}d`, color: kpis.avgDays > 30 ? 'text-[#F85149]' : 'text-accent' },
     { label: 'ROI Promedio', value: formatPercent(kpis.avgROI), color: kpis.avgROI >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
-    { label: 'Deuda Pendiente', value: formatCurrency(kpis.unpaidExpenses), color: kpis.unpaidExpenses > 0 ? 'text-[#F85149]' : 'text-[#6E7681]' },
   ];
 
   const sortedExpCats = Object.entries(expensesByCategory).sort(([, a], [, b]) => b - a);
@@ -37,7 +37,10 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      {/* Alerts */}
+      {/* System Alerts Panel */}
+      <AlertsPanel compact />
+
+      {/* Vehicle Age Alerts (Quick View) */}
       {alerts.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-2">
           {alerts.map(a => (

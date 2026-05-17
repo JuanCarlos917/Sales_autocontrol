@@ -12,7 +12,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── Usuarios ──
+// ══════════════════════════════════════════════════════════════
+// USUARIOS Y AUTENTICACIÓN
+// ══════════════════════════════════════════════════════════════
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -47,7 +50,10 @@ enum Role {
   VIEWER
 }
 
-// ── Vehículos (Tabla Principal) ──
+// ══════════════════════════════════════════════════════════════
+// VEHÍCULOS
+// ══════════════════════════════════════════════════════════════
+
 model Vehicle {
   id                    String        @id @default(cuid())
   plate                 String
@@ -58,25 +64,31 @@ model Vehicle {
   km                    Int?
   stage                 VehicleStage  @default(NEGOCIANDO)
 
-  // Financiero
+  negotiatedValue       Decimal?      @db.Decimal(15, 2)
   purchasePrice         Decimal?      @db.Decimal(15, 2)
   listedPrice           Decimal?      @db.Decimal(15, 2)
   salePrice             Decimal?      @db.Decimal(15, 2)
   participation         Decimal       @default(1.0) @db.Decimal(5, 4)
+  partnerContribution   Decimal?      @db.Decimal(15, 2)
+  partnerAssumesExpenses Boolean      @default(true)
 
-  // Fechas
   purchaseDate          DateTime?
   saleDate              DateTime?
 
-  // Cruce de vehículo
   receivedVehicle       Boolean       @default(false)
   receivedVehiclePlate  String?
   receivedVehicleValue  Decimal?      @db.Decimal(15, 2)
 
-  // Publicación
   publishedPortals      String[]      @default([])
 
-  // Metadata
+  // Terceros asociados al vehículo
+  supplierId            String?
+  supplier              ThirdParty?   @relation("VehicleSupplier", fields: [supplierId], references: [id])
+  partnerId             String?
+  partner               ThirdParty?   @relation("VehiclePartner", fields: [partnerId], references: [id])
+  buyerId               String?
+  buyer                 ThirdParty?   @relation("VehicleBuyer", fields: [buyerId], references: [id])
+
   notes                 String?
   userId                String
   user                  User          @relation(fields: [userId], references: [id])
@@ -85,9 +97,14 @@ model Vehicle {
 
   expenses              Expense[]
   documents             Document[]
+  payables              Payable[]
+  transactions          Transaction[]
 
   @@index([userId, stage])
   @@index([plate])
+  @@index([supplierId])
+  @@index([partnerId])
+  @@index([buyerId])
   @@map("vehicles")
 }
 
@@ -100,11 +117,16 @@ enum VehicleStage {
   VENDIDO
 }
 
-// ── Gastos (Control de Fuga) ──
+// ══════════════════════════════════════════════════════════════
+// GASTOS
+// ══════════════════════════════════════════════════════════════
+
 model Expense {
   id          String          @id @default(cuid())
   vehicleId   String
   vehicle     Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account         @relation(fields: [accountId], references: [id])
   category    ExpenseCategory
   amount      Decimal         @db.Decimal(15, 2)
   description String?
@@ -114,8 +136,11 @@ model Expense {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  payable     Payable?
+
   @@index([vehicleId])
   @@index([category])
+  @@index([accountId])
   @@map("expenses")
 }
 
@@ -131,7 +156,10 @@ enum ExpenseCategory {
   OTRO
 }
 
-// ── Documentos y Fotos ──
+// ══════════════════════════════════════════════════════════════
+// DOCUMENTOS
+// ══════════════════════════════════════════════════════════════
+
 model Document {
   id          String       @id @default(cuid())
   vehicleId   String
@@ -159,11 +187,323 @@ enum DocumentType {
   OTRO
 }
 
-// ── Configuración del Sistema ──
+// ══════════════════════════════════════════════════════════════
+// CONFIGURACIÓN
+// ══════════════════════════════════════════════════════════════
+
 model Setting {
   id    String @id @default(cuid())
   key   String @unique
   value String
 
   @@map("settings")
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - CUENTAS
+// ══════════════════════════════════════════════════════════════
+
+model Account {
+  id             String      @id @default(cuid())
+  name           String
+  type           AccountType
+  bank           String?
+  accountNumber  String?
+  initialBalance Decimal     @default(0) @db.Decimal(15, 2)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  transactions    Transaction[]
+  transfersFrom   Transfer[]    @relation("TransferFrom")
+  transfersTo     Transfer[]    @relation("TransferTo")
+  cashCounts      CashCount[]
+  expenses        Expense[]
+  loans           Loan[]        @relation("LoanOriginAccount")
+  loanPayments    LoanPayment[] @relation("LoanPaymentAccount")
+
+  @@map("accounts")
+}
+
+enum AccountType {
+  CASH
+  BANK
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - TERCEROS
+// ══════════════════════════════════════════════════════════════
+
+model ThirdParty {
+  id        String         @id @default(cuid())
+  name      String
+  type      ThirdPartyType
+  document  String?
+  phone     String?
+  email     String?
+  notes     String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  transactions        Transaction[]
+  payables            Payable[]
+  vehiclesAsSupplier  Vehicle[]     @relation("VehicleSupplier")
+  vehiclesAsPartner   Vehicle[]     @relation("VehiclePartner")
+  vehiclesAsBuyer     Vehicle[]     @relation("VehicleBuyer")
+  loansAsBorrower     Loan[]        @relation("LoanBorrower")
+
+  @@map("third_parties")
+}
+
+enum ThirdPartyType {
+  CLIENT
+  SUPPLIER
+  PARTNER
+  EMPLOYEE
+  BOTH
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - TRANSACCIONES
+// ══════════════════════════════════════════════════════════════
+
+model Transaction {
+  id           String              @id @default(cuid())
+  accountId    String
+  account      Account             @relation(fields: [accountId], references: [id])
+  type         TransactionType
+  category     TransactionCategory
+  amount       Decimal             @db.Decimal(15, 2)
+  description  String?
+  reference    String?
+  date         DateTime            @default(now())
+  vehicleId    String?
+  vehicle      Vehicle?            @relation(fields: [vehicleId], references: [id])
+  thirdPartyId String?
+  thirdParty   ThirdParty?         @relation(fields: [thirdPartyId], references: [id])
+  transferId   String?
+  transfer     Transfer?           @relation(fields: [transferId], references: [id])
+  expenseId    String?             @unique
+  createdBy    String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  payablePayment PayablePayment?
+  loanId         String?
+  loan           Loan?        @relation(fields: [loanId], references: [id])
+  loanPaymentId  String?
+  loanPayment    LoanPayment? @relation(fields: [loanPaymentId], references: [id])
+
+  @@index([accountId])
+  @@index([vehicleId])
+  @@index([thirdPartyId])
+  @@index([date])
+  @@index([type, category])
+  @@index([loanId])
+  @@index([loanPaymentId])
+  @@map("transactions")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum TransactionCategory {
+  VEHICLE_PURCHASE
+  VEHICLE_SALE
+  VEHICLE_SALE_PARTIAL
+  VEHICLE_EXPENSE
+  FIXED_EXPENSE
+  OPERATING_EXPENSE
+  COMMISSION
+  CAPITAL_CONTRIBUTION
+  OTHER_INCOME
+  OTHER_EXPENSE
+  TRANSFER
+  LOAN_DISBURSEMENT
+  LOAN_REPAYMENT
+  LOAN_EXTRA_INCOME
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - TRANSFERENCIAS
+// ══════════════════════════════════════════════════════════════
+
+model Transfer {
+  id            String   @id @default(cuid())
+  fromAccountId String
+  fromAccount   Account  @relation("TransferFrom", fields: [fromAccountId], references: [id])
+  toAccountId   String
+  toAccount     Account  @relation("TransferTo", fields: [toAccountId], references: [id])
+  amount        Decimal  @db.Decimal(15, 2)
+  description   String?
+  date          DateTime @default(now())
+  createdBy     String
+  createdAt     DateTime @default(now())
+
+  transactions Transaction[]
+
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([date])
+  @@map("transfers")
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - ARQUEOS
+// ══════════════════════════════════════════════════════════════
+
+model CashCount {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id])
+  expectedBalance Decimal  @db.Decimal(15, 2)
+  countedBalance  Decimal  @db.Decimal(15, 2)
+  difference      Decimal  @db.Decimal(15, 2)
+  notes           String?
+  date            DateTime @default(now())
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  @@index([accountId])
+  @@index([date])
+  @@map("cash_counts")
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - CUENTAS POR COBRAR / PAGAR (CxC / CxP)
+// ══════════════════════════════════════════════════════════════
+
+model Payable {
+  id           String        @id @default(cuid())
+  type         PayableType
+  status       PayableStatus @default(PENDING)
+  totalAmount  Decimal       @db.Decimal(15, 2)
+  paidAmount   Decimal       @default(0) @db.Decimal(15, 2)
+  dueDate      DateTime?
+  description  String?
+  vehicleId    String?
+  vehicle      Vehicle?      @relation(fields: [vehicleId], references: [id])
+  expenseId    String?       @unique
+  expense      Expense?      @relation(fields: [expenseId], references: [id])
+  thirdPartyId String?
+  thirdParty   ThirdParty?   @relation(fields: [thirdPartyId], references: [id])
+  createdBy    String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  payments PayablePayment[]
+
+  @@index([vehicleId])
+  @@index([thirdPartyId])
+  @@index([type, status])
+  @@index([dueDate])
+  @@map("payables")
+}
+
+model PayablePayment {
+  id            String      @id @default(cuid())
+  payableId     String
+  payable       Payable     @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  amount        Decimal     @db.Decimal(15, 2)
+  createdAt     DateTime    @default(now())
+
+  @@index([payableId])
+  @@map("payable_payments")
+}
+
+enum PayableType {
+  RECEIVABLE
+  PAYABLE
+}
+
+enum PayableStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - PRÉSTAMOS INTERNOS
+// ══════════════════════════════════════════════════════════════
+
+model Loan {
+  id               String      @id @default(cuid())
+  borrowerId       String
+  originAccountId  String
+  principalAmount  Decimal     @db.Decimal(15, 2)
+  paidAmount       Decimal     @default(0) @db.Decimal(15, 2)
+  extraReceived    Decimal     @default(0) @db.Decimal(15, 2)
+  status           LoanStatus  @default(PENDING)
+  description      String?
+  disbursementDate DateTime    @default(now())
+  notes            String?
+  createdBy        String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  borrower         ThirdParty  @relation("LoanBorrower", fields: [borrowerId], references: [id])
+  originAccount    Account     @relation("LoanOriginAccount", fields: [originAccountId], references: [id])
+  installments     LoanInstallment[]
+  payments         LoanPayment[]
+  transactions     Transaction[]
+
+  @@index([borrowerId])
+  @@index([status])
+  @@map("loans")
+}
+
+model LoanInstallment {
+  id            String             @id @default(cuid())
+  loanId        String
+  sequence      Int
+  dueDate       DateTime
+  plannedAmount Decimal            @db.Decimal(15, 2)
+  paidAmount    Decimal            @default(0) @db.Decimal(15, 2)
+  status        InstallmentStatus  @default(PENDING)
+
+  loan          Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, sequence])
+  @@index([dueDate])
+  @@map("loan_installments")
+}
+
+model LoanPayment {
+  id              String       @id @default(cuid())
+  loanId          String
+  accountId       String
+  principalAmount Decimal      @db.Decimal(15, 2)
+  extraAmount     Decimal      @default(0) @db.Decimal(15, 2)
+  date            DateTime     @default(now())
+  notes           String?
+  createdBy       String
+  createdAt       DateTime     @default(now())
+
+  loan            Loan         @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  account         Account      @relation("LoanPaymentAccount", fields: [accountId], references: [id])
+  transactions    Transaction[]
+
+  @@index([loanId])
+  @@map("loan_payments")
+}
+
+enum LoanStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum InstallmentStatus {
+  PENDING
+  PARTIAL
+  PAID
 }

@@ -1,4 +1,6 @@
-export default function Modal({ children, onClose, title, width = 'max-w-lg' }) {
+export default function Modal({ children, onClose, title, width = 'max-w-lg', isOpen = true }) {
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 bg-black/65 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-fade-in" onClick={onClose}>
       <div className={`${width} w-full max-h-[92vh] overflow-y-auto bg-surface rounded-2xl border border-border animate-scale-in`} onClick={e => e.stopPropagation()}>

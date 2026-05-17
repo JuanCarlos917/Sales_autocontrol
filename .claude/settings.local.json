@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma *)",
+      "Bash(rm -rf node_modules/.prisma)",
+      "Bash(npm install *)"
+    ]
+  }
+}

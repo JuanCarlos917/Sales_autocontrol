@@ -1,22 +1,50 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import api from '@/lib/api';
 import { STAGES, EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
-import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
+import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
+import { vehicleTreasuryApi, payablesApi, expenseTreasuryApi } from '@/lib/payablesApi';
+import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/components/treasury';
 
 export default function VehicleDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { moveVehicle, deleteVehicle, deleteExpense, deleteDocument } = useApp();
   const [vehicle, setVehicle] = useState(null);
-  const [tab, setTab] = useState('resumen');
+  const [tab, setTab] = useState(searchParams.get('tab') || 'resumen');
   const [showEditForm, setShowEditForm] = useState(false);
-  const [showExpenseForm, setShowExpenseForm] = useState(false);
+
+  // Cerrar formulario de edición y limpiar URL
+  const closeEditForm = () => {
+    setShowEditForm(false);
+    if (searchParams.get('edit') || searchParams.get('highlight')) {
+      searchParams.delete('edit');
+      searchParams.delete('highlight');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
+
+  // Campos a destacar en rojo cuando se viene desde la alerta del Kanban
+  const highlightFields = (searchParams.get('highlight') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
   const [showDocForm, setShowDocForm] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  // Tesorería
+  const [vehicleTransactions, setVehicleTransactions] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  // Modales de tesorería
+  const [showSaleModal, setShowSaleModal] = useState(false);
+  const [showExpenseTreasuryModal, setShowExpenseTreasuryModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentModalConfig, setPaymentModalConfig] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [processingAction, setProcessingAction] = useState(false);
 
   const loadVehicle = async () => {
     try {
@@ -25,7 +53,52 @@ export default function VehicleDetailPage() {
     } catch { navigate('/vehicles'); }
   };
 
-  useEffect(() => { loadVehicle(); }, [id]);
+  const loadVehicleTransactions = async () => {
+    try {
+      const { data } = await transactionsApi.getByVehicle(id);
+      setVehicleTransactions(data);
+    } catch (err) {
+      console.error('Error loading vehicle transactions:', err);
+    }
+  };
+
+  const loadAccounts = async () => {
+    try {
+      const { data } = await accountsApi.getAll();
+      setAccounts(data);
+    } catch (err) {
+      console.error('Error loading accounts:', err);
+    }
+  };
+
+  const loadPaymentStatus = async () => {
+    try {
+      const { data } = await vehicleTreasuryApi.getPaymentStatus(id);
+      setPaymentStatus(data);
+    } catch (err) {
+      console.error('Error loading payment status:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadVehicle();
+    loadVehicleTransactions();
+    loadAccounts();
+    loadPaymentStatus();
+  }, [id]);
+
+  // Abrir formulario de edición si viene con ?edit=true
+  useEffect(() => {
+    if (searchParams.get('edit') === 'true' && vehicle) {
+      setShowEditForm(true);
+    }
+  }, [searchParams, vehicle]);
+
+  const reloadAll = () => {
+    loadVehicle();
+    loadVehicleTransactions();
+    loadPaymentStatus();
+  };
 
   if (!vehicle) return <div className="text-center text-[#6E7681] py-20">Cargando...</div>;
 
@@ -37,13 +110,77 @@ export default function VehicleDetailPage() {
   const portals = vehicle.publishedPortals || [];
 
   const handleMove = async (newStage) => {
+    // Si va a VENDIDO, abrir modal de venta
+    if (newStage === 'VENDIDO' && vehicle.stage !== 'VENDIDO') {
+      setShowSaleModal(true);
+      return;
+    }
     await moveVehicle(id, newStage);
-    loadVehicle();
+    reloadAll();
   };
 
   const handleDelete = async () => {
     await deleteVehicle(id);
     navigate('/vehicles');
+  };
+
+  // Registrar venta con tesorería
+  const handleSaleSubmit = async (saleData) => {
+    setProcessingAction(true);
+    try {
+      await vehicleTreasuryApi.registerSale(id, saleData);
+      setShowSaleModal(false);
+      reloadAll();
+    } catch (err) {
+      console.error('Error registering sale:', err);
+      alert(err.response?.data?.error || 'Error al registrar la venta');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Registrar gasto con tesorería
+  const handleExpenseTreasurySubmit = async (expenseData) => {
+    setProcessingAction(true);
+    try {
+      await expenseTreasuryApi.createWithTreasury(expenseData);
+      setShowExpenseTreasuryModal(false);
+      reloadAll();
+    } catch (err) {
+      console.error('Error creating expense:', err);
+      alert(err.response?.data?.error || 'Error al registrar el gasto');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Abrir modal para pagar CxP o cobrar CxC
+  const openPaymentForPayable = (payable, type) => {
+    setPaymentModalConfig({
+      type,
+      payableId: payable.id,
+      totalAmount: parseFloat(payable.totalAmount),
+      paidAmount: parseFloat(payable.paidAmount),
+      description: payable.description,
+    });
+    setShowPaymentModal(true);
+  };
+
+  // Procesar pago/cobro
+  const handlePaymentSubmit = async (paymentData) => {
+    if (!paymentModalConfig) return;
+    setProcessingAction(true);
+    try {
+      await payablesApi.addPayment(paymentModalConfig.payableId, paymentData);
+      setShowPaymentModal(false);
+      setPaymentModalConfig(null);
+      reloadAll();
+    } catch (err) {
+      console.error('Error processing payment:', err);
+      alert(err.response?.data?.error || 'Error al procesar el pago');
+    } finally {
+      setProcessingAction(false);
+    }
   };
 
   return (
@@ -89,15 +226,16 @@ export default function VehicleDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-border mb-4">
+      <div className="flex border-b border-border mb-4 overflow-x-auto">
         {[
           { id: 'resumen', label: 'Resumen' },
           { id: 'gastos', label: `Gastos (${expenses.length})` },
+          { id: 'tesoreria', label: `Tesoreria (${vehicleTransactions.length})` },
           { id: 'financiero', label: 'Financiero' },
           { id: 'documentos', label: `Docs (${docs.length})` },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-[#6E7681]'}`}>
+            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-[#6E7681]'}`}>
             {t.label}
           </button>
         ))}
@@ -105,18 +243,41 @@ export default function VehicleDetailPage() {
 
       {/* Tab Content */}
       {tab === 'resumen' && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <ProfitSummary vehicle={vehicle} metrics={m} />
+          <div className="grid grid-cols-2 gap-4">
           <InfoItem label="Precio de Compra" value={formatCurrency(vehicle.purchasePrice)} />
           <InfoItem label="Fecha de Compra" value={formatDate(vehicle.purchaseDate)} />
           <InfoItem label="Precio Publicado" value={vehicle.listedPrice ? formatCurrency(vehicle.listedPrice) : '—'} />
-          <InfoItem label="Precio de Venta" value={vehicle.salePrice ? formatCurrency(vehicle.salePrice) : '—'} />
-          <InfoItem label="Fecha de Venta" value={formatDate(vehicle.saleDate)} />
+          {['PUBLICADO', 'DISPONIBLE', 'VENDIDO'].includes(vehicle.stage) && (
+            <>
+              <InfoItem label="Precio de Venta" value={vehicle.salePrice ? formatCurrency(vehicle.salePrice) : '—'} />
+              <InfoItem label="Fecha de Venta" value={formatDate(vehicle.saleDate)} />
+            </>
+          )}
           <InfoItem label="Participación" value={`${((vehicle.participation || 1) * 100)}%`} />
+          <InfoItem
+            label="Proveedor"
+            value={vehicle.supplier ? vehicle.supplier.name : <span className="text-amber-400">Sin asignar</span>}
+          />
+          {(vehicle.participation || 1) < 1 && (
+            <InfoItem
+              label={`Socio (${((vehicle.participation || 1) * 100).toFixed(0)}%)`}
+              value={vehicle.partner ? vehicle.partner.name : <span className="text-amber-400">Sin asignar</span>}
+            />
+          )}
+          {vehicle.stage === 'VENDIDO' && (
+            <InfoItem
+              label="Comprador"
+              value={vehicle.buyer ? vehicle.buyer.name : <span className="text-amber-400">Sin asignar</span>}
+            />
+          )}
           {vehicle.receivedVehicle && <>
             <InfoItem label="Cruce Placa" value={vehicle.receivedVehiclePlate || '—'} />
             <InfoItem label="Valor Cruce" value={formatCurrency(vehicle.receivedVehicleValue)} />
           </>}
           {vehicle.notes && <div className="col-span-2"><InfoItem label="Notas" value={vehicle.notes} /></div>}
+          </div>
         </div>
       )}
 
@@ -124,7 +285,7 @@ export default function VehicleDetailPage() {
         <div>
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Total: {formatCurrency(m.totalExpenses)}</span>
-            <button onClick={() => setShowExpenseForm(true)} className="btn-primary">+ Gasto</button>
+            <button onClick={() => setShowExpenseTreasuryModal(true)} className="btn-primary text-sm">+ Gasto</button>
           </div>
           {expenses.length === 0 ? <p className="text-center text-[#6E7681] py-10">Sin gastos registrados</p> : (
             <div className="space-y-2">
@@ -158,22 +319,172 @@ export default function VehicleDetailPage() {
         </div>
       )}
 
+      {tab === 'tesoreria' && (
+        <div className="space-y-6">
+          {/* Estado de Pagos CxC/CxP */}
+          {paymentStatus && (paymentStatus.purchase || paymentStatus.sale) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* CxP - Compra */}
+              {paymentStatus.purchase && (
+                <div className={`p-4 rounded-lg border ${
+                  paymentStatus.purchase.status === 'PAID'
+                    ? 'border-green-500/30 bg-green-500/5'
+                    : 'border-red-500/30 bg-red-500/5'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-[#E6EDF3]">Compra (CxP)</h4>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      paymentStatus.purchase.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
+                      paymentStatus.purchase.status === 'PARTIAL' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {paymentStatus.purchase.status === 'PAID' ? 'Pagado' :
+                       paymentStatus.purchase.status === 'PARTIAL' ? 'Parcial' : 'Pendiente'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[#8B949E]">Total:</span>
+                      <span>{formatCurrency(paymentStatus.purchase.totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#8B949E]">Pagado:</span>
+                      <span className="text-green-400">{formatCurrency(paymentStatus.purchase.paidAmount)}</span>
+                    </div>
+                    {paymentStatus.purchase.pendingAmount > 0 && (
+                      <div className="flex justify-between font-semibold border-t border-border pt-1 mt-1">
+                        <span className="text-[#8B949E]">Pendiente:</span>
+                        <span className="text-red-400">{formatCurrency(paymentStatus.purchase.pendingAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {paymentStatus.purchase.pendingAmount > 0 && (
+                    <button
+                      onClick={() => openPaymentForPayable(paymentStatus.purchase, 'expense')}
+                      className="btn-primary w-full mt-3 text-sm bg-red-600 hover:bg-red-700"
+                    >
+                      Registrar Pago
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* CxC - Venta */}
+              {paymentStatus.sale && (
+                <div className={`p-4 rounded-lg border ${
+                  paymentStatus.sale.status === 'PAID'
+                    ? 'border-green-500/30 bg-green-500/5'
+                    : 'border-amber-500/30 bg-amber-500/5'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-[#E6EDF3]">Venta (CxC)</h4>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      paymentStatus.sale.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
+                      paymentStatus.sale.status === 'PARTIAL' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {paymentStatus.sale.status === 'PAID' ? 'Cobrado' :
+                       paymentStatus.sale.status === 'PARTIAL' ? 'Parcial' : 'Pendiente'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-[#8B949E]">Total:</span>
+                      <span>{formatCurrency(paymentStatus.sale.totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#8B949E]">Cobrado:</span>
+                      <span className="text-green-400">{formatCurrency(paymentStatus.sale.paidAmount)}</span>
+                    </div>
+                    {paymentStatus.sale.pendingAmount > 0 && (
+                      <div className="flex justify-between font-semibold border-t border-border pt-1 mt-1">
+                        <span className="text-[#8B949E]">Pendiente:</span>
+                        <span className="text-amber-400">{formatCurrency(paymentStatus.sale.pendingAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {paymentStatus.sale.pendingAmount > 0 && (
+                    <button
+                      onClick={() => openPaymentForPayable(paymentStatus.sale, 'income')}
+                      className="btn-primary w-full mt-3 text-sm bg-green-600 hover:bg-green-700"
+                    >
+                      Registrar Cobro
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Movimientos */}
+          <div>
+            <div className="text-sm text-[#8B949E] mb-2">Movimientos de tesoreria</div>
+            {vehicleTransactions.length === 0 ? (
+              <p className="text-center text-[#6E7681] py-6 bg-surface border border-border rounded-lg">
+                Sin movimientos registrados
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {vehicleTransactions.map(tx => {
+                  const isIncome = tx.type === 'INCOME' || tx.type === 'TRANSFER_IN';
+                  return (
+                    <div key={tx.id} className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg">
+                      <div className={`w-2 h-2 rounded-full ${isIncome ? 'bg-green-400' : 'bg-red-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center gap-2">
+                          <div>
+                            <div className="text-[13px] font-semibold text-[#E6EDF3]">
+                              {tx.description || tx.category}
+                            </div>
+                            <div className="text-[11px] text-[#6E7681]">
+                              {tx.account?.name} · {formatDate(tx.date)}
+                            </div>
+                          </div>
+                          <div className={`font-mono font-bold text-sm ${isIncome ? 'text-green-400' : 'text-red-400'}`}>
+                            {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Resumen — Inversión realizada / Pendiente por pagar / Pendiente por cobrar */}
+          <InvestmentSummary
+            vehicleTransactions={vehicleTransactions}
+            paymentStatus={paymentStatus}
+            expenses={expenses}
+          />
+        </div>
+      )}
+
       {tab === 'financiero' && (
-        <div className="grid grid-cols-2 gap-3">
-          <FinCard label="Valor de Compra" value={formatCurrency(vehicle.purchasePrice)} />
-          <FinCard label="Total Gastos Variables" value={formatCurrency(m.totalExpenses)} color="text-[#D29922]" />
-          <FinCard label="Gastos Fijos Prorrateados" value={formatCurrency(m.fixedProrated)} sub={`${m.daysInInventory}d`} />
-          <FinCard label="COSTO REAL TOTAL" value={formatCurrency(m.realCostWithFixed)} color="text-accent" highlight />
-          <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
-          <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
-          <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
-          <FinCard label="Deuda Pendiente" value={formatCurrency(m.unpaidExpenses)} color={m.unpaidExpenses > 0 ? 'text-[#F85149]' : 'text-[#6E7681]'} />
-          {vehicle.stage === 'VENDIDO' && <>
-            <FinCard label="Valor de Venta" value={formatCurrency(vehicle.salePrice)} color="text-[#3FB950]" />
-            <FinCard label="GANANCIA NETA" value={formatCurrency(m.netProfit)} color={m.netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} highlight />
-            <FinCard label="ROI" value={formatPercent(m.roi)} color={m.roi >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} />
-            <FinCard label="MI GANANCIA REAL" value={formatCurrency(m.myProfit)} color="text-accent" highlight sub={`Part: ${((vehicle.participation || 1) * 100)}%`} />
-          </>}
+        <div className="space-y-4">
+          <ProfitSummary vehicle={vehicle} metrics={m} />
+          <div className="grid grid-cols-2 gap-3">
+            <FinCard label="Valor de Compra" value={formatCurrency(vehicle.purchasePrice)} />
+            <FinCard label="Total Gastos Variables" value={formatCurrency(m.totalExpenses)} color="text-[#D29922]" />
+            <FinCard label="Gastos Fijos Prorrateados" value={formatCurrency(m.fixedProrated)} sub={`${m.daysInInventory}d`} />
+            <FinCard label="COSTO REAL TOTAL" value={formatCurrency(m.realCostWithFixed)} color="text-accent" highlight />
+            <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
+            <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
+            <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
+            {vehicle.partnerId && m.partnerContribution > 0 && (
+              <>
+                <FinCard label="Aporte Socio" value={formatCurrency(m.partnerContribution)} color="text-[#BC8CFF]" sub={vehicle.partner?.name} />
+                <FinCard label="Mi Capital" value={formatCurrency(m.myCapital)} color="text-accent" sub="Descontado de tesorería" />
+              </>
+            )}
+            {vehicle.stage === 'VENDIDO' && (
+              <>
+                <FinCard label="Valor de Venta" value={formatCurrency(vehicle.salePrice)} color="text-[#3FB950]" />
+                <FinCard label="ROI" value={formatPercent(m.roi)} color={m.roi >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'} />
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -220,7 +531,16 @@ export default function VehicleDetailPage() {
         </div>
         <div className="flex gap-2">
           {stageIdx > 0 && <button onClick={() => handleMove(STAGES[stageIdx - 1].id)} className="btn-ghost">← {STAGES[stageIdx - 1].label}</button>}
-          {stageIdx < STAGES.length - 1 && (
+          {/* Botón de venta destacado para vehículos disponibles */}
+          {vehicle.stage !== 'VENDIDO' && (
+            <button
+              onClick={() => setShowSaleModal(true)}
+              className="btn-primary bg-green-600 hover:bg-green-700"
+            >
+              💰 Vender
+            </button>
+          )}
+          {stageIdx < STAGES.length - 1 && vehicle.stage !== 'DISPONIBLE' && (
             <button onClick={() => handleMove(STAGES[stageIdx + 1].id)} className="btn-primary" style={{ background: STAGES[stageIdx + 1].color }}>
               {STAGES[stageIdx + 1].label} →
             </button>
@@ -229,9 +549,45 @@ export default function VehicleDetailPage() {
       </div>
 
       {/* Modals */}
-      {showEditForm && <VehicleFormModal vehicle={vehicle} onClose={() => { setShowEditForm(false); loadVehicle(); }} />}
-      {showExpenseForm && <ExpenseFormModal vehicleId={id} onClose={() => { setShowExpenseForm(false); loadVehicle(); }} />}
-      {showDocForm && <DocumentFormModal vehicleId={id} onClose={() => { setShowDocForm(false); loadVehicle(); }} />}
+      {showEditForm && <VehicleFormModal vehicle={vehicle} highlightFields={highlightFields} onClose={() => { closeEditForm(); reloadAll(); }} />}
+      {showDocForm && <DocumentFormModal vehicleId={id} onClose={() => { setShowDocForm(false); reloadAll(); }} />}
+
+      {/* Modal de Venta */}
+      <SalePaymentModal
+        isOpen={showSaleModal}
+        onClose={() => setShowSaleModal(false)}
+        onSubmit={handleSaleSubmit}
+        vehicle={vehicle}
+        loading={processingAction}
+      />
+
+      {/* Modal de Gasto con Tesorería */}
+      <ExpensePaymentModal
+        isOpen={showExpenseTreasuryModal}
+        onClose={() => setShowExpenseTreasuryModal(false)}
+        onSubmit={handleExpenseTreasurySubmit}
+        vehicleId={id}
+        vehiclePlate={vehicle.plate}
+        loading={processingAction}
+      />
+
+      {/* Modal de Pago/Cobro genérico */}
+      {paymentModalConfig && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setPaymentModalConfig(null);
+          }}
+          onSubmit={handlePaymentSubmit}
+          title={paymentModalConfig.type === 'income' ? 'Registrar Cobro' : 'Registrar Pago'}
+          type={paymentModalConfig.type}
+          totalAmount={paymentModalConfig.totalAmount}
+          paidAmount={paymentModalConfig.paidAmount}
+          defaultDescription={paymentModalConfig.description}
+          loading={processingAction}
+        />
+      )}
     </div>
   );
 }
@@ -251,6 +607,119 @@ function FinCard({ label, value, color = '', highlight, sub }) {
       <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">{label}</div>
       <div className={`font-mono font-bold ${highlight ? 'text-xl' : 'text-base'} ${color}`}>{value}</div>
       {sub && <div className="text-[11px] text-[#6E7681] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ProfitSummary({ vehicle, metrics }) {
+  const m = metrics || {};
+  const netProfit = Number(m.netProfit) || 0;
+  const myProfit = Number(m.myProfit ?? netProfit) || 0;
+  const partnerProfit = Number(m.partnerProfit) || 0;
+  const isProjected = !!m.isProjectedProfit;
+  const hasPartner = !!vehicle.partnerId && parseFloat(vehicle.participation || 1) < 1;
+  const hasRefPrice = m.referencePrice > 0 || vehicle.stage === 'VENDIDO';
+  const profitColor = netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
+  const myColor = myProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]';
+
+  if (!hasRefPrice) {
+    return (
+      <div className="p-4 rounded-xl border border-border bg-[#0F1419]">
+        <div className="text-[11px] text-[#6E7681] uppercase tracking-wider mb-1">Ganancia Proyectada</div>
+        <div className="text-sm text-[#8B949E]">
+          Agrega un precio publicado o de venta para ver la ganancia estimada.
+        </div>
+      </div>
+    );
+  }
+
+  const label = isProjected ? 'Ganancia Proyectada' : 'Ganancia Neta';
+  const pctMine = ((parseFloat(vehicle.participation || 1)) * 100).toFixed(0);
+  const pctPartner = (100 - parseFloat(pctMine)).toFixed(0);
+
+  return (
+    <div className={`p-4 rounded-xl border ${isProjected ? 'border-accent/20 bg-accent/5' : 'border-[#3FB950]/30 bg-[#3FB950]/5'}`}>
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+            {label} {isProjected && <span className="text-accent">(estimada)</span>}
+          </div>
+          <div className={`font-mono font-bold text-2xl ${profitColor}`}>
+            {formatCurrency(netProfit)}
+          </div>
+          {m.roi !== undefined && m.roi !== null && (
+            <div className="text-[11px] text-[#8B949E] mt-0.5">ROI: {formatPercent(m.roi)}</div>
+          )}
+        </div>
+        {isProjected && (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold">
+            PROYECTADO
+          </span>
+        )}
+      </div>
+      {hasPartner && (
+        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
+          <div>
+            <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+              Tu Ganancia ({pctMine}%)
+            </div>
+            <div className={`font-mono font-bold text-lg ${myColor}`}>
+              {formatCurrency(myProfit)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-[#6E7681] uppercase tracking-wider mb-1">
+              {vehicle.partner?.name || 'Socio'} ({pctPartner}%)
+            </div>
+            <div className="font-mono font-bold text-lg text-[#BC8CFF]">
+              {formatCurrency(partnerProfit)}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvestmentSummary({ vehicleTransactions, paymentStatus, expenses }) {
+  const invested = vehicleTransactions
+    .filter(t => t.type === 'EXPENSE' || t.type === 'TRANSFER_OUT')
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
+
+  const purchasePending = parseFloat(paymentStatus?.purchase?.pendingAmount || 0);
+  const expensePending = (expenses || [])
+    .filter(e => !e.paid)
+    .reduce((s, e) => s + parseFloat(e.amount), 0);
+  const totalPending = purchasePending + expensePending;
+
+  const salePending = parseFloat(paymentStatus?.sale?.pendingAmount || 0);
+
+  return (
+    <div className="p-4 bg-surface-hover rounded-lg">
+      <div className="grid grid-cols-3 gap-4 text-center">
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Inversión realizada</div>
+          <div className="text-lg font-bold text-accent">{formatCurrency(invested)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">Ya salió de tesorería</div>
+        </div>
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Pendiente por pagar</div>
+          <div className="text-lg font-bold text-red-400">{formatCurrency(totalPending)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">
+            {purchasePending > 0 && `Compra: ${formatCurrency(purchasePending)}`}
+            {purchasePending > 0 && expensePending > 0 && ' · '}
+            {expensePending > 0 && `Gastos: ${formatCurrency(expensePending)}`}
+            {totalPending === 0 && 'Todo al día'}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[#8B949E] mb-1">Pendiente por cobrar</div>
+          <div className="text-lg font-bold text-amber-400">{formatCurrency(salePending)}</div>
+          <div className="text-[10px] text-[#6E7681] mt-0.5">
+            {salePending > 0 ? 'Venta financiada' : 'Sin saldos pendientes'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Seed — Crea usuario admin y configuración inicial
+// Seed — Crea solo el usuario admin
 // ═══════════════════════════════════════════════════════════════
 
 const bcrypt = require('bcryptjs');
@@ -9,7 +9,6 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...\n');
 
-  // Admin user
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@autocontrol.co';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234';
   const adminPin = process.env.ADMIN_PIN || '1234';
@@ -35,21 +34,6 @@ async function main() {
   } else {
     console.log(`  ℹ️  Admin ya existe: ${adminEmail}`);
   }
-
-  // Default settings
-  const defaults = {
-    fixedMonthly: '800000',
-    alertDays: '15',
-  };
-
-  for (const [key, value] of Object.entries(defaults)) {
-    await prisma.setting.upsert({
-      where: { key },
-      update: {},
-      create: { key, value },
-    });
-  }
-  console.log('  ✅ Configuración inicial creada');
 
   console.log('\n🎉 Seed completado!\n');
 }
