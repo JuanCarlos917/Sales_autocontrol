@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { treasuryReportsApi, transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { payablesApi } from '@/lib/payablesApi';
 import { formatCurrency } from '@/lib/constants';
-import { BalanceCard, ReceivablesWidget, PayablesWidgetCxP, CashFlowChart } from '@/components/treasury';
+import { BalanceCard, ReceivablesWidget, PayablesWidgetCxP, CashFlowChart, LoansSummaryCards } from '@/components/treasury';
 
 export default function TreasuryPage() {
   const [loading, setLoading] = useState(true);
@@ -193,6 +193,9 @@ export default function TreasuryPage() {
           loading={loading}
         />
       </div>
+
+      {/* Seccion Prestamos: resumen + top deudores */}
+      <LoansSummaryCards />
 
       {/* Alertas de vencimientos */}
       {(overdueReceivables.length > 0 || overduePayables.length > 0) && (

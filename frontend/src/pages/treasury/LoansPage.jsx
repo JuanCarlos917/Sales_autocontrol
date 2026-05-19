@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewLoanModal, LoanPaymentModal } from '@/components/treasury';
@@ -31,6 +31,9 @@ export default function LoansPage() {
   const [tab, setTab] = useState('all');
   const [showNew, setShowNew] = useState(false);
   const [paying, setPaying] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const borrowerFilter = searchParams.get('borrower');
 
   const reload = async () => {
     setLoading(true);
@@ -44,13 +47,27 @@ export default function LoansPage() {
 
   useEffect(() => { reload(); }, []);
 
-  const filtered = loans.filter((l) => {
-    if (tab === 'all') return true;
-    if (tab === 'active') return l.status === 'PENDING' || l.status === 'PARTIAL';
-    if (tab === 'overdue') return l.isOverdue;
-    if (tab === 'paid') return l.status === 'PAID';
-    return true;
-  });
+  const borrowerName = useMemo(() => {
+    if (!borrowerFilter) return null;
+    const match = loans.find((l) => l.borrowerId === borrowerFilter);
+    return match?.borrower?.name || null;
+  }, [borrowerFilter, loans]);
+
+  const clearBorrowerFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('borrower');
+    setSearchParams(next);
+  };
+
+  const filtered = loans
+    .filter((l) => (borrowerFilter ? l.borrowerId === borrowerFilter : true))
+    .filter((l) => {
+      if (tab === 'all') return true;
+      if (tab === 'active') return l.status === 'PENDING' || l.status === 'PARTIAL';
+      if (tab === 'overdue') return l.isOverdue;
+      if (tab === 'paid') return l.status === 'PAID';
+      return true;
+    });
 
   const totals = {
     lent: loans.reduce((s, l) => s + parseFloat(l.principalAmount), 0),
@@ -102,6 +119,27 @@ export default function LoansPage() {
           </button>
         ))}
       </div>
+
+      {borrowerFilter && (
+        <div
+          className="flex items-center gap-2 text-xs"
+          data-testid="loans-borrower-filter-badge"
+        >
+          <span className="text-[#6E7681]">Filtrando por:</span>
+          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-accent/15 text-accent">
+            <span className="font-medium">{borrowerName || 'Deudor'}</span>
+            <button
+              type="button"
+              onClick={clearBorrowerFilter}
+              className="text-accent/70 hover:text-accent transition-colors"
+              aria-label="Limpiar filtro"
+              data-testid="loans-borrower-filter-clear"
+            >
+              ✕
+            </button>
+          </span>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-8 text-[#6E7681]">Cargando...</div>
