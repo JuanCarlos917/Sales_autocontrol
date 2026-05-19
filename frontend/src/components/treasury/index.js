@@ -16,3 +16,4 @@ export { default as CashFlowChart } from './CashFlowChart';
 // Loans
 export { default as NewLoanModal } from './NewLoanModal';
 export { default as LoanPaymentModal } from './LoanPaymentModal';
+export { default as LoansSummaryCards } from './LoansSummaryCards';
