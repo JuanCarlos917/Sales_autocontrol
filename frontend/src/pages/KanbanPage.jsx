@@ -190,6 +190,14 @@ export default function KanbanPage() {
     const vehicle = vehicles.find(v => v.id === vid);
     if (!vehicle) return;
 
+    if (vehicle.stage === targetStage) return;
+
+    // VENDIDO es estado final: bloquear cualquier salida
+    if (vehicle.stage === 'VENDIDO' && targetStage !== 'VENDIDO') {
+      showToast('VENDIDO es un estado final: no se puede mover a otra etapa', 'danger');
+      return;
+    }
+
     // Si va a VENDIDO, abrir modal de venta completo (maneja sus propias validaciones)
     if (targetStage === 'VENDIDO' && vehicle.stage !== 'VENDIDO') {
       // Validar requisitos previos (excepto buyer/salePrice que se manejan en el modal de venta)

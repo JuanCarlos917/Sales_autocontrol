@@ -150,3 +150,112 @@ export interface LoanPaymentInput {
 export async function apiAddLoanPayment(token: string, loanId: string, data: LoanPaymentInput): Promise<Loan> {
   return postJson(`/loans/${loanId}/payments`, data, token);
 }
+
+// ── Expenses ─────────────────────────────────────────────
+
+export interface ExpenseCreateInput {
+  vehicleId: string;
+  accountId: string;
+  category: 'MECANICA' | 'ESTETICA' | 'IMPUESTOS' | 'TRAMITE' | 'COMISION' | 'PARQUEADERO' | 'PUBLICIDAD' | 'COMBUSTIBLE' | 'OTRO';
+  amount: number;
+  description?: string | null;
+  notes?: string | null;
+  date?: string | null;
+  isPaid?: boolean;
+  thirdPartyId?: string | null;
+  dueDate?: string | null;
+}
+
+export interface Expense {
+  id: string;
+  vehicleId: string;
+  accountId: string;
+  category: string;
+  amount: string | number;
+  description: string | null;
+  paid: boolean;
+  date: string | null;
+  deletedAt: string | null;
+  createdBy: string | null;
+  updatedBy: string | null;
+}
+
+export interface ExpenseUpdateInput {
+  category?: string;
+  amount?: number;
+  description?: string | null;
+  notes?: string | null;
+  date?: string | null;
+  accountId?: string;
+  reason?: string;
+}
+
+export async function apiCreateExpense(token: string, data: ExpenseCreateInput): Promise<{ expense: Expense }> {
+  return postJson('/expenses', data, token);
+}
+
+export async function apiListExpenses(token: string): Promise<Array<Expense & { vehicle?: { plate: string; stage?: string } }>> {
+  return getJson('/expenses', token);
+}
+
+export async function apiUpdateExpense(token: string, id: string, data: ExpenseUpdateInput): Promise<Expense> {
+  const res = await fetch(`${API_BASE}/expenses/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PUT /expenses/${id} failed: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<Expense>;
+}
+
+export async function apiDeleteExpense(token: string, id: string, reason: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/expenses/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`DELETE /expenses/${id} failed: ${res.status} ${text}`);
+  }
+}
+
+export async function apiRestoreExpense(token: string, id: string): Promise<Expense> {
+  return postJson(`/expenses/${id}/restore`, {}, token);
+}
+
+export interface ExpenseAuditEntry {
+  id: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE';
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  createdAt: string;
+  user: { id: string; name: string | null; email: string };
+}
+
+export async function apiGetExpenseAudit(token: string, id: string): Promise<ExpenseAuditEntry[]> {
+  return getJson(`/expenses/${id}/audit`, token);
+}
+
+// ── Transactions (raw) ─────────────────────────────────
+
+export interface TransactionRaw {
+  id: string;
+  accountId: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+  category: string;
+  amount: string | number;
+  description: string | null;
+  expenseId: string | null;
+  date: string;
+}
+
+export async function apiListTransactions(token: string, params: { accountId?: string } = {}): Promise<TransactionRaw[]> {
+  const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
+  const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
+  return Array.isArray(res) ? res : res.transactions;
+}

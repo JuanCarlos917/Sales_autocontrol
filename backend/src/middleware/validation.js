@@ -244,6 +244,25 @@ const expensePaymentSchema = Joi.object({
   date: Joi.date().allow(null),
 });
 
+// ── Expense Update Schema (campos editables + reason opcional) ──
+const expenseUpdateSchema = Joi.object({
+  accountId: Joi.string(),
+  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'COMISION', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO'),
+  amount: Joi.number().positive(),
+  description: Joi.string().max(500).allow('', null),
+  notes: Joi.string().max(1000).allow('', null),
+  date: Joi.date().allow(null),
+  reason: Joi.string().max(500).allow('', null),
+}).min(1);
+
+// ── Expense Delete Schema (motivo obligatorio, mín 10 chars) ──
+const expenseDeleteSchema = Joi.object({
+  reason: Joi.string().min(10).max(500).required().messages({
+    'any.required': 'Debe indicar un motivo para eliminar el gasto',
+    'string.min': 'El motivo debe tener al menos 10 caracteres',
+  }),
+});
+
 // ── Settings Schema ──
 const settingsSchema = Joi.object({
   fixedMonthly: Joi.number().min(0).optional(),
@@ -401,6 +420,8 @@ module.exports = {
     expense: expenseSchema,
     expenseWithTreasury: expenseWithTreasurySchema,
     expensePayment: expensePaymentSchema,
+    expenseUpdate: expenseUpdateSchema,
+    expenseDelete: expenseDeleteSchema,
     settings: settingsSchema,
     // Tesorería
     account: accountSchema,

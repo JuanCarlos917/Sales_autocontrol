@@ -35,8 +35,23 @@ const createWithTreasury = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const expense = await expenseService.update(req.params.id, req.body, req.user.id);
+    const { reason, ...data } = req.body || {};
+    const expense = await expenseService.update(req.params.id, data, req.user.id, { reason });
     res.json(expense);
+  } catch (err) { next(err); }
+};
+
+const restore = async (req, res, next) => {
+  try {
+    const expense = await expenseService.restore(req.params.id, req.user.id);
+    res.json(expense);
+  } catch (err) { next(err); }
+};
+
+const getAuditLog = async (req, res, next) => {
+  try {
+    const logs = await expenseService.getAuditLog(req.params.id, req.user.id);
+    res.json(logs);
   } catch (err) { next(err); }
 };
 
@@ -76,7 +91,8 @@ const getUnpaid = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await expenseService.delete(req.params.id, req.user.id);
+    const { reason } = req.body || {};
+    await expenseService.delete(req.params.id, req.user.id, { reason });
     res.json({ message: 'Gasto eliminado' });
   } catch (err) { next(err); }
 };
@@ -89,5 +105,7 @@ module.exports = {
   payExpense,
   getPaymentStatus,
   getUnpaid,
-  remove
+  remove,
+  restore,
+  getAuditLog,
 };

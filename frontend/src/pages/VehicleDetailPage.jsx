@@ -2,18 +2,24 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import api from '@/lib/api';
-import { STAGES, EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, getStage, getCategory } from '@/lib/constants';
+import { EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
+import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
+import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
 import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi, payablesApi, expenseTreasuryApi } from '@/lib/payablesApi';
 import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/components/treasury';
+
+const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
 export default function VehicleDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { moveVehicle, deleteVehicle, deleteExpense, deleteDocument } = useApp();
+  const { deleteVehicle, deleteExpense, restoreExpense, deleteDocument, showToast } = useApp();
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [deletingExpense, setDeletingExpense] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [tab, setTab] = useState(searchParams.get('tab') || 'resumen');
   const [showEditForm, setShowEditForm] = useState(false);
@@ -104,20 +110,9 @@ export default function VehicleDetailPage() {
 
   const m = vehicle.metrics || {};
   const stage = getStage(vehicle.stage);
-  const stageIdx = STAGES.findIndex(s => s.id === vehicle.stage);
   const expenses = vehicle.expenses || [];
   const docs = vehicle.documents || [];
   const portals = vehicle.publishedPortals || [];
-
-  const handleMove = async (newStage) => {
-    // Si va a VENDIDO, abrir modal de venta
-    if (newStage === 'VENDIDO' && vehicle.stage !== 'VENDIDO') {
-      setShowSaleModal(true);
-      return;
-    }
-    await moveVehicle(id, newStage);
-    reloadAll();
-  };
 
   const handleDelete = async () => {
     await deleteVehicle(id);
@@ -213,16 +208,6 @@ export default function VehicleDetailPage() {
           </div>
         )}
 
-        {/* Stage Navigation */}
-        <div className="flex gap-1.5 mt-4 overflow-x-auto">
-          {STAGES.map(s => (
-            <button key={s.id} onClick={() => handleMove(s.id)}
-              className={`px-3 py-1.5 rounded-md text-[11px] font-semibold border shrink-0 transition-colors ${vehicle.stage === s.id ? '' : 'border-border text-[#6E7681] hover:bg-surface-hover'}`}
-              style={vehicle.stage === s.id ? { background: s.color + '18', borderColor: s.color + '50', color: s.color } : {}}>
-              {s.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Tabs */}
@@ -283,14 +268,27 @@ export default function VehicleDetailPage() {
 
       {tab === 'gastos' && (
         <div>
+          {vehicle.stage === 'VENDIDO' && (
+            <div className="mb-4 rounded-lg border border-[#6E7681]/40 bg-[#6E7681]/10 p-3 text-[12px] text-[#8B949E] flex items-center gap-2">
+              🔒 Este vehículo está VENDIDO. Los gastos son de solo lectura.
+            </div>
+          )}
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Total: {formatCurrency(m.totalExpenses)}</span>
-            <button onClick={() => setShowExpenseTreasuryModal(true)} className="btn-primary text-sm">+ Gasto</button>
+            <button
+              onClick={() => vehicle.stage !== 'VENDIDO' && setShowExpenseTreasuryModal(true)}
+              disabled={vehicle.stage === 'VENDIDO'}
+              title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se pueden agregar gastos' : ''}
+              className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              + Gasto
+            </button>
           </div>
           {expenses.length === 0 ? <p className="text-center text-[#6E7681] py-10">Sin gastos registrados</p> : (
             <div className="space-y-2">
               {expenses.map(e => {
                 const cat = getCategory(e.category);
+                const locked = vehicle.stage === 'VENDIDO';
                 return (
                   <div key={e.id} className="flex items-start gap-3 p-3 bg-surface border border-border rounded-lg">
                     <div className="w-1 min-h-[36px] rounded-full shrink-0" style={{ background: cat?.color || '#6E7681' }} />
@@ -307,7 +305,22 @@ export default function VehicleDetailPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-mono font-bold text-sm">{formatCurrency(e.amount)}</span>
-                          <button onClick={() => { deleteExpense(e.id); loadVehicle(); }} className="btn-danger">✕</button>
+                          {!locked && (
+                            <>
+                              <button
+                                onClick={() => setEditingExpense({ ...e, vehicle: { id: vehicle.id, plate: vehicle.plate, stage: vehicle.stage } })}
+                                className="btn-ghost text-xs px-2.5 py-1"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => setDeletingExpense({ ...e, vehicle: { id: vehicle.id, plate: vehicle.plate, stage: vehicle.stage } })}
+                                className="btn-ghost text-[#F85149] text-xs px-2.5 py-1"
+                              >
+                                🗑
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -526,12 +539,17 @@ export default function VehicleDetailPage() {
               <button onClick={() => setConfirmDel(false)} className="btn-ghost text-xs">No</button>
             </div>
           ) : (
-            <button onClick={() => setConfirmDel(true)} className="btn-ghost text-[#F85149] border-[#F8514930]">🗑 Eliminar</button>
+            <button
+              onClick={() => vehicle.stage !== 'VENDIDO' && setConfirmDel(true)}
+              disabled={vehicle.stage === 'VENDIDO'}
+              title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se puede eliminar' : ''}
+              className="btn-ghost text-[#F85149] border-[#F8514930] disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              🗑 Eliminar
+            </button>
           )}
         </div>
         <div className="flex gap-2">
-          {stageIdx > 0 && <button onClick={() => handleMove(STAGES[stageIdx - 1].id)} className="btn-ghost">← {STAGES[stageIdx - 1].label}</button>}
-          {/* Botón de venta destacado para vehículos disponibles */}
           {vehicle.stage !== 'VENDIDO' && (
             <button
               onClick={() => setShowSaleModal(true)}
@@ -540,17 +558,46 @@ export default function VehicleDetailPage() {
               💰 Vender
             </button>
           )}
-          {stageIdx < STAGES.length - 1 && vehicle.stage !== 'DISPONIBLE' && (
-            <button onClick={() => handleMove(STAGES[stageIdx + 1].id)} className="btn-primary" style={{ background: STAGES[stageIdx + 1].color }}>
-              {STAGES[stageIdx + 1].label} →
-            </button>
-          )}
         </div>
       </div>
 
       {/* Modals */}
       {showEditForm && <VehicleFormModal vehicle={vehicle} highlightFields={highlightFields} onClose={() => { closeEditForm(); reloadAll(); }} />}
       {showDocForm && <DocumentFormModal vehicleId={id} onClose={() => { setShowDocForm(false); reloadAll(); }} />}
+
+      {editingExpense && (
+        <ExpenseFormModal
+          expense={editingExpense}
+          onClose={() => { setEditingExpense(null); reloadAll(); }}
+        />
+      )}
+      {deletingExpense && (
+        <ExpenseDeleteModal
+          expense={deletingExpense}
+          onClose={() => setDeletingExpense(null)}
+          onConfirm={async (reason) => {
+            const { id: expenseId } = await deleteExpense(deletingExpense.id, { reason });
+            reloadAll();
+            showToast({
+              msg: `Gasto eliminado (${deletingExpense.vehicle?.plate || ''})`,
+              type: 'danger',
+              duration: UNDO_WINDOW_MS,
+              action: {
+                label: 'Deshacer',
+                onClick: async () => {
+                  try {
+                    await restoreExpense(expenseId);
+                    reloadAll();
+                    showToast('Gasto restaurado', 'success');
+                  } catch (err) {
+                    showToast(err.response?.data?.error || 'No se pudo restaurar', 'danger');
+                  }
+                },
+              },
+            });
+          }}
+        />
+      )}
 
       {/* Modal de Venta */}
       <SalePaymentModal

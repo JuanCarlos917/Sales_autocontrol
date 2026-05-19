@@ -14,10 +14,20 @@ export function AppProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const showToast = useCallback((msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+  const showToast = useCallback((msgOrOpts, type = 'success') => {
+    const opts = typeof msgOrOpts === 'string'
+      ? { msg: msgOrOpts, type, duration: 3000 }
+      : { duration: 3000, ...msgOrOpts };
+    const id = Date.now() + Math.random();
+    setToast({ ...opts, id });
+    if (opts.duration > 0) {
+      setTimeout(() => {
+        setToast(curr => (curr && curr.id === id ? null : curr));
+      }, opts.duration);
+    }
   }, []);
+
+  const dismissToast = useCallback(() => setToast(null), []);
 
   // ── Vehicles ──
   const fetchVehicles = useCallback(async (params = {}) => {
@@ -71,11 +81,29 @@ export function AppProvider({ children }) {
     return data;
   }, [showToast]);
 
-  const deleteExpense = useCallback(async (id) => {
-    await api.delete(`/expenses/${id}`);
+  const updateExpense = useCallback(async (id, payload, { reason } = {}) => {
+    const body = reason ? { ...payload, reason } : payload;
+    const { data } = await api.put(`/expenses/${id}`, body);
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
+    return data;
+  }, []);
+
+  const deleteExpense = useCallback(async (id, { reason } = {}) => {
+    await api.delete(`/expenses/${id}`, { data: { reason } });
     setExpenses(prev => prev.filter(e => e.id !== id));
-    showToast('Gasto eliminado', 'danger');
-  }, [showToast]);
+    return { id };
+  }, []);
+
+  const restoreExpense = useCallback(async (id) => {
+    const { data } = await api.post(`/expenses/${id}/restore`);
+    await fetchExpenses();
+    return data;
+  }, []);
+
+  const fetchExpenseAudit = useCallback(async (id) => {
+    const { data } = await api.get(`/expenses/${id}/audit`);
+    return data;
+  }, []);
 
   // ── Documents ──
   const uploadDocument = useCallback(async (vehicleId, formData) => {
@@ -127,8 +155,9 @@ export function AppProvider({ children }) {
 
   const value = {
     vehicles, expenses, dashboard, loading, toast,
-    showToast, fetchVehicles, createVehicle, updateVehicle, moveVehicle, deleteVehicle,
-    fetchExpenses, createExpense, deleteExpense,
+    showToast, dismissToast,
+    fetchVehicles, createVehicle, updateVehicle, moveVehicle, deleteVehicle,
+    fetchExpenses, createExpense, updateExpense, deleteExpense, restoreExpense, fetchExpenseAudit,
     uploadDocument, deleteDocument,
     fetchDashboard, fetchSettings, updateSettings, exportCSV,
   };
