@@ -73,3 +73,13 @@ export async function resetStatePerTest() {
     await seedInitialCashTransaction(client);
   });
 }
+
+/**
+ * Forzar el stage de un vehiculo bypaseando validaciones de negocio.
+ * Solo para tests que necesitan colocar un vehiculo en VENDIDO directamente.
+ */
+export async function forceVehicleStage(vehicleId: string, stage: string): Promise<void> {
+  await withClient(async (client) => {
+    await client.query(`UPDATE vehicles SET stage = $1, "updatedAt" = NOW() WHERE id = $2`, [stage, vehicleId]);
+  });
+}

@@ -174,6 +174,11 @@ class VehicleService {
     });
     if (!existing) throw new AppError('Vehículo no encontrado', 404);
 
+    // VENDIDO es estado final: no se puede mover a otra etapa
+    if (existing.stage === 'VENDIDO' && stage !== 'VENDIDO') {
+      throw new AppError('VENDIDO es un estado final: no se puede mover a otra etapa', 403);
+    }
+
     // Desde NEGOCIANDO solo se permite pasar a COMPRADO
     if (existing.stage === 'NEGOCIANDO' && stage !== 'NEGOCIANDO' && stage !== 'COMPRADO') {
       throw new AppError('Desde Negociando solo puedes pasar a Comprado', 400);
@@ -300,6 +305,10 @@ class VehicleService {
   async delete(id, userId) {
     const existing = await prisma.vehicle.findFirst({ where: { id, userId } });
     if (!existing) throw new AppError('Vehículo no encontrado', 404);
+
+    if (existing.stage === 'VENDIDO') {
+      throw new AppError('Vehículo VENDIDO: no se puede eliminar', 403);
+    }
 
     // Cascade delete handles expenses and documents
     await prisma.vehicle.delete({ where: { id } });

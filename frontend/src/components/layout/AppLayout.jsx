@@ -20,7 +20,7 @@ const NAV_ITEMS = [
 
 export default function AppLayout() {
   const { logout } = useAuth();
-  const { toast, exportCSV } = useApp();
+  const { toast, exportCSV, dismissToast } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const location = useLocation();
@@ -121,7 +121,14 @@ export default function AppLayout() {
       )}
 
       {/* Toast */}
-      {toast && <Toast message={toast.msg} type={toast.type} />}
+      {toast && (
+        <Toast
+          message={toast.msg}
+          type={toast.type}
+          action={toast.action}
+          onDismiss={toast.action ? dismissToast : undefined}
+        />
+      )}
     </div>
   );
 }

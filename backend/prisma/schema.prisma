@@ -17,19 +17,20 @@ datasource db {
 // ══════════════════════════════════════════════════════════════
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  pin           String?
-  name          String?
-  role          Role      @default(ADMIN)
-  isActive      Boolean   @default(true)
-  lastLogin     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  pin       String?
+  name      String?
+  role      Role      @default(ADMIN)
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  vehicles      Vehicle[]
-  refreshTokens RefreshToken[]
+  vehicles         Vehicle[]
+  refreshTokens    RefreshToken[]
+  expenseAuditLogs ExpenseAuditLog[]
 
   @@map("users")
 }
@@ -55,50 +56,50 @@ enum Role {
 // ══════════════════════════════════════════════════════════════
 
 model Vehicle {
-  id                    String        @id @default(cuid())
-  plate                 String
-  brand                 String?
-  model                 String?
-  year                  Int?
-  color                 String?
-  km                    Int?
-  stage                 VehicleStage  @default(NEGOCIANDO)
+  id    String       @id @default(cuid())
+  plate String
+  brand String?
+  model String?
+  year  Int?
+  color String?
+  km    Int?
+  stage VehicleStage @default(NEGOCIANDO)
 
-  negotiatedValue       Decimal?      @db.Decimal(15, 2)
-  purchasePrice         Decimal?      @db.Decimal(15, 2)
-  listedPrice           Decimal?      @db.Decimal(15, 2)
-  salePrice             Decimal?      @db.Decimal(15, 2)
-  participation         Decimal       @default(1.0) @db.Decimal(5, 4)
-  partnerContribution   Decimal?      @db.Decimal(15, 2)
-  partnerAssumesExpenses Boolean      @default(true)
+  negotiatedValue        Decimal? @db.Decimal(15, 2)
+  purchasePrice          Decimal? @db.Decimal(15, 2)
+  listedPrice            Decimal? @db.Decimal(15, 2)
+  salePrice              Decimal? @db.Decimal(15, 2)
+  participation          Decimal  @default(1.0) @db.Decimal(5, 4)
+  partnerContribution    Decimal? @db.Decimal(15, 2)
+  partnerAssumesExpenses Boolean  @default(true)
 
-  purchaseDate          DateTime?
-  saleDate              DateTime?
+  purchaseDate DateTime?
+  saleDate     DateTime?
 
-  receivedVehicle       Boolean       @default(false)
-  receivedVehiclePlate  String?
-  receivedVehicleValue  Decimal?      @db.Decimal(15, 2)
+  receivedVehicle      Boolean  @default(false)
+  receivedVehiclePlate String?
+  receivedVehicleValue Decimal? @db.Decimal(15, 2)
 
-  publishedPortals      String[]      @default([])
+  publishedPortals String[] @default([])
 
   // Terceros asociados al vehículo
-  supplierId            String?
-  supplier              ThirdParty?   @relation("VehicleSupplier", fields: [supplierId], references: [id])
-  partnerId             String?
-  partner               ThirdParty?   @relation("VehiclePartner", fields: [partnerId], references: [id])
-  buyerId               String?
-  buyer                 ThirdParty?   @relation("VehicleBuyer", fields: [buyerId], references: [id])
+  supplierId String?
+  supplier   ThirdParty? @relation("VehicleSupplier", fields: [supplierId], references: [id])
+  partnerId  String?
+  partner    ThirdParty? @relation("VehiclePartner", fields: [partnerId], references: [id])
+  buyerId    String?
+  buyer      ThirdParty? @relation("VehicleBuyer", fields: [buyerId], references: [id])
 
-  notes                 String?
-  userId                String
-  user                  User          @relation(fields: [userId], references: [id])
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  notes     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  expenses              Expense[]
-  documents             Document[]
-  payables              Payable[]
-  transactions          Transaction[]
+  expenses     Expense[]
+  documents    Document[]
+  payables     Payable[]
+  transactions Transaction[]
 
   @@index([userId, stage])
   @@index([plate])
@@ -135,12 +136,19 @@ model Expense {
   paid        Boolean         @default(true)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedAt   DateTime?
+  deletedBy   String?
 
-  payable     Payable?
+  payable      Payable?
+  transactions Transaction[]
+  auditLogs    ExpenseAuditLog[]
 
   @@index([vehicleId])
   @@index([category])
   @@index([accountId])
+  @@index([deletedAt])
   @@map("expenses")
 }
 
@@ -161,16 +169,16 @@ enum ExpenseCategory {
 // ══════════════════════════════════════════════════════════════
 
 model Document {
-  id          String       @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  type        DocumentType
-  filename    String
-  filepath    String
-  mimetype    String?
-  size        Int?
-  notes       String?
-  createdAt   DateTime     @default(now())
+  id        String       @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type      DocumentType
+  filename  String
+  filepath  String
+  mimetype  String?
+  size      Int?
+  notes     String?
+  createdAt DateTime     @default(now())
 
   @@index([vehicleId])
   @@map("documents")
@@ -214,13 +222,13 @@ model Account {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  transactions    Transaction[]
-  transfersFrom   Transfer[]    @relation("TransferFrom")
-  transfersTo     Transfer[]    @relation("TransferTo")
-  cashCounts      CashCount[]
-  expenses        Expense[]
-  loans           Loan[]        @relation("LoanOriginAccount")
-  loanPayments    LoanPayment[] @relation("LoanPaymentAccount")
+  transactions  Transaction[]
+  transfersFrom Transfer[]    @relation("TransferFrom")
+  transfersTo   Transfer[]    @relation("TransferTo")
+  cashCounts    CashCount[]
+  expenses      Expense[]
+  loans         Loan[]        @relation("LoanOriginAccount")
+  loanPayments  LoanPayment[] @relation("LoanPaymentAccount")
 
   @@map("accounts")
 }
@@ -246,12 +254,12 @@ model ThirdParty {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  transactions        Transaction[]
-  payables            Payable[]
-  vehiclesAsSupplier  Vehicle[]     @relation("VehicleSupplier")
-  vehiclesAsPartner   Vehicle[]     @relation("VehiclePartner")
-  vehiclesAsBuyer     Vehicle[]     @relation("VehicleBuyer")
-  loansAsBorrower     Loan[]        @relation("LoanBorrower")
+  transactions       Transaction[]
+  payables           Payable[]
+  vehiclesAsSupplier Vehicle[]     @relation("VehicleSupplier")
+  vehiclesAsPartner  Vehicle[]     @relation("VehiclePartner")
+  vehiclesAsBuyer    Vehicle[]     @relation("VehicleBuyer")
+  loansAsBorrower    Loan[]        @relation("LoanBorrower")
 
   @@map("third_parties")
 }
@@ -284,16 +292,17 @@ model Transaction {
   thirdParty   ThirdParty?         @relation(fields: [thirdPartyId], references: [id])
   transferId   String?
   transfer     Transfer?           @relation(fields: [transferId], references: [id])
-  expenseId    String?             @unique
+  expenseId    String?
+  expense      Expense?            @relation(fields: [expenseId], references: [id])
   createdBy    String
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
   payablePayment PayablePayment?
   loanId         String?
-  loan           Loan?        @relation(fields: [loanId], references: [id])
+  loan           Loan?           @relation(fields: [loanId], references: [id])
   loanPaymentId  String?
-  loanPayment    LoanPayment? @relation(fields: [loanPaymentId], references: [id])
+  loanPayment    LoanPayment?    @relation(fields: [loanPaymentId], references: [id])
 
   @@index([accountId])
   @@index([vehicleId])
@@ -302,6 +311,7 @@ model Transaction {
   @@index([type, category])
   @@index([loanId])
   @@index([loanPaymentId])
+  @@index([expenseId])
   @@map("transactions")
 }
 
@@ -327,6 +337,8 @@ enum TransactionCategory {
   LOAN_DISBURSEMENT
   LOAN_REPAYMENT
   LOAN_EXTRA_INCOME
+  EXPENSE_ADJUSTMENT
+  EXPENSE_REVERSAL
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -435,25 +447,25 @@ enum PayableStatus {
 // ══════════════════════════════════════════════════════════════
 
 model Loan {
-  id               String      @id @default(cuid())
+  id               String     @id @default(cuid())
   borrowerId       String
   originAccountId  String
-  principalAmount  Decimal     @db.Decimal(15, 2)
-  paidAmount       Decimal     @default(0) @db.Decimal(15, 2)
-  extraReceived    Decimal     @default(0) @db.Decimal(15, 2)
-  status           LoanStatus  @default(PENDING)
+  principalAmount  Decimal    @db.Decimal(15, 2)
+  paidAmount       Decimal    @default(0) @db.Decimal(15, 2)
+  extraReceived    Decimal    @default(0) @db.Decimal(15, 2)
+  status           LoanStatus @default(PENDING)
   description      String?
-  disbursementDate DateTime    @default(now())
+  disbursementDate DateTime   @default(now())
   notes            String?
   createdBy        String
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
-  borrower         ThirdParty  @relation("LoanBorrower", fields: [borrowerId], references: [id])
-  originAccount    Account     @relation("LoanOriginAccount", fields: [originAccountId], references: [id])
-  installments     LoanInstallment[]
-  payments         LoanPayment[]
-  transactions     Transaction[]
+  borrower      ThirdParty        @relation("LoanBorrower", fields: [borrowerId], references: [id])
+  originAccount Account           @relation("LoanOriginAccount", fields: [originAccountId], references: [id])
+  installments  LoanInstallment[]
+  payments      LoanPayment[]
+  transactions  Transaction[]
 
   @@index([borrowerId])
   @@index([status])
@@ -461,15 +473,15 @@ model Loan {
 }
 
 model LoanInstallment {
-  id            String             @id @default(cuid())
+  id            String            @id @default(cuid())
   loanId        String
   sequence      Int
   dueDate       DateTime
-  plannedAmount Decimal            @db.Decimal(15, 2)
-  paidAmount    Decimal            @default(0) @db.Decimal(15, 2)
-  status        InstallmentStatus  @default(PENDING)
+  plannedAmount Decimal           @db.Decimal(15, 2)
+  paidAmount    Decimal           @default(0) @db.Decimal(15, 2)
+  status        InstallmentStatus @default(PENDING)
 
-  loan          Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
   @@unique([loanId, sequence])
   @@index([dueDate])
@@ -477,19 +489,19 @@ model LoanInstallment {
 }
 
 model LoanPayment {
-  id              String       @id @default(cuid())
+  id              String   @id @default(cuid())
   loanId          String
   accountId       String
-  principalAmount Decimal      @db.Decimal(15, 2)
-  extraAmount     Decimal      @default(0) @db.Decimal(15, 2)
-  date            DateTime     @default(now())
+  principalAmount Decimal  @db.Decimal(15, 2)
+  extraAmount     Decimal  @default(0) @db.Decimal(15, 2)
+  date            DateTime @default(now())
   notes           String?
   createdBy       String
-  createdAt       DateTime     @default(now())
+  createdAt       DateTime @default(now())
 
-  loan            Loan         @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  account         Account      @relation("LoanPaymentAccount", fields: [accountId], references: [id])
-  transactions    Transaction[]
+  loan         Loan          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  account      Account       @relation("LoanPaymentAccount", fields: [accountId], references: [id])
+  transactions Transaction[]
 
   @@index([loanId])
   @@map("loan_payments")
@@ -506,4 +518,33 @@ enum InstallmentStatus {
   PENDING
   PARTIAL
   PAID
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUDITORÍA DE GASTOS
+// ══════════════════════════════════════════════════════════════
+
+model ExpenseAuditLog {
+  id        String             @id @default(cuid())
+  expenseId String
+  expense   Expense            @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  action    ExpenseAuditAction
+  before    Json?
+  after     Json?
+  reason    String?
+  createdAt DateTime           @default(now())
+
+  @@index([expenseId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("expense_audit_logs")
+}
+
+enum ExpenseAuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
 }

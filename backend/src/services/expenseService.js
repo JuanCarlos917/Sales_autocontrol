@@ -5,22 +5,55 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 
+const RESTORE_WINDOW_MS = 5 * 60 * 1000;
+const SNAPSHOT_FIELDS = [
+  'id', 'vehicleId', 'accountId', 'category', 'amount',
+  'description', 'notes', 'date', 'paid',
+];
+const EDITABLE_FIELDS = [
+  'accountId', 'category', 'amount', 'description', 'notes', 'date',
+];
+
+function snapshot(expense) {
+  return SNAPSHOT_FIELDS.reduce((acc, f) => {
+    const v = expense[f];
+    acc[f] = v instanceof Date ? v.toISOString() : (v?.toString?.() ?? v);
+    return acc;
+  }, {});
+}
+
+async function writeAudit(tx, { expenseId, userId, action, before, after, reason }) {
+  const data = { expenseId, userId, action };
+  if (before !== undefined && before !== null) data.before = before;
+  if (after !== undefined && after !== null) data.after = after;
+  if (reason) data.reason = reason;
+  return tx.expenseAuditLog.create({ data });
+}
+
+async function assertVehicleEditable(tx, vehicleId) {
+  const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId }, select: { stage: true } });
+  if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
+  if (vehicle.stage === 'VENDIDO') {
+    throw new AppError('Vehículo VENDIDO: no se permiten cambios en gastos', 403);
+  }
+}
+
 class ExpenseService {
-  async findByVehicle(vehicleId, userId) {
-    // Verify vehicle ownership
+  async findByVehicle(vehicleId, userId, { includeDeleted = false } = {}) {
     const vehicle = await prisma.vehicle.findFirst({ where: { id: vehicleId, userId } });
     if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
 
     return prisma.expense.findMany({
-      where: { vehicleId },
+      where: { vehicleId, ...(includeDeleted ? {} : { deletedAt: null }) },
       orderBy: { date: 'desc' },
     });
   }
 
-  async findAll(userId, { category, paid } = {}) {
+  async findAll(userId, { category, paid, includeDeleted = false } = {}) {
     const where = { vehicle: { userId } };
     if (category) where.category = category;
     if (paid !== undefined) where.paid = paid;
+    if (!includeDeleted) where.deletedAt = null;
 
     return prisma.expense.findMany({
       where,
@@ -76,11 +109,15 @@ class ExpenseService {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      await assertVehicleEditable(tx, expenseData.vehicleId);
+
       const expense = await tx.expense.create({
         data: {
           ...expenseData,
           accountId,
           paid: !!isPaid,
+          createdBy: userId,
+          updatedBy: userId,
         }
       });
 
@@ -118,6 +155,13 @@ class ExpenseService {
           },
         });
       }
+
+      await writeAudit(tx, {
+        expenseId: expense.id,
+        userId,
+        action: 'CREATE',
+        after: snapshot(expense),
+      });
 
       return { expense, transaction, payable };
     });
@@ -233,8 +277,19 @@ class ExpenseService {
 
       const updatedExpense = await tx.expense.update({
         where: { id: expenseId },
-        data: { paid: isFullyPaid },
+        data: { paid: isFullyPaid, updatedBy: userId },
       });
+
+      if (isFullyPaid && !expense.paid) {
+        await writeAudit(tx, {
+          expenseId,
+          userId,
+          action: 'UPDATE',
+          before: snapshot(expense),
+          after: snapshot(updatedExpense),
+          reason: 'Pago registrado',
+        });
+      }
 
       return { expense: updatedExpense, transaction, payable: updatedPayable };
     });
@@ -301,6 +356,7 @@ class ExpenseService {
   async getUnpaidExpenses(userId, vehicleId = null) {
     const where = {
       paid: false,
+      deletedAt: null,
       vehicle: { userId }
     };
 
@@ -334,44 +390,288 @@ class ExpenseService {
     }));
   }
 
-  async update(id, data, userId) {
+  /**
+   * Actualiza un gasto siguiendo la policy de campos editables.
+   * Campos financieros (amount/accountId/date) generan ajustes en tesorería.
+   * Bloqueado si vehículo VENDIDO o si CxP con pagos parciales.
+   */
+  async update(id, data, userId, { reason } = {}) {
+    const expense = await prisma.expense.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        vehicle: { select: { userId: true, plate: true } },
+        payable: true,
+      },
+    });
+    if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
+
+    if (data.vehicleId && data.vehicleId !== expense.vehicleId) {
+      throw new AppError('No se puede cambiar el vehículo de un gasto', 400);
+    }
+
+    const changes = {};
+    for (const f of EDITABLE_FIELDS) {
+      if (data[f] === undefined) continue;
+      const oldV = expense[f];
+      const newV = data[f];
+      const same = oldV instanceof Date
+        ? new Date(newV).getTime() === oldV.getTime()
+        : oldV?.toString?.() === newV?.toString?.();
+      if (!same) changes[f] = newV;
+    }
+
+    if (Object.keys(changes).length === 0) return expense;
+
+    const isPaidNow = expense.paid;
+    const payable = expense.payable;
+    const hasPartialPayments = payable && parseFloat(payable.paidAmount) > 0;
+
+    const touchesFinancials =
+      changes.amount !== undefined ||
+      changes.accountId !== undefined ||
+      changes.date !== undefined;
+
+    if (hasPartialPayments && (changes.amount !== undefined || changes.accountId !== undefined)) {
+      throw new AppError('No se puede modificar monto ni cuenta de un gasto con pagos parciales registrados', 400);
+    }
+
+    const before = snapshot(expense);
+
+    const result = await prisma.$transaction(async (tx) => {
+      await assertVehicleEditable(tx, expense.vehicleId);
+
+      const updated = await tx.expense.update({
+        where: { id },
+        data: { ...changes, updatedBy: userId },
+      });
+
+      const oldAmount = parseFloat(expense.amount);
+      const newAmount = changes.amount !== undefined ? parseFloat(changes.amount) : oldAmount;
+      const accountChanged = changes.accountId !== undefined && changes.accountId !== expense.accountId;
+      const amountChanged = changes.amount !== undefined && newAmount !== oldAmount;
+      const dateChanged = changes.date !== undefined;
+
+      // Caso CxP sin pagos: ajustamos Payable.totalAmount sin tocar tesorería
+      if (payable && !isPaidNow) {
+        if (amountChanged) {
+          await tx.payable.update({ where: { id: payable.id }, data: { totalAmount: newAmount } });
+        }
+      }
+
+      // Caso pagado: generar Transactions de ajuste
+      if (isPaidNow && touchesFinancials) {
+        if (accountChanged) {
+          // Reverso completo en cuenta vieja + cargo completo en cuenta nueva
+          await tx.transaction.create({
+            data: {
+              accountId: expense.accountId,
+              type: 'INCOME',
+              category: 'EXPENSE_ADJUSTMENT',
+              amount: newAmount,
+              description: `Ajuste por cambio de cuenta (reverso): ${expense.description || expense.category}`,
+              date: new Date(),
+              vehicleId: expense.vehicleId,
+              expenseId: expense.id,
+              createdBy: userId,
+            },
+          });
+          await tx.transaction.create({
+            data: {
+              accountId: changes.accountId,
+              type: 'EXPENSE',
+              category: 'EXPENSE_ADJUSTMENT',
+              amount: newAmount,
+              description: `Ajuste por cambio de cuenta (cargo): ${expense.description || expense.category}`,
+              date: new Date(),
+              vehicleId: expense.vehicleId,
+              expenseId: expense.id,
+              createdBy: userId,
+            },
+          });
+        } else if (amountChanged) {
+          const delta = newAmount - oldAmount;
+          await tx.transaction.create({
+            data: {
+              accountId: expense.accountId,
+              type: delta > 0 ? 'EXPENSE' : 'INCOME',
+              category: 'EXPENSE_ADJUSTMENT',
+              amount: Math.abs(delta),
+              description: `Ajuste de monto: ${expense.description || expense.category}`,
+              date: new Date(),
+              vehicleId: expense.vehicleId,
+              expenseId: expense.id,
+              createdBy: userId,
+            },
+          });
+        }
+
+        if (dateChanged && !accountChanged) {
+          // Actualiza la fecha de la Transaction original (la primera no-reversa/no-ajuste)
+          const original = await tx.transaction.findFirst({
+            where: { expenseId: expense.id, category: 'VEHICLE_EXPENSE' },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (original) {
+            await tx.transaction.update({ where: { id: original.id }, data: { date: new Date(changes.date) } });
+          }
+        }
+      }
+
+      await writeAudit(tx, {
+        expenseId: id,
+        userId,
+        action: 'UPDATE',
+        before,
+        after: snapshot(updated),
+        reason,
+      });
+
+      return updated;
+    });
+
+    return result;
+  }
+
+  /**
+   * Soft delete: marca deletedAt, crea reversos en tesorería y cancela payable si existe.
+   * Requiere motivo (mínimo 10 caracteres).
+   */
+  async delete(id, userId, { reason } = {}) {
+    if (!reason || reason.trim().length < 10) {
+      throw new AppError('Debe indicar un motivo de al menos 10 caracteres para eliminar', 400);
+    }
+
+    const expense = await prisma.expense.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        vehicle: { select: { userId: true } },
+        payable: { include: { payments: true } },
+        transactions: true,
+      },
+    });
+    if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
+
+    const before = snapshot(expense);
+
+    await prisma.$transaction(async (tx) => {
+      await assertVehicleEditable(tx, expense.vehicleId);
+
+      // Crear reverso para cada Transaction no-reversal vinculada al gasto
+      const toReverse = expense.transactions.filter((t) => t.category !== 'EXPENSE_REVERSAL');
+      for (const t of toReverse) {
+        const oppositeType = t.type === 'EXPENSE' ? 'INCOME' : 'EXPENSE';
+        await tx.transaction.create({
+          data: {
+            accountId: t.accountId,
+            type: oppositeType,
+            category: 'EXPENSE_REVERSAL',
+            amount: t.amount,
+            description: `Reverso por borrado: ${t.description || expense.category}`,
+            date: new Date(),
+            vehicleId: t.vehicleId,
+            expenseId: expense.id,
+            thirdPartyId: t.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (expense.payable && expense.payable.status !== 'CANCELLED') {
+        await tx.payable.update({
+          where: { id: expense.payable.id },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
+      const deleted = await tx.expense.update({
+        where: { id },
+        data: { deletedAt: new Date(), deletedBy: userId },
+      });
+
+      await writeAudit(tx, {
+        expenseId: id,
+        userId,
+        action: 'DELETE',
+        before,
+        reason,
+      });
+
+      return deleted;
+    });
+
+    return { deleted: true };
+  }
+
+  /**
+   * Restaura un gasto soft-deleted dentro de la ventana de 5 minutos.
+   * Borra los reversos creados durante el delete y des-cancela el Payable.
+   */
+  async restore(id, userId) {
+    const expense = await prisma.expense.findFirst({
+      where: { id },
+      include: {
+        vehicle: { select: { userId: true } },
+        payable: true,
+      },
+    });
+    if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
+    if (!expense.deletedAt) throw new AppError('El gasto no está eliminado', 400);
+
+    const elapsedMs = Date.now() - new Date(expense.deletedAt).getTime();
+    if (elapsedMs > RESTORE_WINDOW_MS) {
+      throw new AppError('La ventana de 5 minutos para deshacer ha expirado', 400);
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      await assertVehicleEditable(tx, expense.vehicleId);
+
+      // Borrar todos los reversos del gasto: en estado restaurado no debe quedar ninguno.
+      // Si hubo soft-delete previo, los reversos de ese ciclo ya fueron eliminados en su propio restore.
+      await tx.transaction.deleteMany({
+        where: { expenseId: id, category: 'EXPENSE_REVERSAL' },
+      });
+
+      // Des-cancelar el payable: derivar estado a partir de paidAmount
+      if (expense.payable && expense.payable.status === 'CANCELLED') {
+        const paid = parseFloat(expense.payable.paidAmount);
+        const total = parseFloat(expense.payable.totalAmount);
+        const newStatus = paid === 0 ? 'PENDING' : (paid >= total ? 'PAID' : 'PARTIAL');
+        await tx.payable.update({ where: { id: expense.payable.id }, data: { status: newStatus } });
+      }
+
+      const restored = await tx.expense.update({
+        where: { id },
+        data: { deletedAt: null, deletedBy: null },
+      });
+
+      await writeAudit(tx, {
+        expenseId: id,
+        userId,
+        action: 'RESTORE',
+        after: snapshot(restored),
+      });
+
+      return restored;
+    });
+
+    return result;
+  }
+
+  /**
+   * Devuelve el audit log de un gasto (orden cronológico DESC).
+   */
+  async getAuditLog(id, userId) {
     const expense = await prisma.expense.findFirst({
       where: { id },
       include: { vehicle: { select: { userId: true } } },
     });
     if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
 
-    return prisma.expense.update({ where: { id }, data });
-  }
-
-  async delete(id, userId) {
-    const expense = await prisma.expense.findFirst({
-      where: { id },
-      include: {
-        vehicle: { select: { userId: true } },
-        payable: { include: { payments: true } },
-      },
+    return prisma.expenseAuditLog.findMany({
+      where: { expenseId: id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
     });
-    if (!expense || expense.vehicle.userId !== userId) throw new AppError('Gasto no encontrado', 404);
-
-    await prisma.$transaction(async (tx) => {
-      // Limpiar pagos y payable asociados (reversan saldo a través de las transacciones vinculadas)
-      if (expense.payable) {
-        const paymentTxIds = expense.payable.payments.map(p => p.transactionId);
-        await tx.payablePayment.deleteMany({ where: { payableId: expense.payable.id } });
-        if (paymentTxIds.length > 0) {
-          await tx.transaction.deleteMany({ where: { id: { in: paymentTxIds } } });
-        }
-        await tx.payable.delete({ where: { id: expense.payable.id } });
-      }
-
-      // Limpiar transacción de egreso directa (gasto pagado al momento)
-      await tx.transaction.deleteMany({ where: { expenseId: id } });
-
-      await tx.expense.delete({ where: { id } });
-    });
-
-    return { deleted: true };
   }
 }
 

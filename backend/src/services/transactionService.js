@@ -100,6 +100,11 @@ class TransactionService {
     const existing = await prisma.transaction.findUnique({ where: { id } });
     if (!existing) throw new AppError('Movimiento no encontrado', 404);
 
+    // Transactions ligadas a un gasto: se editan a través del gasto
+    if (existing.expenseId) {
+      throw new AppError('Este movimiento proviene de un gasto. Editá el gasto en /expenses.', 403);
+    }
+
     // No permitir cambiar tipo o cuenta después de creado
     const allowedFields = ['description', 'reference', 'date', 'thirdPartyId'];
     const updateData = {};
@@ -119,6 +124,11 @@ class TransactionService {
   async delete(id) {
     const existing = await prisma.transaction.findUnique({ where: { id } });
     if (!existing) throw new AppError('Movimiento no encontrado', 404);
+
+    // Transactions ligadas a un gasto: se borran a través del gasto (soft delete + reverso)
+    if (existing.expenseId) {
+      throw new AppError('Este movimiento proviene de un gasto. Eliminá el gasto en /expenses.', 403);
+    }
 
     // No permitir eliminar si está vinculado a un vehículo vendido
     if (existing.vehicleId) {
