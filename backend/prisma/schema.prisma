@@ -22,7 +22,7 @@ model User {
   password  String
   pin       String?
   name      String?
-  role      Role      @default(ADMIN)
+  role      Role      @default(SUPERVISOR)
   isActive  Boolean   @default(true)
   lastLogin DateTime?
   createdAt DateTime  @default(now())
@@ -31,6 +31,7 @@ model User {
   vehicles         Vehicle[]
   refreshTokens    RefreshToken[]
   expenseAuditLogs ExpenseAuditLog[]
+  vehicleAuditLogs VehicleAuditLog[]
 
   @@map("users")
 }
@@ -48,6 +49,7 @@ model RefreshToken {
 
 enum Role {
   ADMIN
+  SUPERVISOR
   VIEWER
 }
 
@@ -100,6 +102,7 @@ model Vehicle {
   documents    Document[]
   payables     Payable[]
   transactions Transaction[]
+  auditLogs    VehicleAuditLog[]
 
   @@index([userId, stage])
   @@index([plate])
@@ -547,4 +550,33 @@ enum ExpenseAuditAction {
   UPDATE
   DELETE
   RESTORE
+}
+
+// ══════════════════════════════════════════════════════════════
+// AUDITORÍA DE VEHÍCULOS
+// ══════════════════════════════════════════════════════════════
+
+model VehicleAuditLog {
+  id        String             @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle            @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  action    VehicleAuditAction
+  before    Json?
+  after     Json?
+  reason    String?
+  createdAt DateTime           @default(now())
+
+  @@index([vehicleId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("vehicle_audit_logs")
+}
+
+enum VehicleAuditAction {
+  CREATE
+  UPDATE
+  STAGE_CHANGE
+  DELETE
 }

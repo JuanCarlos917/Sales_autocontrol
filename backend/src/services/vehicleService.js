@@ -22,6 +22,61 @@ const STAGES_REQUIRING_VALUE = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPON
 // Etapas que requieren proveedor obligatorio (después de COMPRADO)
 const STAGES_REQUIRING_SUPPLIER = ['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'];
 
+// Campos de identidad física del vehículo. Una vez fuera de NEGOCIANDO solo ADMIN los edita.
+const IDENTITY_FIELDS = ['plate', 'brand', 'model', 'year', 'color', 'km'];
+
+// Campos escalares que se capturan en el snapshot de auditoría (sin relaciones ni timestamps de sistema).
+const VEHICLE_SNAPSHOT_FIELDS = [
+  'id', 'plate', 'brand', 'model', 'year', 'color', 'km', 'stage',
+  'negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice',
+  'participation', 'partnerContribution', 'partnerAssumesExpenses',
+  'purchaseDate', 'saleDate', 'receivedVehicle', 'receivedVehiclePlate',
+  'receivedVehicleValue', 'publishedPortals', 'supplierId', 'partnerId',
+  'buyerId', 'notes',
+];
+
+function snapshot(vehicle) {
+  return VEHICLE_SNAPSHOT_FIELDS.reduce((acc, f) => {
+    const v = vehicle[f];
+    if (v instanceof Date) acc[f] = v.toISOString();
+    else if (Array.isArray(v)) acc[f] = [...v];
+    else acc[f] = v?.toString?.() ?? v;
+    return acc;
+  }, {});
+}
+
+async function writeAudit(tx, { vehicleId, userId, action, before, after, reason }) {
+  const data = { vehicleId, userId, action };
+  if (before !== undefined && before !== null) data.before = before;
+  if (after !== undefined && after !== null) data.after = after;
+  if (reason) data.reason = reason;
+  return tx.vehicleAuditLog.create({ data });
+}
+
+/**
+ * Policy de edición por etapa y rol (ver spec edit-lock):
+ *  - VENDIDO: lock absoluto, nadie edita (ni ADMIN).
+ *  - Fuera de NEGOCIANDO: solo ADMIN puede tocar campos de identidad.
+ * Las reglas previas (precio bloqueado con CxP, socio/proveedor inmutable) siguen aplicando aparte.
+ */
+function assertEditPolicy(existing, data, role) {
+  if (existing.stage === 'VENDIDO') {
+    throw new AppError('Vehículo VENDIDO: no se permiten cambios', 403);
+  }
+  if (existing.stage !== 'NEGOCIANDO' && role !== 'ADMIN') {
+    const touched = IDENTITY_FIELDS.filter((f) => {
+      if (!(f in data)) return false;
+      return String(existing[f] ?? '') !== String(data[f] ?? '');
+    });
+    if (touched.length > 0) {
+      throw new AppError(
+        `Solo un administrador puede modificar ${touched.join(', ')} una vez registrada la compra`,
+        403
+      );
+    }
+  }
+}
+
 class VehicleService {
   async findAll(userId, { stage, search } = {}) {
     const where = { userId };
@@ -83,10 +138,13 @@ class VehicleService {
     return { ...vehicle, metrics: calculateVehicleMetrics(vehicle, fixedMonthly) };
   }
 
-  async update(id, data, userId) {
+  async update(id, data, userId, { role } = {}) {
     // Verificar propiedad
     const existing = await prisma.vehicle.findFirst({ where: { id, userId } });
     if (!existing) throw new AppError('Vehículo no encontrado', 404);
+
+    // Policy de etapa/rol: VENDIDO lock absoluto + identity solo ADMIN fuera de NEGOCIANDO.
+    assertEditPolicy(existing, data, role);
 
     // Bloquear edición de campos de socio/precio: siempre en ALISTAMIENTO+,
     // y en COMPRADO solo si ya existe la CxP (compra registrada).
@@ -154,10 +212,22 @@ class VehicleService {
       }
     }
 
-    const vehicle = await prisma.vehicle.update({
-      where: { id },
-      data: payload,
-      include: VEHICLE_INCLUDE,
+    const before = snapshot(existing);
+
+    const vehicle = await prisma.$transaction(async (tx) => {
+      const updated = await tx.vehicle.update({
+        where: { id },
+        data: payload,
+        include: VEHICLE_INCLUDE,
+      });
+
+      const after = snapshot(updated);
+      // Solo auditar si hubo cambios reales (el form reenvía todos los campos).
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        await writeAudit(tx, { vehicleId: id, userId, action: 'UPDATE', before, after });
+      }
+
+      return updated;
     });
 
     // Calcular métricas antes de retornar
@@ -274,6 +344,17 @@ class VehicleService {
       include: VEHICLE_INCLUDE,
     });
 
+    // Auditar el cambio de etapa (solo si realmente cambió)
+    if (existing.stage !== stage) {
+      await writeAudit(prisma, {
+        vehicleId: id,
+        userId,
+        action: 'STAGE_CHANGE',
+        before: { stage: existing.stage },
+        after: { stage },
+      });
+    }
+
     // Auto-crear transacción de ingreso al vender
     if (stage === 'VENDIDO' && existing.stage !== 'VENDIDO' && vehicle.salePrice) {
       const cashAccount = await prisma.account.findFirst({
@@ -313,6 +394,21 @@ class VehicleService {
     // Cascade delete handles expenses and documents
     await prisma.vehicle.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  /**
+   * Devuelve el audit log de un vehículo (orden cronológico DESC).
+   * Autenticado, sin restricción de rol; sí valida propiedad.
+   */
+  async getAuditLog(id, userId) {
+    const vehicle = await prisma.vehicle.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
+
+    return prisma.vehicleAuditLog.findMany({
+      where: { vehicleId: id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }
 

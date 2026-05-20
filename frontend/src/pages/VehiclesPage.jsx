@@ -2,12 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
-import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 
 export default function VehiclesPage() {
   const { vehicles, fetchVehicles } = useApp();
   const [filter, setFilter] = useState('all');
-  const [showForm, setShowForm] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { fetchVehicles(); }, [fetchVehicles]);
@@ -29,9 +27,6 @@ export default function VehiclesPage() {
               </button>
             );
           })}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowForm(true)} className="btn-primary">+ Vehículo</button>
         </div>
       </div>
 
@@ -70,8 +65,6 @@ export default function VehiclesPage() {
           })}
         </div>
       )}
-
-      {showForm && <VehicleFormModal onClose={() => setShowForm(false)} />}
     </div>
   );
 }

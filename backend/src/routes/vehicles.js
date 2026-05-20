@@ -9,6 +9,7 @@ router.use(authenticate);
 
 // CRUD básico
 router.get('/', ctrl.getAll);
+router.get('/:id/audit', ctrl.getAuditLog);
 router.get('/:id', ctrl.getOne);
 router.post('/', validate(schemas.vehicle), ctrl.create);
 router.put('/:id', validate(schemas.vehicleUpdate), ctrl.update);

@@ -30,8 +30,15 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const vehicle = await vehicleService.update(req.params.id, req.body, req.user.id);
+    const vehicle = await vehicleService.update(req.params.id, req.body, req.user.id, { role: req.user.role });
     res.json(vehicle);
+  } catch (err) { next(err); }
+};
+
+const getAuditLog = async (req, res, next) => {
+  try {
+    const logs = await vehicleService.getAuditLog(req.params.id, req.user.id);
+    res.json(logs);
   } catch (err) { next(err); }
 };
 
@@ -173,6 +180,7 @@ module.exports = {
   getOne,
   create,
   update,
+  getAuditLog,
   updateStage,
   remove,
   createWithPurchase,
