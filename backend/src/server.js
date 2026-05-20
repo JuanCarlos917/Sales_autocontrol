@@ -10,8 +10,17 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const config = require('./config');
+const { assertSecureConfig } = require('./config/validateConfig');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
+
+// Fail fast: en producción no se arranca con secretos/credenciales por defecto o débiles.
+try {
+  assertSecureConfig(process.env);
+} catch (err) {
+  console.error(`\n  ❌ ${err.message}\n`);
+  process.exit(1);
+}
 
 const app = express();
 

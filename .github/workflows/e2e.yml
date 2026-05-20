@@ -64,6 +64,10 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Run backend unit tests
+        working-directory: backend
+        run: npm test
+
       - name: Install frontend deps
         working-directory: frontend
         run: npm ci
