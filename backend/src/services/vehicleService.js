@@ -77,6 +77,26 @@ function assertEditPolicy(existing, data, role) {
   }
 }
 
+/**
+ * Salda la compra de un vehículo recibido en cruce: crea una CxP marcada como PAGADA
+ * (sin egreso de tesorería, porque se pagó entregando otro vehículo). Idempotente.
+ */
+async function settleTradeInPurchase(tx, { vehicleId, amount, plate, userId }) {
+  const existingPayable = await tx.payable.findFirst({ where: { vehicleId, type: 'PAYABLE' } });
+  if (existingPayable) return;
+  await tx.payable.create({
+    data: {
+      type: 'PAYABLE',
+      status: 'PAID',
+      totalAmount: amount,
+      paidAmount: amount,
+      description: `Compra saldada por cruce: ${plate}`,
+      vehicleId,
+      createdBy: userId,
+    },
+  });
+}
+
 class VehicleService {
   async findAll(userId, { stage, search } = {}) {
     const where = { userId };
@@ -212,6 +232,12 @@ class VehicleService {
       }
     }
 
+    // Cruce → COMPRADO vía edición: fijar precio de compra = valor negociado del cruce
+    const settlingTradeIn = existing.fromTradeIn && existing.stage === 'NEGOCIANDO' && payload.stage === 'COMPRADO';
+    if (settlingTradeIn && !existing.purchasePrice && existing.negotiatedValue != null) {
+      payload.purchasePrice = existing.negotiatedValue;
+    }
+
     const before = snapshot(existing);
 
     const vehicle = await prisma.$transaction(async (tx) => {
@@ -220,6 +246,11 @@ class VehicleService {
         data: payload,
         include: VEHICLE_INCLUDE,
       });
+
+      // Cruce → COMPRADO: la compra queda saldada por el cruce (CxP PAGADA, sin egreso)
+      if (settlingTradeIn) {
+        await settleTradeInPurchase(tx, { vehicleId: id, amount: existing.negotiatedValue, plate: updated.plate, userId });
+      }
 
       const after = snapshot(updated);
       // Solo auditar si hubo cambios reales (el form reenvía todos los campos).
@@ -338,11 +369,22 @@ class VehicleService {
       updateData.saleDate = new Date();
     }
 
+    // Cruce → COMPRADO: fijar precio de compra = valor negociado del cruce
+    const settlingTradeIn = existing.fromTradeIn && existing.stage === 'NEGOCIANDO' && stage === 'COMPRADO';
+    if (settlingTradeIn && !existing.purchasePrice) {
+      updateData.purchasePrice = existing.negotiatedValue;
+    }
+
     const vehicle = await prisma.vehicle.update({
       where: { id },
       data: updateData,
       include: VEHICLE_INCLUDE,
     });
+
+    // Cruce → COMPRADO: la compra queda saldada por el cruce (CxP PAGADA, sin egreso)
+    if (settlingTradeIn) {
+      await settleTradeInPurchase(prisma, { vehicleId: id, amount: existing.negotiatedValue, plate: vehicle.plate, userId });
+    }
 
     // Auditar el cambio de etapa (solo si realmente cambió)
     if (existing.stage !== stage) {

@@ -60,6 +60,32 @@ export async function apiCreateVehicle(token: string, data: VehicleInput): Promi
   return postJson('/vehicles', data, token);
 }
 
+export interface VehicleDetail {
+  id: string;
+  plate: string;
+  stage: string;
+  negotiatedValue: string | number | null;
+  purchasePrice: string | number | null;
+  fromTradeIn: boolean;
+}
+
+export async function apiGetVehicle(token: string, id: string): Promise<VehicleDetail> {
+  return getJson(`/vehicles/${id}`, token);
+}
+
+export async function apiMoveStage(token: string, id: string, stage: string): Promise<VehicleDetail> {
+  const res = await fetch(`${API_BASE}/vehicles/${id}/stage`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ stage }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PATCH /vehicles/${id}/stage failed: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<VehicleDetail>;
+}
+
 export interface VehicleUpdateInput {
   plate?: string;
   brand?: string;
@@ -151,10 +177,26 @@ export interface RegisterSalePayload {
   saleDate?: string | null;
   cashPayment?: { accountId: string; amount: number } | null;
   cashPayments?: PurchasePaymentLine[];
+  tradeIn?: {
+    plate: string;
+    value: number;
+    brand?: string | null;
+    model?: string | null;
+    year?: number | null;
+    color?: string | null;
+    km?: number | null;
+  } | null;
   financing?: { dueDate?: string | null; notes?: string | null } | null;
 }
 
-export async function apiRegisterSale(token: string, vehicleId: string, payload: RegisterSalePayload): Promise<unknown> {
+export interface RegisterSaleResult {
+  vehicle: { id: string; plate: string };
+  newVehicle: { id: string; plate: string } | null;
+  receivable: unknown;
+  summary: { salePrice: number; totalReceived: number; pendingAmount: number; tradeInValue: number };
+}
+
+export async function apiRegisterSale(token: string, vehicleId: string, payload: RegisterSalePayload): Promise<RegisterSaleResult> {
   return postJson(`/vehicles/${vehicleId}/sell`, payload, token);
 }
 

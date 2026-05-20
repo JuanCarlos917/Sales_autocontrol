@@ -110,13 +110,14 @@ const registerSale = async (vehicleId, saleData, userId) => {
       transactions.push(transaction);
     }
 
-    // 3. Procesar cruce de vehículo
+    // 3. Procesar cruce de vehículo: el recibido entra a NEGOCIANDO con el valor del
+    //    cruce como valor negociado (inmutable). La compra se difiere: no se registra
+    //    CxP todavía; al avanzar a COMPRADO se salda automáticamente por el cruce.
     if (tradeIn?.plate && tradeIn?.value > 0) {
       const tradeInValue = parseFloat(tradeIn.value);
       totalReceived += tradeInValue;
       pendingAmount -= tradeInValue;
 
-      // Crear el nuevo vehículo recibido en cruce
       newVehicle = await tx.vehicle.create({
         data: {
           plate: tradeIn.plate,
@@ -125,24 +126,11 @@ const registerSale = async (vehicleId, saleData, userId) => {
           year: tradeIn.year || null,
           color: tradeIn.color || null,
           km: tradeIn.km || null,
-          stage: 'COMPRADO',
-          purchasePrice: tradeInValue,
-          purchaseDate: saleDate ? new Date(saleDate) : new Date(),
+          stage: 'NEGOCIANDO',
+          negotiatedValue: tradeInValue,
+          fromTradeIn: true,
           notes: `Recibido en cruce por venta de ${vehicle.plate}`,
           userId: vehicle.userId
-        }
-      });
-
-      // Crear CxP para el vehículo recibido (ya está "pagado" con el cruce)
-      await tx.payable.create({
-        data: {
-          type: 'PAYABLE',
-          status: 'PAID',
-          totalAmount: tradeInValue,
-          paidAmount: tradeInValue,
-          description: `Cruce recibido: ${tradeIn.plate} por venta de ${vehicle.plate}`,
-          vehicleId: newVehicle.id,
-          createdBy: userId
         }
       });
     }

@@ -182,6 +182,11 @@ export default function VehicleDetailPage() {
   const expenses = vehicle.expenses || [];
   const docs = vehicle.documents || [];
   const portals = vehicle.publishedPortals || [];
+  // Conteo de la pestaña Tesorería: movimientos + CxP de compra + CxC de venta
+  // (un cruce saldado no genera movimiento pero sí su CxP, y debe contarse).
+  const treasuryCount = vehicleTransactions.length
+    + (paymentStatus?.purchase ? 1 : 0)
+    + (paymentStatus?.sale ? 1 : 0);
 
   const handleDelete = async () => {
     await deleteVehicle(id);
@@ -284,7 +289,7 @@ export default function VehicleDetailPage() {
         {[
           { id: 'resumen', label: 'Resumen' },
           { id: 'gastos', label: `Gastos (${expenses.length})` },
-          { id: 'tesoreria', label: `Tesoreria (${vehicleTransactions.length})` },
+          { id: 'tesoreria', label: `Tesoreria (${treasuryCount})` },
           { id: 'financiero', label: 'Financiero' },
           { id: 'documentos', label: `Docs (${docs.length})` },
           { id: 'historial', label: `Historial (${auditLog.length})` },
