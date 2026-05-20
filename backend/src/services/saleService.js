@@ -101,7 +101,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
           category: 'VEHICLE_SALE',
           amount,
           description: `Venta vehículo ${vehicle.plate}${methodLabel[pay.method] || ''}`,
-          date: saleDate ? new Date(saleDate) : new Date(),
+          date: new Date(), // fecha de contabilización = instante de registro
           vehicleId: vehicleId,
           thirdPartyId: clientId || null,
           createdBy: userId
@@ -219,7 +219,7 @@ const addSaleCollection = async (vehicleId, collectionData, userId) => {
         category: 'VEHICLE_SALE_PARTIAL',
         amount: collectionAmount,
         description: description || `Cobro venta ${vehicle?.plate || ''}`,
-        date: date ? new Date(date) : new Date(),
+        date: new Date(), // fecha de contabilización = instante de registro
         vehicleId,
         thirdPartyId: receivable.thirdPartyId,
         createdBy: userId

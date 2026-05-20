@@ -62,6 +62,17 @@ export const formatDate = (d) => {
   return new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Fecha + hora en zona horaria de Colombia. Para movimientos de tesorería se usa la
+// hora real de registro (createdAt), así se ve "20 may 2026, 3:45 p. m." sin corrimiento.
+export const formatDateTime = (d) => {
+  if (!d) return '—';
+  return new Date(d).toLocaleString('es-CO', {
+    timeZone: 'America/Bogota',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+};
+
 // Obtiene la fecha local en formato YYYY-MM-DD (para inputs type="date")
 // Usa la zona horaria de Colombia (America/Bogota)
 export const getLocalDateString = (date = new Date()) => {

@@ -76,7 +76,7 @@ class TransferService {
           toAccountId,
           amount,
           description,
-          date: date ? new Date(date) : new Date(),
+          date: new Date(), // fecha de contabilización = instante de registro
           createdBy: userId,
         },
       });
@@ -89,7 +89,7 @@ class TransferService {
           category: 'TRANSFER',
           amount,
           description: description || `Transferencia a ${toAccount.name}`,
-          date: date ? new Date(date) : new Date(),
+          date: new Date(), // fecha de contabilización = instante de registro
           transferId: transfer.id,
           createdBy: userId,
         },
@@ -103,7 +103,7 @@ class TransferService {
           category: 'TRANSFER',
           amount,
           description: description || `Transferencia desde ${fromAccount.name}`,
-          date: date ? new Date(date) : new Date(),
+          date: new Date(), // fecha de contabilización = instante de registro
           transferId: transfer.id,
           createdBy: userId,
         },

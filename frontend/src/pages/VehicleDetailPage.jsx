@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import api from '@/lib/api';
-import { EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, getStage, getCategory } from '@/lib/constants';
+import { EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
@@ -38,11 +38,6 @@ const AUDIT_FIELD_LABELS = {
 };
 const AUDIT_MONEY_FIELDS = new Set(['negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice', 'partnerContribution', 'receivedVehicleValue']);
 const AUDIT_DATE_FIELDS = new Set(['purchaseDate', 'saleDate']);
-
-const formatDateTime = (d) => {
-  if (!d) return '';
-  return new Date(d).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
 
 function fmtAuditValue(field, val) {
   if (val === null || val === undefined || val === '') return '—';
@@ -525,7 +520,7 @@ export default function VehicleDetailPage() {
                               {tx.description || tx.category}
                             </div>
                             <div className="text-[11px] text-[#6E7681]">
-                              {tx.account?.name} · {formatDate(tx.date)}
+                              {tx.account?.name} · {formatDateTime(tx.createdAt)}
                             </div>
                           </div>
                           <div className={`font-mono font-bold text-sm ${isIncome ? 'text-green-400' : 'text-red-400'}`}>

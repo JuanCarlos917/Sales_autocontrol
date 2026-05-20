@@ -22,18 +22,22 @@ test.describe('Tesorería — orden de /treasury/transactions por hora de regist
     expect(top3.map((t) => t.type)).toEqual(['INCOME', 'EXPENSE', 'INCOME']);
   });
 
-  test('los de hoy quedan arriba aunque uno con fecha anterior se haya registrado después', async ({ page }) => {
+  test('la fecha del movimiento es la de registro: ignora la fecha enviada por el cliente', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const acc = TEST_SEED_IDS.accountBank;
 
-    // Primero un movimiento con fecha de HOY, luego uno con fecha de AYER (registrado después).
-    await apiCreateTreasuryIncome(token, { accountId: acc, amount: 5_000_000, date: '2026-05-20', description: 'hoy' });
-    await apiCreateTreasuryIncome(token, { accountId: acc, amount: 6_000_000, date: '2026-05-19', description: 'ayer' });
+    // Aunque se envíen fechas arbitrarias, el orden es por registro y la fecha guardada es hoy.
+    await apiCreateTreasuryIncome(token, { accountId: acc, amount: 5_000_000, date: '2030-12-31', description: 'futuro' });
+    await apiCreateTreasuryIncome(token, { accountId: acc, amount: 6_000_000, date: '2020-01-01', description: 'pasado' });
 
     const txs = await apiListTransactions(token, { accountId: acc });
     const top2 = txs.slice(0, 2);
 
-    // La fecha manda: el de hoy (5M) va arriba, aunque el de ayer (6M) se registró después.
-    expect(top2.map((t) => parseFloat(t.amount as string))).toEqual([5_000_000, 6_000_000]);
+    // Orden por registro (el último arriba), sin importar la fecha enviada.
+    expect(top2.map((t) => parseFloat(t.amount as string))).toEqual([6_000_000, 5_000_000]);
+    // La fecha guardada es la de registro (año actual), no la '2020'/'2030' enviada.
+    const currentYear = new Date().getFullYear();
+    expect(new Date(top2[0].date).getFullYear()).toBe(currentYear);
+    expect(new Date(top2[1].date).getFullYear()).toBe(currentYear);
   });
 });

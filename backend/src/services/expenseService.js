@@ -132,7 +132,7 @@ class ExpenseService {
             category: 'VEHICLE_EXPENSE',
             amount: expenseData.amount,
             description: expenseData.description || `Gasto ${expenseData.category} - ${vehicle.plate}`,
-            date: expenseData.date || new Date(),
+            date: new Date(), // fecha de contabilización = instante de registro
             vehicleId: expenseData.vehicleId,
             expenseId: expense.id,
             thirdPartyId: thirdPartyId || null,
@@ -235,7 +235,7 @@ class ExpenseService {
           category: 'VEHICLE_EXPENSE',
           amount: paymentAmount,
           description: expense.description || `Gasto ${expense.category} - ${expense.vehicle.plate}`,
-          date: date ? new Date(date) : new Date(),
+          date: new Date(), // fecha de contabilización = instante de registro
           vehicleId: expense.vehicleId,
           expenseId: expense.id,
           thirdPartyId: payable?.thirdPartyId || null,
