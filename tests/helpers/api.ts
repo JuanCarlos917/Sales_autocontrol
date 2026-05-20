@@ -381,6 +381,20 @@ export interface TransactionRaw {
   date: string;
 }
 
+export async function apiCreateTreasuryIncome(
+  token: string,
+  data: { accountId: string; amount: number; category?: string; date?: string; description?: string },
+): Promise<TransactionRaw> {
+  return postJson('/treasury/transactions/income', { category: 'OTHER_INCOME', ...data }, token);
+}
+
+export async function apiCreateTreasuryExpense(
+  token: string,
+  data: { accountId: string; amount: number; category?: string; date?: string; description?: string },
+): Promise<TransactionRaw> {
+  return postJson('/treasury/transactions/expense', { category: 'OTHER_EXPENSE', ...data }, token);
+}
+
 export async function apiListTransactions(token: string, params: { accountId?: string } = {}): Promise<TransactionRaw[]> {
   const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
   const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);

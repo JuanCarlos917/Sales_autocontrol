@@ -30,7 +30,10 @@ class TransactionService {
       prisma.transaction.findMany({
         where,
         include: TRANSACTION_INCLUDE,
-        orderBy: { date: 'desc' },
+        // Prioridad por fecha del movimiento (hoy arriba) y, dentro de la misma fecha,
+        // por hora real de registro: quedan en el orden en que se hicieron, sin agrupar
+        // egresos con egresos.
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: limit,
         skip: offset,
       }),
