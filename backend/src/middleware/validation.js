@@ -136,8 +136,15 @@ const vehiclePurchaseSchema = Joi.object({
     partnerAssumesExpenses: Joi.boolean().default(true),
   }).required(),
   payment: Joi.object({
-    accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida para el pago' }),
-    amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+    // Pago único (legacy)
+    accountId: Joi.string().allow(null),
+    amount: Joi.number().min(0).allow(null),
+    // Pago dividido: efectivo + transferencia (una o varias líneas)
+    payments: Joi.array().items(Joi.object({
+      accountId: Joi.string().required(),
+      amount: Joi.number().positive().required(),
+      method: Joi.string().valid('CASH', 'TRANSFER').optional(),
+    })).optional(),
     thirdPartyId: Joi.string().allow(null),
     date: Joi.date().allow(null),
     dueDate: Joi.date().allow(null),
@@ -160,6 +167,12 @@ const vehicleConfirmPurchaseSchema = Joi.object({
   payment: Joi.object({
     accountId: Joi.string().allow(null),
     amount: Joi.number().min(0).allow(null),
+    // Pago dividido: efectivo + transferencia (una o varias líneas)
+    payments: Joi.array().items(Joi.object({
+      accountId: Joi.string().required(),
+      amount: Joi.number().positive().required(),
+      method: Joi.string().valid('CASH', 'TRANSFER').optional(),
+    })).optional(),
     thirdPartyId: Joi.string().allow(null),
     date: Joi.date().allow(null),
     dueDate: Joi.date().allow(null),
@@ -181,11 +194,17 @@ const vehicleSaleSchema = Joi.object({
   saleDate: Joi.date().allow(null),
   buyerId: Joi.string().required().messages({ 'any.required': 'Cliente (comprador) es requerido' }),
   thirdPartyId: Joi.string().allow(null), // Deprecated, usar buyerId
-  // Pago en efectivo/transferencia
+  // Pago en efectivo/transferencia (línea única, legacy CASH/TRANSFER)
   cashPayment: Joi.object({
     accountId: Joi.string().required(),
     amount: Joi.number().positive().required(),
   }).allow(null),
+  // Pago dividido: efectivo + transferencia (usado por "Mixto")
+  cashPayments: Joi.array().items(Joi.object({
+    accountId: Joi.string().required(),
+    amount: Joi.number().positive().required(),
+    method: Joi.string().valid('CASH', 'TRANSFER').optional(),
+  })).optional(),
   // Cruce de vehículo
   tradeIn: Joi.object({
     plate: Joi.string().max(10).required(),

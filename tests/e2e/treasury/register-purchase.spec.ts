@@ -35,9 +35,10 @@ test.describe('Tesorería — confirmar compra desde VehicleDetailPage', () => {
     await page.getByPlaceholder('Seleccionar proveedor...').click();
     await page.getByRole('button', { name: /Proveedor Test/ }).first().click();
 
-    const accountSelect = page.getByTestId('vehicle-form-payment-account');
-    await expect(accountSelect).toBeVisible({ timeout: 5_000 });
-    await accountSelect.selectOption(TEST_SEED_IDS.accountCash);
+    const cashSelect = page.getByTestId('vehicle-form-cash-account');
+    await expect(cashSelect).toBeVisible({ timeout: 5_000 });
+    await cashSelect.selectOption(TEST_SEED_IDS.accountCash);
+    await page.getByTestId('vehicle-form-cash-amount').fill(String(PURCHASE_PRICE));
 
     await Promise.all([
       page.waitForResponse(
