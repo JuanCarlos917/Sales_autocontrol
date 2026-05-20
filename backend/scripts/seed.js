@@ -10,8 +10,13 @@ async function main() {
   console.log('🌱 Seeding database...\n');
 
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@autocontrol.co';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin1234';
-  const adminPin = process.env.ADMIN_PIN || '1234';
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  const adminPin = process.env.ADMIN_PIN;
+
+  if (!adminPassword || !adminPin) {
+    console.error('❌ Define ADMIN_PASSWORD y ADMIN_PIN en el entorno antes de sembrar el usuario admin.');
+    process.exit(1);
+  }
 
   const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
 

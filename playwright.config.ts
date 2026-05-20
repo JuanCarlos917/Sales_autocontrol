@@ -34,6 +34,9 @@ export default defineConfig({
         DATABASE_URL: TEST_DB_URL,
         NODE_ENV: 'test',
         PORT: '4000',
+        // Valores solo para el backend de pruebas (no son secretos reales).
+        JWT_SECRET: 'autocontrol-e2e-jwt-not-a-secret',
+        JWT_REFRESH_SECRET: 'autocontrol-e2e-refresh-not-a-secret',
       },
     },
     {
