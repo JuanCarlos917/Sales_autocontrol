@@ -115,6 +115,12 @@ export async function apiGetVehicleAudit(token: string, id: string): Promise<Veh
   return getJson(`/vehicles/${id}/audit`, token);
 }
 
+export interface PurchasePaymentLine {
+  accountId: string;
+  amount: number;
+  method?: 'CASH' | 'TRANSFER';
+}
+
 export interface ConfirmPurchasePayload {
   vehicle: {
     purchasePrice: number;
@@ -124,6 +130,7 @@ export interface ConfirmPurchasePayload {
   payment: {
     accountId?: string | null;
     amount?: number | null;
+    payments?: PurchasePaymentLine[];
     thirdPartyId?: string | null;
     dueDate?: string | null;
   };
@@ -135,6 +142,29 @@ export async function apiConfirmPurchase(
   payload: ConfirmPurchasePayload,
 ): Promise<unknown> {
   return postJson(`/vehicles/${vehicleId}/confirm-purchase`, payload, token);
+}
+
+export interface RegisterSalePayload {
+  salePrice: number;
+  paymentType: 'CASH' | 'TRANSFER' | 'TRADE_IN' | 'FINANCED' | 'MIXED';
+  buyerId: string;
+  saleDate?: string | null;
+  cashPayment?: { accountId: string; amount: number } | null;
+  cashPayments?: PurchasePaymentLine[];
+  financing?: { dueDate?: string | null; notes?: string | null } | null;
+}
+
+export async function apiRegisterSale(token: string, vehicleId: string, payload: RegisterSalePayload): Promise<unknown> {
+  return postJson(`/vehicles/${vehicleId}/sell`, payload, token);
+}
+
+export interface VehiclePaymentStatus {
+  purchase: { totalAmount: string | number; paidAmount: string | number; pendingAmount: number; status: string } | null;
+  sale: { totalAmount: string | number; paidAmount: string | number; pendingAmount: number; status: string } | null;
+}
+
+export async function apiGetVehiclePaymentStatus(token: string, id: string): Promise<VehiclePaymentStatus> {
+  return getJson(`/vehicles/${id}/payment-status`, token);
 }
 
 export interface Payable {

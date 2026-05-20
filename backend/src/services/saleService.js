@@ -32,6 +32,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
     salePrice,
     paymentType,
     cashPayment,
+    cashPayments,
     tradeIn,
     financing,
     buyerId,
@@ -81,19 +82,25 @@ const registerSale = async (vehicleId, saleData, userId) => {
       include: { expenses: true, documents: true, buyer: true }
     });
 
-    // 2. Procesar pago en efectivo/transferencia
-    if (cashPayment?.accountId && cashPayment?.amount > 0) {
-      const cashAmount = parseFloat(cashPayment.amount);
-      totalReceived += cashAmount;
-      pendingAmount -= cashAmount;
+    // 2. Procesar pago(s) en efectivo/transferencia (una o varias líneas)
+    const methodLabel = { CASH: ' (efectivo)', TRANSFER: ' (transferencia)' };
+    const moneyPayments = (Array.isArray(cashPayments) && cashPayments.length > 0)
+      ? cashPayments
+      : (cashPayment ? [cashPayment] : []);
+
+    for (const pay of moneyPayments) {
+      if (!pay?.accountId || !(parseFloat(pay.amount) > 0)) continue;
+      const amount = parseFloat(pay.amount);
+      totalReceived += amount;
+      pendingAmount -= amount;
 
       const transaction = await tx.transaction.create({
         data: {
-          accountId: cashPayment.accountId,
+          accountId: pay.accountId,
           type: 'INCOME',
           category: 'VEHICLE_SALE',
-          amount: cashAmount,
-          description: `Venta vehículo ${vehicle.plate}`,
+          amount,
+          description: `Venta vehículo ${vehicle.plate}${methodLabel[pay.method] || ''}`,
           date: saleDate ? new Date(saleDate) : new Date(),
           vehicleId: vehicleId,
           thirdPartyId: clientId || null,

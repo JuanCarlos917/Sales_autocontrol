@@ -12,6 +12,14 @@ const STAGES_REQUIRING_VALUE = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPON
 // Etapas que requieren proveedor (después de COMPRADO)
 const STAGES_REQUIRING_SUPPLIER = ['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'];
 
+// Etapas destino que soportan el flujo "completar campos y mover" al soltar la card.
+// (COMPRADO y VENDIDO conservan sus flujos dedicados de compra/venta.)
+const COMPLETE_FLOW_STAGES = ['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'];
+// Tipos de faltante que se pueden diligenciar en el formulario del vehículo.
+const FIELD_ISSUE_TYPES = ['negotiatedValue', 'purchasePrice', 'supplier', 'partner', 'listedPrice', 'salePrice', 'saleDate'];
+// Reconoce el bloqueo de backend por CxP no pagada (requisito que no es un campo del formulario).
+const CXP_BLOCK_RE = /pagad|CxP|PAID/i;
+
 export default function KanbanPage() {
   const { vehicles, fetchVehicles, moveVehicle, loading, showToast } = useApp();
   const [dragOver, setDragOver] = useState(null);
@@ -24,6 +32,11 @@ export default function KanbanPage() {
 
   // Estado para alerta de validación
   const [validationAlert, setValidationAlert] = useState({ open: false, vehicle: null, targetStage: null, issues: [] });
+
+  // Estado para el flujo "completar campos y mover" (modal de edición en el Kanban)
+  const [completeModal, setCompleteModal] = useState({ open: false, vehicle: null, targetStage: null, highlightFields: [] });
+  // Estado para el aviso de requisito no-campo (CxP no pagada → ir a tesorería)
+  const [treasuryAlert, setTreasuryAlert] = useState({ open: false, vehicle: null, message: '' });
 
   // Estado para grab-to-scroll
   const scrollRef = useRef(null);
@@ -212,16 +225,54 @@ export default function KanbanPage() {
 
     // Validar requisitos para otras etapas
     const issues = validateStageChange(vehicle, targetStage);
-    if (issues.length > 0) {
-      setValidationAlert({ open: true, vehicle, targetStage, issues });
+    if (issues.length === 0) {
+      await tryMove(vehicle, targetStage);
       return;
     }
 
+    // Nueva UX: si lo único que falta son campos del formulario y la etapa destino lo
+    // soporta, abrir el formulario para completarlos y mover automáticamente al guardar.
+    const hasInvalidTransition = issues.some(i => i.type === 'invalidTransition');
+    const allFieldIssues = issues.every(i => FIELD_ISSUE_TYPES.includes(i.type));
+    if (!hasInvalidTransition && allFieldIssues && COMPLETE_FLOW_STAGES.includes(targetStage)) {
+      setCompleteModal({ open: true, vehicle, targetStage, highlightFields: issues.map(i => i.type) });
+      return;
+    }
+
+    // Fallback: alerta clásica (transición inválida u otros casos no resolubles por formulario)
+    setValidationAlert({ open: true, vehicle, targetStage, issues });
+  };
+
+  // Mueve la card; si el backend bloquea por CxP no pagada, ofrece ir a tesorería.
+  const tryMove = async (vehicle, targetStage) => {
     try {
-      await moveVehicle(vid, targetStage);
+      await moveVehicle(vehicle.id, targetStage);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'No se pudo cambiar la etapa';
-      showToast(msg, 'danger');
+      if (CXP_BLOCK_RE.test(msg)) {
+        setTreasuryAlert({ open: true, vehicle, message: msg });
+      } else {
+        showToast(msg, 'danger');
+      }
+    }
+  };
+
+  // Tras guardar los campos en el modal, intenta el cambio de etapa real (PATCH).
+  // Éxito → el modal se cierra solo. CxP → cierra y ofrece tesorería. Otro faltante → relanza
+  // para que el modal muestre el error y permanezca abierto.
+  const handleCompleteSaved = async () => {
+    const { vehicle, targetStage } = completeModal;
+    if (!vehicle || !targetStage) return;
+    try {
+      await moveVehicle(vehicle.id, targetStage);
+      showToast(`Movido a ${getStage(targetStage)?.label || targetStage}`);
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message || '';
+      if (CXP_BLOCK_RE.test(msg)) {
+        setTreasuryAlert({ open: true, vehicle, message: msg });
+        return; // se traga el error → el modal cierra normalmente
+      }
+      throw err; // otros faltantes → el modal muestra el error y sigue abierto
     }
   };
 
@@ -453,6 +504,52 @@ export default function KanbanPage() {
       </div>
 
       {showForm && <VehicleFormModal onClose={() => setShowForm(false)} />}
+
+      {/* Modal "completar campos y mover" al soltar la card */}
+      {completeModal.open && (
+        <VehicleFormModal
+          vehicle={completeModal.vehicle}
+          completeForStage={completeModal.targetStage}
+          highlightFields={completeModal.highlightFields}
+          onSaved={handleCompleteSaved}
+          onClose={() => setCompleteModal({ open: false, vehicle: null, targetStage: null, highlightFields: [] })}
+        />
+      )}
+
+      {/* Aviso de requisito no-campo (CxP no pagada) → ir a tesorería */}
+      {treasuryAlert.open && (
+        <Modal
+          onClose={() => setTreasuryAlert({ open: false, vehicle: null, message: '' })}
+          title=""
+          width="max-w-md"
+        >
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <span className="text-3xl">💳</span>
+            </div>
+            <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Falta un requisito de tesorería</h3>
+            <p className="text-sm text-[#8B949E] mb-6">{treasuryAlert.message}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setTreasuryAlert({ open: false, vehicle: null, message: '' })}
+                className="btn-ghost flex-1"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => {
+                  const vid = treasuryAlert.vehicle?.id;
+                  setTreasuryAlert({ open: false, vehicle: null, message: '' });
+                  if (vid) navigate(`/vehicles/${vid}?tab=tesoreria`);
+                }}
+                className="btn-primary flex-1"
+              >
+                Ir a tesorería
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal de Venta completo */}
       <SalePaymentModal

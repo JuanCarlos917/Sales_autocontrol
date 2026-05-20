@@ -20,13 +20,13 @@ const HIGHLIGHT_MESSAGES = {
   buyer: 'Selecciona el comprador para marcar como vendido',
 };
 
-export default function VehicleFormModal({ vehicle, onClose, highlightFields = [] }) {
+export default function VehicleFormModal({ vehicle, onClose, highlightFields = [], completeForStage = null, onSaved = null }) {
   const { createVehicle, updateVehicle, fetchVehicles, showToast } = useApp();
   const { role } = useAuth();
   const [f, setF] = useState({
     plate: vehicle?.plate || '', brand: vehicle?.brand || '', model: vehicle?.model || '',
     year: vehicle?.year || '', color: vehicle?.color || '', km: vehicle?.km || '',
-    stage: vehicle?.stage || 'NEGOCIANDO',
+    stage: completeForStage || vehicle?.stage || 'NEGOCIANDO',
     negotiatedValue: vehicle?.negotiatedValue || '',
     purchasePrice: vehicle?.purchasePrice || '',
     purchaseDate: vehicle?.purchaseDate?.split('T')[0] || '', listedPrice: vehicle?.listedPrice || '',
@@ -44,10 +44,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   });
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState([]);
-  const [payNow, setPayNow] = useState(true);
-  const [accountId, setAccountId] = useState('');
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentAmountTouched, setPaymentAmountTouched] = useState(false);
+  // Pago dividido de la compra: efectivo (cuenta tipo Caja) + transferencia (cuenta tipo Banco)
+  const [cashAccountId, setCashAccountId] = useState('');
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAccountId, setTransferAccountId] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   // null = aún no consultado, true/false = resultado
   const [hasExistingPayable, setHasExistingPayable] = useState(null);
@@ -101,7 +102,10 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       .then(res => {
         const active = res.data.filter(a => a.isActive);
         setAccounts(active);
-        if (active.length > 0 && !accountId) setAccountId(active[0].id);
+        const firstCash = active.find(a => a.type === 'CASH');
+        const firstBank = active.find(a => a.type === 'BANK');
+        if (firstCash) setCashAccountId(prev => prev || firstCash.id);
+        if (firstBank) setTransferAccountId(prev => prev || firstBank.id);
       })
       .catch(err => console.error('Error loading accounts:', err));
   }, [vehicle, isConfirmingPurchase]);
@@ -164,14 +168,19 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const myOwedAmount = Math.max(0, price - partnerAmt);
   const showPaymentSection = price > 0 && (!vehicle || isConfirmingPurchase);
   const willPromoteStage = showPaymentSection && !isConfirmingPurchase && f.stage === 'NEGOCIANDO';
-  const effectivePaymentAmount = paymentAmountTouched
-    ? (parseFloat(paymentAmount) || 0)
-    : myOwedAmount;
-  const pendingAfterPayment = payNow
-    ? Math.max(0, myOwedAmount - effectivePaymentAmount)
-    : myOwedAmount;
-  const selectedAccount = accounts.find(a => a.id === accountId);
-  const balanceWarning = payNow && selectedAccount && effectivePaymentAmount > parseFloat(selectedAccount.currentBalance);
+
+  // Pago dividido: cuentas disponibles por método y montos
+  const cashAccounts = accounts.filter(a => a.type === 'CASH');
+  const bankAccounts = accounts.filter(a => a.type === 'BANK');
+  const cashPay = parseFloat(cashAmount) || 0;
+  const transferPay = parseFloat(transferAmount) || 0;
+  const totalPaidNow = cashPay + transferPay;
+  const pendingAfterPayment = Math.max(0, myOwedAmount - totalPaidNow);
+  const overpay = totalPaidNow > myOwedAmount;
+  const cashAccount = accounts.find(a => a.id === cashAccountId);
+  const transferAccount = accounts.find(a => a.id === transferAccountId);
+  const cashWarning = cashPay > 0 && cashAccount && cashPay > parseFloat(cashAccount.currentBalance);
+  const transferWarning = transferPay > 0 && transferAccount && transferPay > parseFloat(transferAccount.currentBalance);
 
   const handleSave = async () => {
     if (!f.plate && !f.brand) {
@@ -194,9 +203,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       setSaveError('Debes seleccionar un proveedor para esta etapa');
       return;
     }
-    if (showPaymentSection && payNow && !accountId) {
-      setSaveError('Debes seleccionar la cuenta desde la que se paga');
-      return;
+    if (showPaymentSection) {
+      if (cashPay > 0 && !cashAccountId) { setSaveError('Selecciona la cuenta de efectivo'); return; }
+      if (transferPay > 0 && !transferAccountId) { setSaveError('Selecciona la cuenta de transferencia'); return; }
+      if (overpay) {
+        setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
+        return;
+      }
     }
     setLoading(true);
     setSaveError(null);
@@ -205,6 +218,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       const partnerContribValue = f.partnerId && parseFloat(f.partnerContribution) > 0
         ? parseFloat(f.partnerContribution)
         : null;
+
+      // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP)
+      const purchasePayments = [];
+      if (cashPay > 0 && cashAccountId) purchasePayments.push({ accountId: cashAccountId, amount: cashPay, method: 'CASH' });
+      if (transferPay > 0 && transferAccountId) purchasePayments.push({ accountId: transferAccountId, amount: transferPay, method: 'TRANSFER' });
 
       // Flujo con tesorería: confirmar compra de un vehículo en NEGOCIANDO
       if (isConfirmingPurchase && showPaymentSection) {
@@ -220,17 +238,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           notes: f.notes || null,
         };
 
-        const paymentPayload = payNow && accountId && effectivePaymentAmount > 0
-          ? {
-              accountId,
-              amount: effectivePaymentAmount,
-              thirdPartyId: f.supplierId || null,
-              dueDate: dueDate || null,
-            }
-          : {
-              thirdPartyId: f.supplierId || null,
-              dueDate: dueDate || null,
-            };
+        const paymentPayload = {
+          payments: purchasePayments,
+          thirdPartyId: f.supplierId || null,
+          dueDate: dueDate || null,
+        };
 
         await vehicleTreasuryApi.confirmPurchase(vehicle.id, {
           vehicle: vehiclePayload,
@@ -264,21 +276,15 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           partnerAssumesExpenses: !!f.partnerAssumesExpenses,
         };
 
-        const paymentPayload = payNow && accountId && effectivePaymentAmount > 0
-          ? {
-              accountId,
-              amount: effectivePaymentAmount,
-              thirdPartyId: f.supplierId,
-              dueDate: dueDate || null,
-            }
-          : {
-              thirdPartyId: f.supplierId,
-              dueDate: dueDate || null,
-            };
+        const paymentPayload = {
+          payments: purchasePayments,
+          thirdPartyId: f.supplierId,
+          dueDate: dueDate || null,
+        };
 
         await vehicleTreasuryApi.createWithPurchase({
           vehicle: vehiclePayload,
-          payment: payNow ? paymentPayload : { thirdPartyId: f.supplierId, dueDate: dueDate || null },
+          payment: paymentPayload,
         });
         await fetchVehicles();
         showToast('Vehículo registrado con compra');
@@ -305,7 +311,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         partnerId: f.partnerId || null,
       };
       if (vehicle) {
-        await updateVehicle(vehicle.id, payload);
+        // En modo "completar para avanzar" no transicionamos vía PUT: preservamos la etapa
+        // y dejamos que el padre haga el cambio de etapa real (PATCH) tras guardar los campos.
+        const finalPayload = completeForStage ? { ...payload, stage: vehicle.stage } : payload;
+        await updateVehicle(vehicle.id, finalPayload);
+        if (onSaved) await onSaved();
       } else {
         await createVehicle(payload);
       }
@@ -325,7 +335,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const hasPartner = !!f.partnerId || parseFloat(f.participation) < 100;
 
   return (
-    <Modal onClose={onClose} title={vehicle ? 'Editar Vehículo' : 'Nuevo Vehículo'} width="max-w-2xl">
+    <Modal onClose={onClose} title={completeForStage ? `Completar para pasar a ${STAGES.find(st => st.id === completeForStage)?.label || completeForStage}` : (vehicle ? 'Editar Vehículo' : 'Nuevo Vehículo')} width="max-w-2xl">
       {vendidoLocked && (
         <div className="mb-4 p-3 rounded-lg border border-border bg-[#0F1419] flex items-center gap-2" data-testid="vehicle-form-vendido-banner">
           <span className="text-lg leading-none">🔒</span>
@@ -358,8 +368,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           value={f.stage}
           onChange={e => s('stage', e.target.value)}
           options={vehicle ? STAGES.map(st => ({ value: st.id, label: st.label })) : [{ value: 'NEGOCIANDO', label: 'Negociando' }]}
-          disabled={!vehicle}
-          title={!vehicle ? 'Los vehículos nuevos siempre arrancan en Negociando' : ''}
+          disabled={!vehicle || !!completeForStage}
+          title={!vehicle ? 'Los vehículos nuevos siempre arrancan en Negociando' : (completeForStage ? 'Completa los campos para avanzar a esta etapa' : '')}
           data-testid="vehicle-form-stage"
         />
         <Input label="Marca" value={f.brand} onChange={e => s('brand', e.target.value)} placeholder="Chevrolet" disabled={identityLocked} title={identityTitle} />
@@ -376,6 +386,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="32000000"
             error={highlight('listedPrice')}
             autoFocus={!!highlight('listedPrice')}
+            data-testid="vehicle-form-listed-price"
           />
         )}
 
@@ -435,6 +446,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
               onChange={e => s('salePrice', e.target.value)}
               error={highlight('salePrice')}
               autoFocus={!!highlight('salePrice')}
+              data-testid="vehicle-form-sale-price"
             />
             <Input
               label="Fecha de Venta"
@@ -443,6 +455,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
               onChange={e => s('saleDate', e.target.value)}
               error={highlight('saleDate')}
               autoFocus={!!highlight('saleDate')}
+              data-testid="vehicle-form-sale-date"
             />
           </>
         )}
@@ -564,22 +577,9 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       {/* Sección de pago — solo al crear con compra real */}
       {showPaymentSection && (
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold text-[#E6EDF3]">💳 Pago de la compra</div>
-            <label className="flex items-center gap-2 text-xs text-[#8B949E]">
-              <input
-                type="checkbox"
-                checked={payNow}
-                onChange={e => setPayNow(e.target.checked)}
-                className="rounded border-border"
-              />
-              Pagar ahora
-            </label>
-          </div>
+          <div className="text-sm font-semibold text-[#E6EDF3] mb-1">💳 Pago de la compra</div>
           <p className="text-[11px] text-[#6E7681] mb-3">
-            {payNow
-              ? 'Se descontará de la cuenta seleccionada y se creará la transacción de egreso.'
-              : 'Se creará la cuenta por pagar (CxP) sin movimiento de tesorería hasta que registres un pago.'}
+            Registra cuánto pagas en efectivo y/o por transferencia. Lo que no cubras queda como cuenta por pagar (CxP).
           </p>
           {willPromoteStage && (
             <div className="mb-3 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5">
@@ -588,53 +588,98 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           )}
           {isConfirmingPurchase && (
             <div className="mb-3 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1.5">
-              ✓ Estás confirmando la compra: se creará la CxP y, si pagas ahora, el egreso en tesorería.
+              ✓ Estás confirmando la compra: se creará la CxP y, por cada pago, su egreso en tesorería.
             </div>
           )}
 
-          {payNow ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm text-[#8B949E] mb-1">Cuenta *</label>
-                <select
-                  value={accountId}
-                  onChange={e => setAccountId(e.target.value)}
-                  className="input w-full"
-                  required
-                  data-testid="vehicle-form-payment-account"
-                >
-                  <option value="">Seleccionar cuenta</option>
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({formatCurrency(a.currentBalance)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-[#8B949E] mb-1">Monto a pagar</label>
-                <input
-                  type="number"
-                  value={paymentAmountTouched ? paymentAmount : myOwedAmount}
-                  onChange={e => { setPaymentAmount(e.target.value); setPaymentAmountTouched(true); }}
-                  className="input w-full"
-                  min="0"
-                  max={myOwedAmount}
-                />
-                {myOwedAmount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { setPaymentAmount(myOwedAmount.toString()); setPaymentAmountTouched(true); }}
-                    className="text-xs text-accent hover:underline mt-1"
-                  >
-                    Pagar total ({formatCurrency(myOwedAmount)})
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
+          {/* Efectivo (cuentas tipo Caja) */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Fecha de vencimiento (opcional)</label>
+              <label className="block text-sm text-[#8B949E] mb-1">💵 Efectivo — Cuenta</label>
+              <select
+                value={cashAccountId}
+                onChange={e => setCashAccountId(e.target.value)}
+                className="input w-full"
+                data-testid="vehicle-form-cash-account"
+              >
+                <option value="">Sin efectivo</option>
+                {cashAccounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-[#8B949E] mb-1">Monto en efectivo</label>
+              <input
+                type="number"
+                value={cashAmount}
+                onChange={e => setCashAmount(e.target.value)}
+                className="input w-full"
+                min="0"
+                placeholder="0"
+                data-testid="vehicle-form-cash-amount"
+              />
+            </div>
+          </div>
+          {cashWarning && (
+            <div className="mt-1 text-xs text-amber-400">⚠️ La cuenta de efectivo quedará con saldo negativo.</div>
+          )}
+
+          {/* Transferencia (cuentas tipo Banco) */}
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div>
+              <label className="block text-sm text-[#8B949E] mb-1">🏦 Transferencia — Cuenta</label>
+              <select
+                value={transferAccountId}
+                onChange={e => setTransferAccountId(e.target.value)}
+                className="input w-full"
+                data-testid="vehicle-form-transfer-account"
+              >
+                <option value="">Sin transferencia</option>
+                {bankAccounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-[#8B949E] mb-1">Monto en transferencia</label>
+              <input
+                type="number"
+                value={transferAmount}
+                onChange={e => setTransferAmount(e.target.value)}
+                className="input w-full"
+                min="0"
+                placeholder="0"
+                data-testid="vehicle-form-transfer-amount"
+              />
+            </div>
+          </div>
+          {transferWarning && (
+            <div className="mt-1 text-xs text-amber-400">⚠️ La cuenta de transferencia quedará con saldo negativo.</div>
+          )}
+
+          {myOwedAmount > 0 && (
+            <div className="flex gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => { setCashAmount(String(myOwedAmount)); setTransferAmount(''); }}
+                className="text-xs text-accent hover:underline"
+              >
+                Todo en efectivo ({formatCurrency(myOwedAmount)})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setTransferAmount(String(myOwedAmount)); setCashAmount(''); }}
+                className="text-xs text-accent hover:underline"
+              >
+                Todo en transferencia
+              </button>
+            </div>
+          )}
+
+          {pendingAfterPayment > 0 && (
+            <div className="mt-3">
+              <label className="block text-sm text-[#8B949E] mb-1">Fecha de vencimiento del saldo (opcional)</label>
               <input
                 type="date"
                 value={dueDate}
@@ -662,10 +707,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
                 </div>
               </>
             )}
-            {payNow && effectivePaymentAmount > 0 && (
+            {cashPay > 0 && (
               <div className="flex justify-between">
-                <span className="text-[#8B949E]">Pago inicial:</span>
-                <span className="text-green-400">-{formatCurrency(effectivePaymentAmount)}</span>
+                <span className="text-[#8B949E]">Efectivo:</span>
+                <span className="text-green-400">-{formatCurrency(cashPay)}</span>
+              </div>
+            )}
+            {transferPay > 0 && (
+              <div className="flex justify-between">
+                <span className="text-[#8B949E]">Transferencia:</span>
+                <span className="text-green-400">-{formatCurrency(transferPay)}</span>
               </div>
             )}
             {pendingAfterPayment > 0 && (
@@ -676,10 +727,9 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             )}
           </div>
 
-          {balanceWarning && (
-            <div className="mt-2 text-xs text-amber-400">
-              ⚠️ La cuenta "{selectedAccount.name}" quedará con saldo negativo
-              ({formatCurrency(parseFloat(selectedAccount.currentBalance) - effectivePaymentAmount)}).
+          {overpay && (
+            <div className="mt-2 text-xs text-red-400">
+              ⚠️ La suma de los pagos supera tu parte a pagar ({formatCurrency(myOwedAmount)}).
             </div>
           )}
         </div>

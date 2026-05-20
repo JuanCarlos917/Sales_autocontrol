@@ -34,7 +34,7 @@ test.describe('Vehículos — validación de transiciones avanzadas', () => {
     ).toBeVisible();
   });
 
-  test('COMPRADO → ALISTAMIENTO sin proveedor: alerta "Proveedor requerido"', async ({ page }) => {
+  test('COMPRADO → ALISTAMIENTO sin proveedor: abre el formulario para completar y no mueve', async ({ page }) => {
     await loginAsAdmin(page);
     const plate = `SUP${Date.now().toString().slice(-7)}`;
 
@@ -46,7 +46,11 @@ test.describe('Vehículos — validación de transiciones avanzadas', () => {
 
     await dragTo(page, plate, 'ALISTAMIENTO');
 
-    await expect(page.getByText(/Proveedor requerido/i)).toBeVisible({ timeout: 5_000 });
+    // Nueva UX: en vez de la alerta, se abre el formulario para completar los campos faltantes.
+    await expect(page.getByTestId('vehicle-form-submit')).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('button', { name: /Cancelar/ }).click();
+
+    // Al cancelar sin completar, la card sigue en COMPRADO.
     await expect(
       page.getByTestId('kanban-column-COMPRADO').getByTestId(`vehicle-card-${plate}`),
     ).toBeVisible();

@@ -32,9 +32,14 @@ export default function SalePaymentModal({
     salePrice: '',
     saleDate: getLocalDateString(),
     buyerId: '',
-    // Pago efectivo/transferencia
+    // Pago efectivo/transferencia (CASH/TRANSFER simple, una cuenta)
     cashAccountId: '',
     cashAmount: '',
+    // Pago mixto: dos líneas (efectivo Caja + transferencia Banco)
+    mixedCashAccountId: '',
+    mixedCashAmount: '',
+    mixedTransferAccountId: '',
+    mixedTransferAmount: '',
     // Cruce
     tradeInPlate: '',
     tradeInValue: '',
@@ -58,7 +63,16 @@ export default function SalePaymentModal({
   const loadData = async () => {
     try {
       const accountsRes = await accountsApi.getAll();
-      setAccounts(accountsRes.data.filter(a => a.isActive));
+      const active = accountsRes.data.filter(a => a.isActive);
+      setAccounts(active);
+      const firstCash = active.find(a => a.type === 'CASH');
+      const firstBank = active.find(a => a.type === 'BANK');
+      setForm(prev => ({
+        ...prev,
+        cashAccountId: prev.cashAccountId || active[0]?.id || '',
+        mixedCashAccountId: prev.mixedCashAccountId || firstCash?.id || '',
+        mixedTransferAccountId: prev.mixedTransferAccountId || firstBank?.id || '',
+      }));
     } catch (err) {
       console.error('Error loading data:', err);
     }
@@ -74,6 +88,10 @@ export default function SalePaymentModal({
       buyerId: vehicle?.buyerId || '',
       cashAccountId: accounts[0]?.id || '',
       cashAmount: '',
+      mixedCashAccountId: accounts.find(a => a.type === 'CASH')?.id || '',
+      mixedCashAmount: '',
+      mixedTransferAccountId: accounts.find(a => a.type === 'BANK')?.id || '',
+      mixedTransferAmount: '',
       tradeInPlate: '',
       tradeInValue: '',
       tradeInBrand: '',
@@ -95,11 +113,16 @@ export default function SalePaymentModal({
   const calculateSummary = () => {
     const salePrice = parseFloat(form.salePrice) || 0;
     const cashAmount = parseFloat(form.cashAmount) || 0;
+    const mixedCash = parseFloat(form.mixedCashAmount) || 0;
+    const mixedTransfer = parseFloat(form.mixedTransferAmount) || 0;
     const tradeInValue = parseFloat(form.tradeInValue) || 0;
 
     let totalReceived = 0;
-    if (['CASH', 'TRANSFER', 'MIXED'].includes(paymentType)) {
+    if (['CASH', 'TRANSFER'].includes(paymentType)) {
       totalReceived += cashAmount;
+    }
+    if (paymentType === 'MIXED') {
+      totalReceived += mixedCash + mixedTransfer;
     }
     if (['TRADE_IN', 'MIXED'].includes(paymentType)) {
       totalReceived += tradeInValue;
@@ -124,6 +147,18 @@ export default function SalePaymentModal({
       newErrors.buyerId = 'Debe seleccionar un cliente (comprador)';
     }
 
+    if (paymentType === 'MIXED') {
+      if (parseFloat(form.mixedCashAmount) > 0 && !form.mixedCashAccountId) {
+        newErrors.mixedCash = 'Selecciona la cuenta de efectivo';
+      }
+      if (parseFloat(form.mixedTransferAmount) > 0 && !form.mixedTransferAccountId) {
+        newErrors.mixedTransfer = 'Selecciona la cuenta de transferencia';
+      }
+      if (summary.totalReceived > summary.salePrice) {
+        newErrors.salePrice = 'Lo recibido no puede superar el precio de venta';
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -138,12 +173,24 @@ export default function SalePaymentModal({
       thirdPartyId: form.buyerId,
     };
 
-    // Agregar pago en efectivo/transferencia
-    if (['CASH', 'TRANSFER', 'MIXED'].includes(paymentType) && form.cashAccountId && form.cashAmount) {
+    // Pago simple en efectivo/transferencia (una cuenta)
+    if (['CASH', 'TRANSFER'].includes(paymentType) && form.cashAccountId && parseFloat(form.cashAmount) > 0) {
       saleData.cashPayment = {
         accountId: form.cashAccountId,
         amount: parseFloat(form.cashAmount),
       };
+    }
+
+    // Pago mixto: dos líneas (efectivo + transferencia), cada una opcional
+    if (paymentType === 'MIXED') {
+      const lines = [];
+      if (form.mixedCashAccountId && parseFloat(form.mixedCashAmount) > 0) {
+        lines.push({ accountId: form.mixedCashAccountId, amount: parseFloat(form.mixedCashAmount), method: 'CASH' });
+      }
+      if (form.mixedTransferAccountId && parseFloat(form.mixedTransferAmount) > 0) {
+        lines.push({ accountId: form.mixedTransferAccountId, amount: parseFloat(form.mixedTransferAmount), method: 'TRANSFER' });
+      }
+      if (lines.length > 0) saleData.cashPayments = lines;
     }
 
     // Agregar cruce
@@ -171,6 +218,8 @@ export default function SalePaymentModal({
   };
 
   const summary = calculateSummary();
+  const cashAccounts = accounts.filter(a => a.type === 'CASH');
+  const bankAccounts = accounts.filter(a => a.type === 'BANK');
 
   return (
     <Modal
@@ -283,12 +332,10 @@ export default function SalePaymentModal({
             />
           </div>
 
-          {/* Pago efectivo/transferencia */}
-          {['CASH', 'TRANSFER', 'MIXED'].includes(paymentType) && (
+          {/* Pago simple efectivo/transferencia (una cuenta) */}
+          {['CASH', 'TRANSFER'].includes(paymentType) && (
             <div className="border border-border rounded-lg p-3 space-y-3">
-              <h4 className="text-sm font-semibold text-[#E6EDF3]">
-                {paymentType === 'MIXED' ? 'Pago en Efectivo/Transferencia' : 'Datos del Pago'}
-              </h4>
+              <h4 className="text-sm font-semibold text-[#E6EDF3]">Datos del Pago</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-[#8B949E] mb-1">Cuenta *</label>
@@ -321,31 +368,99 @@ export default function SalePaymentModal({
             </div>
           )}
 
+          {/* Pago mixto: efectivo (Caja) + transferencia (Banco), cada uno opcional */}
+          {paymentType === 'MIXED' && (
+            <div className="border border-border rounded-lg p-3 space-y-3">
+              <h4 className="text-sm font-semibold text-[#E6EDF3]">Pago en dos formas</h4>
+              <p className="text-[11px] text-[#6E7681]">
+                Ingresa cuánto recibes en efectivo y/o transferencia. Lo que falte queda como cuenta por cobrar (CxC).
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">💵 Efectivo — Cuenta</label>
+                  <select
+                    value={form.mixedCashAccountId}
+                    onChange={(e) => setForm({ ...form, mixedCashAccountId: e.target.value })}
+                    className="input w-full"
+                    data-testid="sale-mixed-cash-account"
+                  >
+                    <option value="">Sin efectivo</option>
+                    {cashAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">Monto efectivo</label>
+                  <input
+                    type="number"
+                    value={form.mixedCashAmount}
+                    onChange={(e) => setForm({ ...form, mixedCashAmount: e.target.value })}
+                    className="input w-full"
+                    min="0"
+                    placeholder="0"
+                    data-testid="sale-mixed-cash-amount"
+                  />
+                </div>
+              </div>
+              {errors.mixedCash && <p className="text-[11px] text-red-400">⚠ {errors.mixedCash}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">🏦 Transferencia — Cuenta</label>
+                  <select
+                    value={form.mixedTransferAccountId}
+                    onChange={(e) => setForm({ ...form, mixedTransferAccountId: e.target.value })}
+                    className="input w-full"
+                    data-testid="sale-mixed-transfer-account"
+                  >
+                    <option value="">Sin transferencia</option>
+                    {bankAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">Monto transferencia</label>
+                  <input
+                    type="number"
+                    value={form.mixedTransferAmount}
+                    onChange={(e) => setForm({ ...form, mixedTransferAmount: e.target.value })}
+                    className="input w-full"
+                    min="0"
+                    placeholder="0"
+                    data-testid="sale-mixed-transfer-amount"
+                  />
+                </div>
+              </div>
+              {errors.mixedTransfer && <p className="text-[11px] text-red-400">⚠ {errors.mixedTransfer}</p>}
+            </div>
+          )}
+
           {/* Cruce de vehiculo */}
           {['TRADE_IN', 'MIXED'].includes(paymentType) && (
             <div className="border border-border rounded-lg p-3 space-y-3">
               <h4 className="text-sm font-semibold text-[#E6EDF3]">Vehiculo Recibido en Cruce</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[#8B949E] mb-1">Placa *</label>
+                  <label className="block text-sm text-[#8B949E] mb-1">Placa {paymentType === 'TRADE_IN' ? '*' : '(opcional)'}</label>
                   <input
                     type="text"
                     value={form.tradeInPlate}
                     onChange={(e) => setForm({ ...form, tradeInPlate: e.target.value.toUpperCase() })}
                     className="input w-full font-mono"
                     maxLength="10"
-                    required
+                    required={paymentType === 'TRADE_IN'}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-[#8B949E] mb-1">Valor del Cruce *</label>
+                  <label className="block text-sm text-[#8B949E] mb-1">Valor del Cruce {paymentType === 'TRADE_IN' ? '*' : '(opcional)'}</label>
                   <input
                     type="number"
                     value={form.tradeInValue}
                     onChange={(e) => setForm({ ...form, tradeInValue: e.target.value })}
                     className="input w-full"
                     min="1"
-                    required
+                    required={paymentType === 'TRADE_IN'}
                   />
                 </div>
               </div>

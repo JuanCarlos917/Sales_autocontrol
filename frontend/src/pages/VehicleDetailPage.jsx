@@ -13,6 +13,63 @@ import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/component
 
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
+// ── Audit log: etiquetas y formato ───────────────────────────────
+const AUDIT_ACTION_LABELS = {
+  CREATE: 'Creación',
+  UPDATE: 'Edición',
+  STAGE_CHANGE: 'Cambio de etapa',
+  DELETE: 'Eliminación',
+};
+const AUDIT_ACTION_COLORS = {
+  CREATE: '#3FB950',
+  UPDATE: '#D29922',
+  STAGE_CHANGE: '#5B8DEF',
+  DELETE: '#F85149',
+};
+const AUDIT_FIELD_LABELS = {
+  plate: 'Placa', brand: 'Marca', model: 'Modelo', year: 'Año', color: 'Color', km: 'Kilometraje',
+  stage: 'Etapa', negotiatedValue: 'Valor negociado', purchasePrice: 'Precio de compra',
+  listedPrice: 'Precio publicado', salePrice: 'Precio de venta', participation: 'Participación',
+  partnerContribution: 'Aporte socio', partnerAssumesExpenses: 'Prorrateo con socio',
+  purchaseDate: 'Fecha de compra', saleDate: 'Fecha de venta', notes: 'Notas',
+  supplierId: 'Proveedor', partnerId: 'Socio', buyerId: 'Comprador',
+  receivedVehicle: 'Cruce', receivedVehiclePlate: 'Placa cruce', receivedVehicleValue: 'Valor cruce',
+  publishedPortals: 'Portales',
+};
+const AUDIT_MONEY_FIELDS = new Set(['negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice', 'partnerContribution', 'receivedVehicleValue']);
+const AUDIT_DATE_FIELDS = new Set(['purchaseDate', 'saleDate']);
+
+const formatDateTime = (d) => {
+  if (!d) return '';
+  return new Date(d).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+function fmtAuditValue(field, val) {
+  if (val === null || val === undefined || val === '') return '—';
+  if (Array.isArray(val)) return val.length ? val.join(', ') : '—';
+  if (AUDIT_MONEY_FIELDS.has(field)) return formatCurrency(val);
+  if (AUDIT_DATE_FIELDS.has(field)) return formatDate(val);
+  if (field === 'stage') return getStage(val)?.label || val;
+  if (val === 'true') return 'Sí';
+  if (val === 'false') return 'No';
+  return String(val);
+}
+
+function diffAuditSnapshots(before, after) {
+  if (!before && !after) return [];
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  const changes = [];
+  for (const k of keys) {
+    if (k === 'id') continue;
+    const b = (before || {})[k];
+    const a = (after || {})[k];
+    const bs = Array.isArray(b) ? b.join(',') : (b ?? '');
+    const as = Array.isArray(a) ? a.join(',') : (a ?? '');
+    if (String(bs) !== String(as)) changes.push({ field: k, before: b, after: a });
+  }
+  return changes;
+}
+
 export default function VehicleDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -21,6 +78,7 @@ export default function VehicleDetailPage() {
   const [editingExpense, setEditingExpense] = useState(null);
   const [deletingExpense, setDeletingExpense] = useState(null);
   const [vehicle, setVehicle] = useState(null);
+  const [auditLog, setAuditLog] = useState([]);
   const [tab, setTab] = useState(searchParams.get('tab') || 'resumen');
   const [showEditForm, setShowEditForm] = useState(false);
 
@@ -86,11 +144,21 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const loadAuditLog = async () => {
+    try {
+      const { data } = await api.get(`/vehicles/${id}/audit`);
+      setAuditLog(data);
+    } catch (err) {
+      console.error('Error loading audit log:', err);
+    }
+  };
+
   useEffect(() => {
     loadVehicle();
     loadVehicleTransactions();
     loadAccounts();
     loadPaymentStatus();
+    loadAuditLog();
   }, [id]);
 
   // Abrir formulario de edición si viene con ?edit=true
@@ -104,6 +172,7 @@ export default function VehicleDetailPage() {
     loadVehicle();
     loadVehicleTransactions();
     loadPaymentStatus();
+    loadAuditLog();
   };
 
   if (!vehicle) return <div className="text-center text-[#6E7681] py-20">Cargando...</div>;
@@ -218,8 +287,9 @@ export default function VehicleDetailPage() {
           { id: 'tesoreria', label: `Tesoreria (${vehicleTransactions.length})` },
           { id: 'financiero', label: 'Financiero' },
           { id: 'documentos', label: `Docs (${docs.length})` },
+          { id: 'historial', label: `Historial (${auditLog.length})` },
         ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
+          <button key={t.id} onClick={() => setTab(t.id)} data-testid={`vehicle-tab-${t.id}`}
             className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-[#6E7681]'}`}>
             {t.label}
           </button>
@@ -529,6 +599,10 @@ export default function VehicleDetailPage() {
         </div>
       )}
 
+      {tab === 'historial' && (
+        <AuditTimeline entries={auditLog} />
+      )}
+
       {/* Footer Actions */}
       <div className="flex justify-between items-center mt-6 pt-4 border-t border-border flex-wrap gap-3">
         <div>
@@ -724,6 +798,61 @@ function ProfitSummary({ vehicle, metrics }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AuditTimeline({ entries }) {
+  if (!entries || entries.length === 0) {
+    return (
+      <p className="text-center text-[#6E7681] py-10" data-testid="vehicle-audit-empty">
+        Sin cambios registrados todavía. Las ediciones y los cambios de etapa quedarán aquí.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {entries.map(e => <AuditEntry key={e.id} entry={e} />)}
+    </div>
+  );
+}
+
+function AuditEntry({ entry }) {
+  const color = AUDIT_ACTION_COLORS[entry.action] || '#6E7681';
+  const actionLabel = AUDIT_ACTION_LABELS[entry.action] || entry.action;
+  const who = entry.user?.name || entry.user?.email || 'Usuario';
+  const changes = entry.action === 'STAGE_CHANGE'
+    ? [{ field: 'stage', before: entry.before?.stage, after: entry.after?.stage }]
+    : diffAuditSnapshots(entry.before, entry.after);
+
+  return (
+    <div className="flex items-start gap-3 p-3 bg-surface border border-border rounded-lg" data-testid="vehicle-audit-entry">
+      <div className="w-1 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: color }} />
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-center gap-2 flex-wrap">
+          <span className="text-[12px] font-semibold px-2 py-0.5 rounded" style={{ background: color + '20', color }}>
+            {actionLabel}
+          </span>
+          <span className="text-[11px] text-[#6E7681]">{who} · {formatDateTime(entry.createdAt)}</span>
+        </div>
+        {changes.length > 0 ? (
+          <ul className="mt-2 space-y-1">
+            {changes.map(c => (
+              <li key={c.field} className="text-[12px] text-[#8B949E] flex flex-wrap items-baseline gap-1.5">
+                <span className="text-[#E6EDF3] font-medium">{AUDIT_FIELD_LABELS[c.field] || c.field}:</span>
+                <span className="line-through opacity-70">{fmtAuditValue(c.field, c.before)}</span>
+                <span className="text-[#6E7681]">→</span>
+                <span className="text-[#E6EDF3]">{fmtAuditValue(c.field, c.after)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="mt-1.5 text-[12px] text-[#6E7681]">Sin cambios de campos.</div>
+        )}
+        {entry.reason && (
+          <div className="mt-1.5 text-[11px] text-[#6E7681] italic">📝 {entry.reason}</div>
+        )}
+      </div>
     </div>
   );
 }
