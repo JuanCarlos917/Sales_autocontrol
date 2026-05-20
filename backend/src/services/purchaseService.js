@@ -62,7 +62,7 @@ async function applyPurchasePayments(tx, { payable, payments, vehicle, thirdPart
 
   const transactions = [];
   const warnings = [];
-  const paymentDate = date ? new Date(date) : new Date();
+  const paymentDate = new Date(); // fecha de contabilización = instante de registro
   const methodLabel = { CASH: ' (efectivo)', TRANSFER: ' (transferencia)' };
 
   for (const p of payments) {
@@ -266,7 +266,7 @@ const addPurchasePayment = async (vehicleId, paymentData, userId) => {
         category: 'VEHICLE_PURCHASE',
         amount: paymentAmount,
         description: description || `Pago compra ${vehicle?.plate || ''}`,
-        date: date ? new Date(date) : new Date(),
+        date: new Date(), // fecha de contabilización = instante de registro
         vehicleId,
         thirdPartyId: payable.thirdPartyId,
         createdBy: userId

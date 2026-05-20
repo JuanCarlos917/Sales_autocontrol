@@ -102,7 +102,7 @@ class LoanService {
           category: 'LOAN_DISBURSEMENT',
           amount: principal,
           description: `Préstamo a ${borrower.name}`,
-          date: loan.disbursementDate,
+          date: new Date(), // fecha de contabilización = instante de registro
           thirdPartyId: borrowerId,
           loanId: loan.id,
           createdBy: userId,
@@ -161,8 +161,6 @@ class LoanService {
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account || !account.isActive) throw new AppError('Cuenta destino no encontrada o inactiva', 404);
 
-    const paymentDate = date ? new Date(date) : new Date();
-
     let remainingPrincipal = principal;
     const installmentUpdates = [];
     for (const inst of loan.installments) {
@@ -190,7 +188,7 @@ class LoanService {
           accountId,
           principalAmount: principal,
           extraAmount: extra,
-          date: paymentDate,
+          date: new Date(), // fecha de contabilización = instante de registro
           notes: notes || null,
           createdBy: userId,
         },
@@ -204,7 +202,7 @@ class LoanService {
             category: 'LOAN_REPAYMENT',
             amount: principal,
             description: `Pago préstamo: ${loan.borrower.name}`,
-            date: paymentDate,
+            date: new Date(), // fecha de contabilización = instante de registro
             thirdPartyId: loan.borrowerId,
             loanId,
             loanPaymentId: payment.id,
@@ -221,7 +219,7 @@ class LoanService {
             category: 'LOAN_EXTRA_INCOME',
             amount: extra,
             description: `Ingreso extra del préstamo: ${loan.borrower.name}`,
-            date: paymentDate,
+            date: new Date(), // fecha de contabilización = instante de registro
             thirdPartyId: loan.borrowerId,
             loanId,
             loanPaymentId: payment.id,

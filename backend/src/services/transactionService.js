@@ -21,19 +21,19 @@ class TransactionService {
     if (type) where.type = type;
     if (category) where.category = category;
     if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
+      // Se filtra por la hora real de registro (contabilización).
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
     const [transactions, total] = await Promise.all([
       prisma.transaction.findMany({
         where,
         include: TRANSACTION_INCLUDE,
-        // Prioridad por fecha del movimiento (hoy arriba) y, dentro de la misma fecha,
-        // por hora real de registro: quedan en el orden en que se hicieron, sin agrupar
-        // egresos con egresos.
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        // Orden por hora real de registro (contabilización): los movimientos quedan en el
+        // orden en que se hicieron, los más recientes arriba, sin agrupar egresos con egresos.
+        orderBy: { createdAt: 'desc' },
         take: limit,
         skip: offset,
       }),
@@ -56,7 +56,7 @@ class TransactionService {
     return prisma.transaction.findMany({
       where: { vehicleId },
       include: TRANSACTION_INCLUDE,
-      orderBy: { date: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -89,7 +89,8 @@ class TransactionService {
         amount,
         description,
         reference,
-        date: date ? new Date(date) : new Date(),
+        // La fecha de un movimiento es el instante de registro (contabilización), no editable.
+        date: new Date(),
         vehicleId,
         thirdPartyId,
         expenseId,

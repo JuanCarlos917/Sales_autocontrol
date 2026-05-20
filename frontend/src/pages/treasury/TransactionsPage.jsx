@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { transactionsApi, accountsApi, thirdPartiesApi, transfersApi } from '@/lib/treasuryApi';
-import { formatCurrency, formatDate, getLocalDateString } from '@/lib/constants';
+import { formatCurrency, formatDateTime, getLocalDateString } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
 
 const INCOME_CATEGORIES = [
@@ -241,7 +241,7 @@ export default function TransactionsPage() {
           <tbody>
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-t border-border hover:bg-surface-hover">
-                <td className="p-3 text-[#8B949E] whitespace-nowrap">{formatDate(tx.date)}</td>
+                <td className="p-3 text-[#8B949E] whitespace-nowrap">{formatDateTime(tx.createdAt)}</td>
                 <td className="p-3">
                   <span className={`text-xs font-medium ${getTypeColor(tx.type)}`}>
                     {getTypeLabel(tx.type)}
@@ -371,12 +371,9 @@ export default function TransactionsPage() {
           </div>
           <div>
             <label className="block text-sm text-[#8B949E] mb-1">Fecha</label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className="input w-full"
-            />
+            <div className="input w-full bg-[#0F1419] text-[#6E7681]">
+              Se registra con la fecha y hora actual
+            </div>
           </div>
           <div>
             <label className="block text-sm text-[#8B949E] mb-1">Descripcion</label>
