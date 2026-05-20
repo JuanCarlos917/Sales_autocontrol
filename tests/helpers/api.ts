@@ -60,6 +60,61 @@ export async function apiCreateVehicle(token: string, data: VehicleInput): Promi
   return postJson('/vehicles', data, token);
 }
 
+export interface VehicleUpdateInput {
+  plate?: string;
+  brand?: string;
+  model?: string;
+  year?: number;
+  color?: string;
+  km?: number;
+  notes?: string;
+  listedPrice?: number;
+}
+
+/** PUT que lanza si la respuesta no es ok. Para el camino feliz. */
+export async function apiUpdateVehicle(token: string, id: string, data: VehicleUpdateInput): Promise<{ id: string; plate: string; brand: string | null }> {
+  const res = await fetch(`${API_BASE}/vehicles/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PUT /vehicles/${id} failed: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<{ id: string; plate: string; brand: string | null }>;
+}
+
+/** PUT que NO lanza: devuelve status + body para aserciones de 403/400. */
+export async function apiUpdateVehicleRaw(token: string, id: string, data: VehicleUpdateInput): Promise<{ status: number; body: { error?: string } }> {
+  const res = await fetch(`${API_BASE}/vehicles/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(data),
+  });
+  let body: { error?: string } = {};
+  try {
+    body = await res.json();
+  } catch {
+    body = {};
+  }
+  return { status: res.status, body };
+}
+
+export interface VehicleAuditEntry {
+  id: string;
+  action: 'CREATE' | 'UPDATE' | 'STAGE_CHANGE' | 'DELETE';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string | null;
+  createdAt: string;
+  user: { id: string; name: string | null; email: string };
+}
+
+export async function apiGetVehicleAudit(token: string, id: string): Promise<VehicleAuditEntry[]> {
+  return getJson(`/vehicles/${id}/audit`, token);
+}
+
 export interface ConfirmPurchasePayload {
   vehicle: {
     purchasePrice: number;

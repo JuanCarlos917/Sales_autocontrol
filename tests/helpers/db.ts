@@ -83,3 +83,15 @@ export async function forceVehicleStage(vehicleId: string, stage: string): Promi
     await client.query(`UPDATE vehicles SET stage = $1, "updatedAt" = NOW() WHERE id = $2`, [stage, vehicleId]);
   });
 }
+
+/**
+ * Cambia el rol de un usuario directamente en DB.
+ * Para tests que necesitan ejercer la policy de edición por rol (ADMIN vs SUPERVISOR).
+ * El middleware de auth re-lee el rol en cada request, así que el cambio surte efecto
+ * de inmediato sin re-loguear. Restaurar a 'ADMIN' en cleanup.
+ */
+export async function setUserRole(email: string, role: 'ADMIN' | 'SUPERVISOR' | 'VIEWER'): Promise<void> {
+  await withClient(async (client) => {
+    await client.query(`UPDATE users SET role = $1::"Role", "updatedAt" = NOW() WHERE email = $2`, [role, email]);
+  });
+}

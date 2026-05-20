@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { STAGES, PORTALS, formatCurrency } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
 import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormFields';
@@ -21,6 +22,7 @@ const HIGHLIGHT_MESSAGES = {
 
 export default function VehicleFormModal({ vehicle, onClose, highlightFields = [] }) {
   const { createVehicle, updateVehicle, fetchVehicles, showToast } = useApp();
+  const { role } = useAuth();
   const [f, setF] = useState({
     plate: vehicle?.plate || '', brand: vehicle?.brand || '', model: vehicle?.model || '',
     year: vehicle?.year || '', color: vehicle?.color || '', km: vehicle?.km || '',
@@ -69,6 +71,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   // Etapas donde los campos de socio/precio están totalmente bloqueados
   const ADVANCED_STAGES = ['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'];
   const isFullyLocked = !!vehicle && ADVANCED_STAGES.includes(vehicle.stage);
+
+  // Lock de identidad por etapa/rol (paridad con el backend, ver spec edit-lock):
+  //  - identityLocked: fuera de NEGOCIANDO, solo ADMIN edita placa/marca/modelo/año/color/km.
+  //  - vendidoLocked: VENDIDO es solo lectura para todos (incluido ADMIN).
+  const identityLocked = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && role !== 'ADMIN';
+  const vendidoLocked = !!vehicle && vehicle.stage === 'VENDIDO';
+  // ADMIN editando identidad en una etapa avanzada (no VENDIDO): queda registrado en el audit log.
+  const adminEditingIdentity = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && !vendidoLocked && role === 'ADMIN';
+  const identityTitle = identityLocked ? 'Solo un administrador puede modificar estos datos una vez registrada la compra' : undefined;
+  const identityHelp = identityLocked ? '🔒 Datos de identidad bloqueados: requieren rol administrador' : undefined;
 
   // Confirmación de compra: NEGOCIANDO → COMPRADO, o COMPRADO sin CxP todavía
   const isConfirmingPurchase = !!vehicle && f.stage === 'COMPRADO' && hasExistingPayable === false && (
@@ -314,6 +326,18 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
 
   return (
     <Modal onClose={onClose} title={vehicle ? 'Editar Vehículo' : 'Nuevo Vehículo'} width="max-w-2xl">
+      {vendidoLocked && (
+        <div className="mb-4 p-3 rounded-lg border border-border bg-[#0F1419] flex items-center gap-2" data-testid="vehicle-form-vendido-banner">
+          <span className="text-lg leading-none">🔒</span>
+          <span className="text-sm font-semibold text-[#E6EDF3]">Vehículo VENDIDO. Solo lectura.</span>
+        </div>
+      )}
+      {adminEditingIdentity && (
+        <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs text-amber-300" data-testid="vehicle-form-admin-warning">
+          ⚠️ Estás editando datos de un vehículo en {STAGES.find(st => st.id === vehicle.stage)?.label}. Los cambios de identidad quedarán registrados en el audit log.
+        </div>
+      )}
+      <fieldset disabled={vendidoLocked} className="contents">
       {pendingHighlights.length > 0 && (
         <div className="mb-4 p-3 rounded-lg border-2 border-red-500/60 bg-red-500/10 animate-shake">
           <div className="flex items-start gap-2">
@@ -328,14 +352,22 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Input label="Placa *" value={f.plate} onChange={e => s('plate', e.target.value.toUpperCase())} placeholder="ABC123" data-testid="vehicle-form-plate" />
-        <Select label="Estado" value={f.stage} onChange={e => s('stage', e.target.value)} options={STAGES.map(st => ({ value: st.id, label: st.label }))} data-testid="vehicle-form-stage" />
-        <Input label="Marca" value={f.brand} onChange={e => s('brand', e.target.value)} placeholder="Chevrolet" />
-        <Input label="Modelo" value={f.model} onChange={e => s('model', e.target.value)} placeholder="Spark GT" />
-        <Input label="Año" type="number" value={f.year} onChange={e => s('year', e.target.value)} placeholder="2020" />
-        <Input label="Color" value={f.color} onChange={e => s('color', e.target.value)} placeholder="Blanco" />
-        <Input label="Kilometraje" type="number" value={f.km} onChange={e => s('km', e.target.value)} placeholder="45000" />
-        {f.stage !== 'NEGOCIANDO' && (
+        <Input label="Placa *" value={f.plate} onChange={e => s('plate', e.target.value.toUpperCase())} placeholder="ABC123" disabled={identityLocked} title={identityTitle} help={identityHelp} data-testid="vehicle-form-plate" />
+        <Select
+          label="Estado"
+          value={f.stage}
+          onChange={e => s('stage', e.target.value)}
+          options={vehicle ? STAGES.map(st => ({ value: st.id, label: st.label })) : [{ value: 'NEGOCIANDO', label: 'Negociando' }]}
+          disabled={!vehicle}
+          title={!vehicle ? 'Los vehículos nuevos siempre arrancan en Negociando' : ''}
+          data-testid="vehicle-form-stage"
+        />
+        <Input label="Marca" value={f.brand} onChange={e => s('brand', e.target.value)} placeholder="Chevrolet" disabled={identityLocked} title={identityTitle} />
+        <Input label="Modelo" value={f.model} onChange={e => s('model', e.target.value)} placeholder="Spark GT" disabled={identityLocked} title={identityTitle} />
+        <Input label="Año" type="number" value={f.year} onChange={e => s('year', e.target.value)} placeholder="2020" disabled={identityLocked} title={identityTitle} />
+        <Input label="Color" value={f.color} onChange={e => s('color', e.target.value)} placeholder="Blanco" disabled={identityLocked} title={identityTitle} />
+        <Input label="Kilometraje" type="number" value={f.km} onChange={e => s('km', e.target.value)} placeholder="45000" disabled={identityLocked} title={identityTitle} />
+        {['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'].includes(f.stage) && (
           <Input
             label="Precio Publicado"
             type="number"
@@ -497,7 +529,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       )}
 
       {/* Portals */}
-      {f.stage !== 'NEGOCIANDO' && (
+      {['ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'].includes(f.stage) && (
       <div className="mt-4">
         <label className="label-sm">Publicado en</label>
         <div className="flex gap-1.5 flex-wrap mt-1.5">
@@ -659,9 +691,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         </div>
       )}
 
+      </fieldset>
+
       <div className="flex justify-end gap-2 mt-5">
-        <button onClick={onClose} className="btn-ghost">Cancelar</button>
-        <button onClick={handleSave} disabled={loading} className="btn-primary" data-testid="vehicle-form-submit">{loading ? 'Guardando...' : vehicle ? 'Guardar Cambios' : 'Registrar Vehículo'}</button>
+        <button onClick={onClose} className="btn-ghost">{vendidoLocked ? 'Cerrar' : 'Cancelar'}</button>
+        {!vendidoLocked && (
+          <button onClick={handleSave} disabled={loading} className="btn-primary" data-testid="vehicle-form-submit">{loading ? 'Guardando...' : vehicle ? 'Guardar Cambios' : 'Registrar Vehículo'}</button>
+        )}
       </div>
     </Modal>
   );
