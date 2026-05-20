@@ -82,6 +82,10 @@ model Vehicle {
   receivedVehiclePlate String?
   receivedVehicleValue Decimal? @db.Decimal(15, 2)
 
+  // true cuando este vehículo nació de un cruce (parte de pago de otra venta):
+  // arranca en NEGOCIANDO con negotiatedValue fijo = valor del cruce (inmutable).
+  fromTradeIn Boolean @default(false)
+
   publishedPortals String[] @default([])
 
   // Terceros asociados al vehículo

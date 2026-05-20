@@ -79,9 +79,12 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const identityLocked = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && role !== 'ADMIN';
   const vendidoLocked = !!vehicle && vehicle.stage === 'VENDIDO';
   // ADMIN editando identidad en una etapa avanzada (no VENDIDO): queda registrado en el audit log.
-  const adminEditingIdentity = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && !vendidoLocked && role === 'ADMIN';
+  // No aplica en el modo "completar para avanzar": ahí el foco es diligenciar los campos faltantes.
+  const adminEditingIdentity = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && !vendidoLocked && role === 'ADMIN' && !completeForStage;
   const identityTitle = identityLocked ? 'Solo un administrador puede modificar estos datos una vez registrada la compra' : undefined;
   const identityHelp = identityLocked ? '🔒 Datos de identidad bloqueados: requieren rol administrador' : undefined;
+  // Vehículo recibido en cruce: el valor negociado es el valor del cruce, inmutable.
+  const tradeInLocked = !!vehicle?.fromTradeIn;
 
   // Confirmación de compra: NEGOCIANDO → COMPRADO, o COMPRADO sin CxP todavía
   const isConfirmingPurchase = !!vehicle && f.stage === 'COMPRADO' && hasExistingPayable === false && (
@@ -400,6 +403,9 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="25000000"
             error={highlight('negotiatedValue')}
             autoFocus={!!highlight('negotiatedValue')}
+            disabled={tradeInLocked}
+            title={tradeInLocked ? 'Valor recibido en cruce — no editable' : ''}
+            help={tradeInLocked ? '🔒 Valor del cruce — no editable' : undefined}
             data-testid="vehicle-form-negotiated-value"
           />
         )}
@@ -474,6 +480,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="Seleccionar proveedor..."
             required={f.stage !== 'NEGOCIANDO'}
             disabled={supplierLocked}
+            error={highlight('supplier')}
           />
           <ThirdPartySelector
             value={f.partnerId}
@@ -482,6 +489,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             label="Socio (opcional)"
             placeholder="Sin socio..."
             disabled={partnerLocked || partnerIdLocked}
+            error={highlight('partner')}
           />
         </div>
         {f.stage !== 'NEGOCIANDO' && !f.supplierId && (
