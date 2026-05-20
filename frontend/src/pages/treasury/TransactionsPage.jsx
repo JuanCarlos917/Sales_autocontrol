@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { transactionsApi, accountsApi, thirdPartiesApi, transfersApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDateTime, getLocalDateString } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
@@ -38,6 +39,8 @@ const CATEGORY_LABELS = {
 const getCategoryLabel = (category) => CATEGORY_LABELS[category] || category || '—';
 
 export default function TransactionsPage() {
+  const { role } = useAuth();
+  const isViewer = role === 'VIEWER';
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [thirdParties, setThirdParties] = useState([]);
@@ -180,11 +183,13 @@ export default function TransactionsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-[#E6EDF3]">Movimientos</h2>
-        <div className="flex gap-2">
-          <button onClick={() => openModal('income')} className="btn-primary text-sm bg-green-600 hover:bg-green-700">+ Ingreso</button>
-          <button onClick={() => openModal('expense')} className="btn-primary text-sm bg-red-600 hover:bg-red-700">+ Egreso</button>
-          <button onClick={() => openModal('transfer')} className="btn-ghost text-sm" data-testid="transactions-transfer-button">↔ Transferencia</button>
-        </div>
+        {!isViewer && (
+          <div className="flex gap-2">
+            <button onClick={() => openModal('income')} className="btn-primary text-sm bg-green-600 hover:bg-green-700">+ Ingreso</button>
+            <button onClick={() => openModal('expense')} className="btn-primary text-sm bg-red-600 hover:bg-red-700">+ Egreso</button>
+            <button onClick={() => openModal('transfer')} className="btn-ghost text-sm" data-testid="transactions-transfer-button">↔ Transferencia</button>
+          </div>
+        )}
       </div>
 
       {/* Filtros */}

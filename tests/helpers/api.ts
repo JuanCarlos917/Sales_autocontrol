@@ -17,6 +17,29 @@ async function postJson<T>(path: string, body: unknown, token?: string): Promise
   return res.json() as Promise<T>;
 }
 
+export async function apiRequestRaw(
+  method: string,
+  path: string,
+  token?: string,
+  body?: unknown,
+): Promise<{ status: number; body: { error?: string } | null }> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  let parsed: { error?: string } | null = null;
+  try {
+    parsed = await res.json();
+  } catch {
+    parsed = null;
+  }
+  return { status: res.status, body: parsed };
+}
+
 async function getJson<T>(path: string, token: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },

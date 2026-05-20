@@ -6,10 +6,8 @@ const express = require('express');
 const router = express.Router();
 const payableService = require('../services/payableService');
 const { validate, schemas } = require('../middleware/validation');
-const { authenticate } = require('../middleware/auth');
 
 // Todas las rutas requieren autenticacion
-router.use(authenticate);
 
 /**
  * GET /api/payables/summary

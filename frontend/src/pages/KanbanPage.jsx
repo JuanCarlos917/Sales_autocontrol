@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 import { SalePaymentModal } from '@/components/treasury';
@@ -22,6 +23,8 @@ const CXP_BLOCK_RE = /pagad|CxP|PAID/i;
 
 export default function KanbanPage() {
   const { vehicles, fetchVehicles, moveVehicle, loading, showToast } = useApp();
+  const { role } = useAuth();
+  const isViewer = role === 'VIEWER';
   const [dragOver, setDragOver] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const navigate = useNavigate();
@@ -312,7 +315,9 @@ export default function KanbanPage() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-[#8B949E]">{vehicles.length} vehículo{vehicles.length !== 1 ? 's' : ''} en el pipeline</p>
-        <button onClick={() => setShowForm(true)} className="btn-primary" data-testid="kanban-create-vehicle">+ Vehículo</button>
+        {!isViewer && (
+          <button onClick={() => setShowForm(true)} className="btn-primary" data-testid="kanban-create-vehicle">+ Vehículo</button>
+        )}
       </div>
 
       {/* Contenedor con botones de navegación */}
@@ -393,7 +398,7 @@ export default function KanbanPage() {
                   const hasMissingData = missingPrice;
 
                   return (
-                    <div key={v.id} draggable
+                    <div key={v.id} draggable={!isViewer}
                       data-testid={`vehicle-card-${v.plate}`}
                       onDragStart={e => e.dataTransfer.setData('vid', v.id)}
                       onClick={() => navigate(`/vehicles/${v.id}`)}

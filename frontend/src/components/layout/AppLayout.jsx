@@ -19,7 +19,8 @@ const NAV_ITEMS = [
 ];
 
 export default function AppLayout() {
-  const { logout } = useAuth();
+  const { logout, role } = useAuth();
+  const isViewer = role === 'VIEWER';
   const { toast, exportCSV, dismissToast } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -96,6 +97,15 @@ export default function AppLayout() {
             <h1 className="text-lg font-bold text-[#E6EDF3] tracking-tight">{pageTitle}</h1>
           </div>
           <div className="flex items-center gap-3">
+            {isViewer && (
+              <span
+                className="text-[11px] font-semibold px-2 py-1 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                title="Tu rol es de consulta: no puedes hacer cambios"
+                data-testid="viewer-readonly-badge"
+              >
+                👁 Solo lectura
+              </span>
+            )}
             <AlertsIndicator />
           </div>
         </header>

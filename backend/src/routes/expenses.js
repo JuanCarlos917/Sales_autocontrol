@@ -1,11 +1,9 @@
 const { Router } = require('express');
 const ctrl = require('../controllers/expenseController');
-const { authenticate } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validation');
 
 const router = Router();
 
-router.use(authenticate);
 
 // Lectura
 router.get('/', ctrl.getAll);

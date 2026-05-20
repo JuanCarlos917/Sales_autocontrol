@@ -1,11 +1,9 @@
 const { Router } = require('express');
 const ctrl = require('../controllers/vehicleController');
-const { authenticate } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validation');
 
 const router = Router();
 
-router.use(authenticate);
 
 // CRUD básico
 router.get('/', ctrl.getAll);
