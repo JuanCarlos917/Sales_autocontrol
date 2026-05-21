@@ -2,19 +2,25 @@
 // Service — Document (Gestión de archivos y fotos)
 // ═══════════════════════════════════════════════════════════════
 
-const fs = require('fs');
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
+const storage = require('../utils/storage');
+
+/** Agrega `url` (servible por el navegador) a un documento. */
+async function withUrl(doc) {
+  return { ...doc, url: await storage.getUrl(doc.filepath) };
+}
 
 class DocumentService {
   async findByVehicle(vehicleId, userId) {
     const vehicle = await prisma.vehicle.findFirst({ where: { id: vehicleId, userId } });
     if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
 
-    return prisma.document.findMany({
+    const docs = await prisma.document.findMany({
       where: { vehicleId },
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(docs.map(withUrl));
   }
 
   async create({ vehicleId, type, notes }, file, userId) {
@@ -23,17 +29,21 @@ class DocumentService {
 
     if (!file) throw new AppError('Archivo requerido', 400);
 
-    return prisma.document.create({
+    // Persiste en disco o S3 y devuelve el filepath a guardar.
+    const filepath = await storage.persistUpload(file, vehicleId);
+
+    const doc = await prisma.document.create({
       data: {
         vehicleId,
         type,
         notes,
         filename: file.originalname,
-        filepath: file.path,
+        filepath,
         mimetype: file.mimetype,
         size: file.size,
       },
     });
+    return withUrl(doc);
   }
 
   async delete(id, userId) {
@@ -43,11 +53,7 @@ class DocumentService {
     });
     if (!doc || doc.vehicle.userId !== userId) throw new AppError('Documento no encontrado', 404);
 
-    // Delete file from disk
-    if (fs.existsSync(doc.filepath)) {
-      fs.unlinkSync(doc.filepath);
-    }
-
+    await storage.deleteFile(doc.filepath);
     await prisma.document.delete({ where: { id } });
     return { deleted: true };
   }

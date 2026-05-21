@@ -3,29 +3,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const config = require('../config');
+const { buildMulterStorage } = require('../utils/storage');
 
-// Crear directorio de uploads si no existe
-if (!fs.existsSync(config.upload.dir)) {
-  fs.mkdirSync(config.upload.dir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const vehicleDir = path.join(config.upload.dir, req.params.vehicleId || 'general');
-    if (!fs.existsSync(vehicleDir)) {
-      fs.mkdirSync(vehicleDir, { recursive: true });
-    }
-    cb(null, vehicleDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  },
-});
+// Disco local o memoria (para S3), según la configuración de almacenamiento.
+const storage = buildMulterStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
