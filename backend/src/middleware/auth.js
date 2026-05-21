@@ -39,6 +39,18 @@ const authenticate = async (req, res, next) => {
 };
 
 /**
+ * Rol VIEWER = solo lectura. Bloquea cualquier método que muta estado.
+ * Debe ir DESPUÉS de authenticate (necesita req.user). No aplica a /auth.
+ */
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const blockViewerWrites = (req, res, next) => {
+  if (req.user && req.user.role === 'VIEWER' && !READ_ONLY_METHODS.has(req.method)) {
+    return res.status(403).json({ error: 'Tu rol es de solo consulta: no puedes realizar cambios' });
+  }
+  next();
+};
+
+/**
  * Verifica que el usuario tenga uno de los roles permitidos
  */
 const authorize = (...roles) => {
@@ -50,4 +62,4 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { authenticate, authorize };
+module.exports = { authenticate, authorize, blockViewerWrites };

@@ -3,7 +3,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 const { Router } = require('express');
-const { authenticate } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validation');
 
 // Controllers
@@ -17,7 +16,6 @@ const reportCtrl = require('../controllers/treasuryReportController');
 const router = Router();
 
 // Todas las rutas requieren autenticación
-router.use(authenticate);
 
 // ══════════════════════════════════════════════════════════════
 // REPORTES Y DASHBOARD

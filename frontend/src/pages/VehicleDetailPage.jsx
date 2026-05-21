@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
@@ -70,6 +71,8 @@ export default function VehicleDetailPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { deleteVehicle, deleteExpense, restoreExpense, deleteDocument, showToast } = useApp();
+  const { role } = useAuth();
+  const isViewer = role === 'VIEWER';
   const [editingExpense, setEditingExpense] = useState(null);
   const [deletingExpense, setDeletingExpense] = useState(null);
   const [vehicle, setVehicle] = useState(null);
@@ -266,7 +269,9 @@ export default function VehicleDetailPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowEditForm(true)} className="btn-ghost">✏ Editar</button>
+            {!isViewer && (
+              <button onClick={() => setShowEditForm(true)} className="btn-ghost">✏ Editar</button>
+            )}
             <button onClick={() => navigate(-1)} className="btn-ghost">← Volver</button>
           </div>
         </div>
@@ -345,14 +350,16 @@ export default function VehicleDetailPage() {
           )}
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Total: {formatCurrency(m.totalExpenses)}</span>
-            <button
-              onClick={() => vehicle.stage !== 'VENDIDO' && setShowExpenseTreasuryModal(true)}
-              disabled={vehicle.stage === 'VENDIDO'}
-              title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se pueden agregar gastos' : ''}
-              className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              + Gasto
-            </button>
+            {!isViewer && (
+              <button
+                onClick={() => vehicle.stage !== 'VENDIDO' && setShowExpenseTreasuryModal(true)}
+                disabled={vehicle.stage === 'VENDIDO'}
+                title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se pueden agregar gastos' : ''}
+                className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Gasto
+              </button>
+            )}
           </div>
           {expenses.length === 0 ? <p className="text-center text-[#6E7681] py-10">Sin gastos registrados</p> : (
             <div className="space-y-2">
@@ -375,7 +382,7 @@ export default function VehicleDetailPage() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-mono font-bold text-sm">{formatCurrency(e.amount)}</span>
-                          {!locked && (
+                          {!locked && !isViewer && (
                             <>
                               <button
                                 onClick={() => setEditingExpense({ ...e, vehicle: { id: vehicle.id, plate: vehicle.plate, stage: vehicle.stage } })}
@@ -575,7 +582,9 @@ export default function VehicleDetailPage() {
         <div>
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Documentos y Fotos</span>
-            <button onClick={() => setShowDocForm(true)} className="btn-primary">+ Documento</button>
+            {!isViewer && (
+              <button onClick={() => setShowDocForm(true)} className="btn-primary">+ Documento</button>
+            )}
           </div>
           {docs.length === 0 ? <p className="text-center text-[#6E7681] py-10">Agrega tarjeta de propiedad, SOAT, peritaje, etc.</p> : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -589,7 +598,9 @@ export default function VehicleDetailPage() {
                     {d.notes && <div className="text-[11px] text-[#6E7681]">{d.notes}</div>}
                     <div className="flex justify-between mt-2 text-[11px] text-[#6E7681]">
                       <span>{formatDate(d.createdAt)}</span>
-                      <button onClick={() => { deleteDocument(d.id); loadVehicle(); }} className="btn-danger text-[10px]">✕</button>
+                      {!isViewer && (
+                        <button onClick={() => { deleteDocument(d.id); loadVehicle(); }} className="btn-danger text-[10px]">✕</button>
+                      )}
                     </div>
                   </div>
                 );
@@ -603,7 +614,8 @@ export default function VehicleDetailPage() {
         <AuditTimeline entries={auditLog} />
       )}
 
-      {/* Footer Actions */}
+      {/* Footer Actions (acciones de escritura: ocultas en modo consulta) */}
+      {!isViewer && (
       <div className="flex justify-between items-center mt-6 pt-4 border-t border-border flex-wrap gap-3">
         <div>
           {confirmDel ? (
@@ -634,6 +646,7 @@ export default function VehicleDetailPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Modals */}
       {showEditForm && <VehicleFormModal vehicle={vehicle} highlightFields={highlightFields} onClose={() => { closeEditForm(); reloadAll(); }} />}
