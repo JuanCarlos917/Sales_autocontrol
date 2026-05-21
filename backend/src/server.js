@@ -11,6 +11,7 @@ const path = require('path');
 
 const config = require('./config');
 const { assertSecureConfig } = require('./config/validateConfig');
+const { initSentry } = require('./utils/sentry');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -21,6 +22,9 @@ try {
   console.error(`\n  ❌ ${err.message}\n`);
   process.exit(1);
 }
+
+// Observabilidad: monitoreo de errores (solo si hay SENTRY_DSN).
+const sentryActive = initSentry(process.env);
 
 const app = express();
 
@@ -73,7 +77,8 @@ const server = app.listen(config.port, () => {
   console.log(`\n  🚗 AutoControl API running`);
   console.log(`  📡 Port: ${config.port}`);
   console.log(`  🌍 Env: ${config.nodeEnv}`);
-  console.log(`  📁 Uploads: ${config.upload.dir}\n`);
+  console.log(`  📁 Uploads: ${config.upload.dir}`);
+  console.log(`  🛰️  Sentry: ${sentryActive ? 'activo' : 'desactivado (sin SENTRY_DSN)'}\n`);
 });
 
 // Graceful shutdown

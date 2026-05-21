@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const config = require('../config');
+const { captureError } = require('../utils/sentry');
 
 class AppError extends Error {
   constructor(message, statusCode = 500) {
@@ -35,6 +36,7 @@ const errorHandler = (err, req, res, _next) => {
     const method = req?.method || '?';
     const url = req?.originalUrl || req?.url || '?';
     console.error(`[${new Date().toISOString()}] ${method} ${url} →`, err);
+    captureError(err); // a Sentry si está activo; no-op en caso contrario
   }
 
   res.status(statusCode).json({
