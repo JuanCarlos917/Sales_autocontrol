@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateVehicleMetrics, calculateParticipation } = require('../utils/financial');
+const storage = require('../utils/storage');
 
 // Campos de participación/socio que quedan bloqueados después de NEGOCIANDO
 const PARTNER_LOCKED_FIELDS = ['participation', 'partnerContribution', 'partnerId', 'partnerAssumesExpenses', 'purchasePrice'];
@@ -136,7 +137,12 @@ class VehicleService {
     const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
     const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
 
-    return { ...vehicle, metrics: calculateVehicleMetrics(vehicle, fixedMonthly) };
+    // URL servible para cada documento (S3 prefirmada o /uploads en disco)
+    const documents = await Promise.all(
+      (vehicle.documents || []).map(async (d) => ({ ...d, url: await storage.getUrl(d.filepath) }))
+    );
+
+    return { ...vehicle, documents, metrics: calculateVehicleMetrics(vehicle, fixedMonthly) };
   }
 
   async create(data, userId) {

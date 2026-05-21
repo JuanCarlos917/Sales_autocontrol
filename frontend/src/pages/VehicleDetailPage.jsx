@@ -594,7 +594,7 @@ export default function VehicleDetailPage() {
                 return (
                   <div key={d.id} className="bg-surface border border-border rounded-xl p-3">
                     <div className="text-[13px] font-semibold mb-2">{dtype?.label || d.type}</div>
-                    {isImage && <img src={`/uploads/${d.filepath?.split('/uploads/')?.[1] || d.filepath}`} alt="" className="w-full rounded-lg mb-2 max-h-40 object-cover" />}
+                    {isImage && <img src={d.url || `/uploads/${d.filepath?.split('/uploads/')?.[1] || d.filepath}`} alt="" className="w-full rounded-lg mb-2 max-h-40 object-cover" />}
                     {d.notes && <div className="text-[11px] text-[#6E7681]">{d.notes}</div>}
                     <div className="flex justify-between mt-2 text-[11px] text-[#6E7681]">
                       <span>{formatDate(d.createdAt)}</span>
