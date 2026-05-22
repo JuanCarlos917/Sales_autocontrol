@@ -36,11 +36,20 @@ echo "2/4 — Levantando servicios..."
 docker compose up -d
 
 echo ""
-echo "3/4 — Esperando a que la base de datos esté lista..."
-sleep 5
+echo "3/4 — Esperando a que el backend esté sano..."
+status=""
+for _ in $(seq 1 30); do
+    status=$(docker inspect --format '{{.State.Health.Status}}' autocontrol_backend 2>/dev/null || echo "starting")
+    [ "$status" = "healthy" ] && break
+    sleep 2
+done
+if [ "$status" != "healthy" ]; then
+    echo "❌ El backend no quedó sano a tiempo. Revisa los logs: docker compose logs backend"
+    exit 1
+fi
 
 echo ""
-echo "4/4 — Ejecutando migraciones y seed..."
+echo "4/4 — Aplicando migraciones y seed del admin..."
 docker compose exec -T backend npx prisma migrate deploy
 docker compose exec -T backend node scripts/seed.js
 
@@ -48,9 +57,8 @@ echo ""
 echo "════════════════════════════════════"
 echo "✅ Deploy completado!"
 echo ""
-echo "🌐 Frontend: http://localhost:3000"
-echo "📡 API:      http://localhost:4000"
-echo "🗄️  DB:       postgresql://localhost:5432"
+echo "🌐 App:  https://<tu-dominio>  (servida por nginx en 80/443)"
+echo "ℹ️  La DB y el backend no se publican al host: solo viven en la red interna de Docker."
 echo ""
-echo "📌 Acceso admin: usa el ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_PIN definidos en el entorno (.env)."
+echo "📌 Acceso admin: usa el ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_PIN definidos en .env."
 echo "════════════════════════════════════"

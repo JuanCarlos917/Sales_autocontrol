@@ -1,0 +1,15 @@
+# Se reconstruye dentro de la imagen con `npm ci`.
+node_modules
+npm-debug.log
+
+# Secretos y build local: no entran a la imagen.
+.env
+.env.*
+dist
+
+# Metadatos de repo.
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.log

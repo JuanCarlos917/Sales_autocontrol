@@ -1,4 +1,9 @@
-version: '3.8'
+# AutoControl — Orquestación de producción.
+# Los valores sensibles se toman de un archivo .env junto a este compose
+# (NUNCA se incrustan aquí). Las variables con `${VAR:?...}` son obligatorias:
+# si faltan, `docker compose up` aborta con un mensaje claro en vez de arrancar
+# con credenciales débiles. Solo nginx publica puertos al host (80/443);
+# la base de datos y el backend quedan en la red interna.
 
 services:
   # ── PostgreSQL ──
@@ -9,11 +14,13 @@ services:
     environment:
       POSTGRES_DB: autocontrol_db
       POSTGRES_USER: autocontrol
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-your_secure_password}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Sin `ports`: la DB solo es accesible desde la red interna de compose,
+    # nunca desde internet. Se accede vía `docker compose exec db ...`.
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U autocontrol -d autocontrol_db"]
       interval: 10s
@@ -31,37 +38,68 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://autocontrol:${DB_PASSWORD:-your_secure_password}@db:5432/autocontrol_db
-      JWT_SECRET: ${JWT_SECRET:-change-this-secret}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-this-refresh-secret}
       NODE_ENV: production
       PORT: 4000
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://autocontrol:${DB_PASSWORD:?Define DB_PASSWORD en .env}@db:5432/autocontrol_db
+      # ── Secretos obligatorios (el backend hace fail-fast si faltan o son débiles) ──
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET (>=32 chars) en .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Define JWT_REFRESH_SECRET (>=32 chars, distinto) en .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@autocontrol.co}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Define ADMIN_PASSWORD (>=8 chars) en .env}
+      ADMIN_PIN: ${ADMIN_PIN:?Define ADMIN_PIN (>=6 dígitos) en .env}
+      # ── App ──
+      CORS_ORIGIN: ${CORS_ORIGIN:?Define CORS_ORIGIN (URL pública del frontend) en .env}
+      FRONTEND_URL: ${FRONTEND_URL:-${CORS_ORIGIN}}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+      # ── Uploads en S3 (opcional; sin S3_BUCKET se usa el volumen local) ──
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # ── Observabilidad (opcional) ──
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
     volumes:
       - uploads_data:/app/uploads
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:4000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # ── Frontend ──
+  # ── Frontend (SPA estática) ──
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+        # Ruta relativa: el navegador llama a /api y nginx lo enruta al backend.
+        # NO uses http://localhost:4000 aquí: el navegador del cliente no lo alcanza.
+        VITE_API_URL: ${VITE_API_URL:-/api}
     container_name: autocontrol_frontend
     restart: unless-stopped
-    ports:
-      - "3000:80"
+    expose:
+      - "80"
 
-  # ── Nginx Proxy ──
+  # ── Nginx Proxy (único servicio expuesto a internet) ──
   nginx:
     image: nginx:alpine
     container_name: autocontrol_nginx
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     volumes:
       - ./nginx/autocontrol.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
