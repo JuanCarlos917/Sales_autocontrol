@@ -1,0 +1,19 @@
+# Se reconstruye dentro de la imagen con `npm ci`.
+node_modules
+npm-debug.log
+
+# Secretos: se inyectan por entorno en runtime, NUNCA se hornean en la imagen.
+.env
+.env.*
+
+# Datos locales / efímeros que no deben entrar a la imagen.
+uploads
+backups
+*.log
+
+# Metadatos de repo y artefactos de test.
+.git
+.gitignore
+**/__tests__
+Dockerfile
+.dockerignore
