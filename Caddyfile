@@ -3,7 +3,6 @@
 # Caddy obtiene y RENUEVA el certificado TLS solo (Let's Encrypt).
 # Requisito: el DNS de $DOMAIN debe apuntar a este servidor ANTES de arrancar.
 # ═══════════════════════════════════════════════════════════════
-
 {
 	# Email para Let's Encrypt (avisos de expiración / recuperación).
 	email {$ACME_EMAIL}
