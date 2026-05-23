@@ -122,7 +122,7 @@ export default function ExpensePaymentModal({
       description: form.description || null,
       date: form.date || null,
       isPaid,
-      accountId: isPaid ? form.accountId : null,
+      accountId: form.accountId,
       thirdPartyId: form.thirdPartyId || null,
       dueDate: !isPaid && form.dueDate ? form.dueDate : null,
     };
@@ -225,24 +225,29 @@ export default function ExpensePaymentModal({
             </label>
           </div>
 
-          {isPaid ? (
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Cuenta de Pago *</label>
-              <select
-                value={form.accountId}
-                onChange={(e) => handleAccountChange(e.target.value)}
-                className="input w-full"
-                required
-              >
-                <option value="">Seleccionar cuenta</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({formatCurrency(a.currentBalance)})
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
+          <div>
+            <label className="block text-sm text-[#8B949E] mb-1">Cuenta de tesorería *</label>
+            <select
+              value={form.accountId}
+              onChange={(e) => handleAccountChange(e.target.value)}
+              className="input w-full"
+              required
+            >
+              <option value="">Seleccionar cuenta</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({formatCurrency(a.currentBalance)})
+                </option>
+              ))}
+            </select>
+            {!isPaid && (
+              <p className="text-xs text-[#8B949E] mt-1">
+                Cuenta asociada al gasto (se debitará cuando registres el pago de la CxP).
+              </p>
+            )}
+          </div>
+
+          {!isPaid && (
             <div>
               <label className="block text-sm text-[#8B949E] mb-1">Fecha de Vencimiento</label>
               <input
@@ -282,7 +287,7 @@ export default function ExpensePaymentModal({
           <button
             type="submit"
             className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
-            disabled={loading || !form.amount || !form.category || (isPaid && !form.accountId)}
+            disabled={loading || !form.amount || !form.category || !form.accountId}
           >
             {loading ? 'Procesando...' : 'Registrar Gasto'}
           </button>
