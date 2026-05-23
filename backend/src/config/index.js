@@ -32,7 +32,7 @@ const config = {
   // Rate Limiting (disabled in dev, strict in production)
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
-    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || (process.env.NODE_ENV === 'development' ? 10000 : 100),
+    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || (process.env.NODE_ENV === 'development' ? 10000 : 300),
   },
 
   // Admin seed — credenciales solo por entorno (sin valores por defecto en el código).

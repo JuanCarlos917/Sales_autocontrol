@@ -28,6 +28,12 @@ const sentryActive = initSentry(process.env);
 
 const app = express();
 
+// Detrás de un proxy (Caddy): confía en 1 salto para que `req.ip` sea la IP real
+// del cliente (vía X-Forwarded-For). Sin esto, el rate limiter cuenta todo el
+// tráfico contra la IP del proxy y el cupo se agota para todos a la vez.
+// Se usa el número de saltos (no `true`) para que el cliente no pueda falsear la IP.
+app.set('trust proxy', 1);
+
 // ── Security ──
 app.use(helmet());
 app.use(cors({
