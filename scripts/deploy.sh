@@ -27,6 +27,9 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# DOMAIN solo para mostrar la URL final al terminar (compose lo usa por su cuenta).
+DOMAIN=$(grep -E '^DOMAIN=' .env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+
 echo ""
 echo "1/4 — Construyendo imágenes..."
 docker compose build --no-cache
@@ -57,7 +60,7 @@ echo ""
 echo "════════════════════════════════════"
 echo "✅ Deploy completado!"
 echo ""
-echo "🌐 App:  https://\${DOMAIN}  (Caddy gestiona el HTTPS automáticamente)"
+echo "🌐 App:  https://${DOMAIN:-<tu-dominio>}  (Caddy gestiona el HTTPS automáticamente)"
 echo "ℹ️  Si el HTTPS no sube, revisa que el DNS de DOMAIN apunte a este servidor: docker compose logs caddy"
 echo "ℹ️  La DB y el backend no se publican al host: solo viven en la red interna de Docker."
 echo ""
