@@ -3,9 +3,11 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
-import { EXPENSE_CATEGORIES, PORTALS, DOC_TYPES, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
+import { EXPENSE_CATEGORIES, PORTALS, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
+import DocumentCard from '@/components/documents/DocumentCard';
+import DocumentViewerModal from '@/components/documents/DocumentViewerModal';
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
 import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
 import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
@@ -96,6 +98,7 @@ export default function VehicleDetailPage() {
     .map(s => s.trim())
     .filter(Boolean);
   const [showDocForm, setShowDocForm] = useState(false);
+  const [viewerDoc, setViewerDoc] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
   // Tesorería
   const [vehicleTransactions, setVehicleTransactions] = useState([]);
@@ -189,6 +192,11 @@ export default function VehicleDetailPage() {
   const handleDelete = async () => {
     await deleteVehicle(id);
     navigate('/vehicles');
+  };
+
+  const handleDeleteDocument = async (docId) => {
+    await deleteDocument(docId);
+    loadVehicle();
   };
 
   // Registrar venta con tesorería
@@ -589,23 +597,15 @@ export default function VehicleDetailPage() {
           </div>
           {docs.length === 0 ? <p className="text-center text-[#6E7681] py-10">Agrega tarjeta de propiedad, SOAT, peritaje, etc.</p> : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {docs.map(d => {
-                const dtype = DOC_TYPES.find(t => t.id === d.type);
-                const isImage = d.mimetype?.startsWith('image/');
-                return (
-                  <div key={d.id} className="bg-surface border border-border rounded-xl p-3">
-                    <div className="text-[13px] font-semibold mb-2">{dtype?.label || d.type}</div>
-                    {isImage && <img src={d.url || `/uploads/${d.filepath?.split('/uploads/')?.[1] || d.filepath}`} alt="" className="w-full rounded-lg mb-2 max-h-40 object-cover" />}
-                    {d.notes && <div className="text-[11px] text-[#6E7681]">{d.notes}</div>}
-                    <div className="flex justify-between mt-2 text-[11px] text-[#6E7681]">
-                      <span>{formatDate(d.createdAt)}</span>
-                      {!isViewer && (
-                        <button onClick={() => { deleteDocument(d.id); loadVehicle(); }} className="btn-danger text-[10px]">✕</button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {docs.map(d => (
+                <DocumentCard
+                  key={d.id}
+                  doc={d}
+                  onView={setViewerDoc}
+                  onDelete={handleDeleteDocument}
+                  isViewer={isViewer}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -652,6 +652,7 @@ export default function VehicleDetailPage() {
       {/* Modals */}
       {showEditForm && <VehicleFormModal vehicle={vehicle} highlightFields={highlightFields} onClose={() => { closeEditForm(); reloadAll(); }} />}
       {showDocForm && <DocumentFormModal vehicleId={id} onClose={() => { setShowDocForm(false); reloadAll(); }} />}
+      {viewerDoc && <DocumentViewerModal doc={viewerDoc} onClose={() => setViewerDoc(null)} />}
 
       {editingExpense && (
         <ExpenseFormModal
