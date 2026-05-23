@@ -53,11 +53,13 @@ Scripts incluidos (asumen despliegue con `docker compose`):
 - **Probar la restauración** al menos una vez con `restore.sh` (un backup sin restore probado no es un backup).
 - Retención por defecto: 30 (configurable con `BACKUP_RETENTION`). Alternativa: backups gestionados del proveedor (RDS/Cloud SQL/Neon).
 
-## 6. TLS / cabeceras — **pendiente de infra**
-- Terminar TLS en el reverse proxy (HTTPS obligatorio).
-- Añadir HSTS: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.
-  (`helmet` ya cubre el resto de cabeceras a nivel app.)
-- Redirigir HTTP → HTTPS.
+## 6. TLS / cabeceras
+El proxy de borde es **Caddy** (`Caddyfile`): obtiene y **renueva** el certificado HTTPS solo
+(Let's Encrypt), redirige HTTP → HTTPS y añade HSTS + cabeceras de seguridad. `helmet` cubre el resto
+a nivel app. Requisitos: define `DOMAIN` y `ACME_EMAIL` en `.env`, y que el **DNS de `DOMAIN` apunte
+al servidor antes** de levantar el stack (si no, la emisión del certificado falla).
+> Nota: el rate limiting de borde quedó delegado a la app (`express-rate-limit`, activo con
+> `NODE_ENV=production`). Caddy estándar no trae rate limiting integrado.
 
 ## 7. Build y arranque
 **Frontend:** `cd frontend && npm ci && npm run build` → servir `dist/` (estático/CDN) apuntando la API al backend.
@@ -66,8 +68,10 @@ Scripts incluidos (asumen despliegue con `docker compose`):
 **Con Docker (recomendado):** crea un `.env` en la raíz (copia de `.env.example`) con `DB_PASSWORD`,
 los secretos JWT, `ADMIN_PASSWORD`, `ADMIN_PIN` y `CORS_ORIGIN`; luego `./scripts/deploy.sh`
 (o `docker compose up -d`). Si falta alguna variable obligatoria, `docker compose` aborta con un
-mensaje claro en vez de arrancar inseguro. Solo `nginx` publica puertos (80/443); la DB y el backend
+mensaje claro en vez de arrancar inseguro. Solo `caddy` publica puertos (80/443); la DB y el backend
 quedan en la red interna de Docker.
+
+> Para un despliegue completo en AWS (EC2 + S3 + Caddy) paso a paso, ver [PRODUCTION-AWS.md](PRODUCTION-AWS.md).
 
 ## 8. Observabilidad
 - Define `SENTRY_DSN` para enviar errores 5xx a Sentry (sin la variable queda desactivado).
@@ -97,5 +101,5 @@ Guardia de arranque (fail-fast), sin credenciales por defecto, rol VIEWER de sol
 auditoría de cambios, logueo de errores de servidor, Sentry env-gated, y uploads con S3 + fallback a disco.
 Despliegue Docker endurecido: compose exige los secretos vía `.env` (sin defaults inseguros),
 healthcheck del backend, DB/backend sin exponer al host, `.dockerignore` que evita hornear `.env`/`node_modules`
-en la imagen, y scripts de backup/restore anclados al proyecto.
+en la imagen, scripts de backup/restore anclados al proyecto, y borde **Caddy** con HTTPS automático.
 Suite: unit `node --test` + E2E Playwright en CI.

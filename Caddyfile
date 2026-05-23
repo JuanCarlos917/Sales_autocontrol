@@ -1,0 +1,43 @@
+# ═══════════════════════════════════════════════════════════════
+# Caddy — Proxy de borde con HTTPS automático
+# Caddy obtiene y RENUEVA el certificado TLS solo (Let's Encrypt).
+# Requisito: el DNS de $DOMAIN debe apuntar a este servidor ANTES de arrancar.
+# ═══════════════════════════════════════════════════════════════
+
+{
+	# Email para Let's Encrypt (avisos de expiración / recuperación).
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+
+	# Tope de tamaño de subida en el borde (coincide con multer/Express).
+	request_body {
+		max_size 15MB
+	}
+
+	# Cabeceras de seguridad (helmet cubre el resto a nivel de app).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# API → backend
+	handle /api/* {
+		reverse_proxy backend:4000
+	}
+
+	# Archivos servidos desde disco (con S3 el navegador va directo a S3, no pasa por aquí).
+	handle /uploads/* {
+		reverse_proxy backend:4000
+	}
+
+	# SPA estática (el nginx interno del contenedor frontend maneja el fallback de rutas).
+	handle {
+		reverse_proxy frontend:80
+	}
+}

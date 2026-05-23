@@ -90,19 +90,25 @@ services:
     expose:
       - "80"
 
-  # ── Nginx Proxy (único servicio expuesto a internet) ──
-  nginx:
-    image: nginx:alpine
-    container_name: autocontrol_nginx
+  # ── Caddy (proxy de borde, único servicio expuesto a internet) ──
+  # Obtiene y renueva el certificado HTTPS automáticamente (Let's Encrypt).
+  # El DNS de DOMAIN debe apuntar a este servidor ANTES de levantar el stack.
+  caddy:
+    image: caddy:2-alpine
+    container_name: autocontrol_caddy
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
       frontend:
         condition: service_started
+    environment:
+      DOMAIN: ${DOMAIN:?Define DOMAIN (ej. autocontrol.co) en .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Define ACME_EMAIL (tu correo para Let's Encrypt) en .env}
     volumes:
-      - ./nginx/autocontrol.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificados: persistir evita re-emitir y topar el rate limit de Let's Encrypt
+      - caddy_config:/config
     ports:
       - "80:80"
       - "443:443"
@@ -110,3 +116,5 @@ services:
 volumes:
   postgres_data:
   uploads_data:
+  caddy_data:
+  caddy_config:
