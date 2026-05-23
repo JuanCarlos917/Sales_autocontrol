@@ -584,7 +584,7 @@ export default function VehicleDetailPage() {
           <div className="flex justify-between mb-4">
             <span className="text-sm font-semibold">Documentos y Fotos</span>
             {!isViewer && (
-              <button onClick={() => setShowDocForm(true)} className="btn-primary">+ Documento</button>
+              <button onClick={() => setShowDocForm(true)} className="btn-primary" data-testid="open-document-form">+ Documento</button>
             )}
           </div>
           {docs.length === 0 ? <p className="text-center text-[#6E7681] py-10">Agrega tarjeta de propiedad, SOAT, peritaje, etc.</p> : (
