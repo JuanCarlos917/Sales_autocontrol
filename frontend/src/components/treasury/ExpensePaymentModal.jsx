@@ -157,6 +157,7 @@ export default function ExpensePaymentModal({
               className="input w-full"
               min="1"
               required
+              data-testid="exp-tre-amount"
             />
           </div>
         </div>
@@ -220,6 +221,7 @@ export default function ExpensePaymentModal({
                 checked={!isPaid}
                 onChange={() => { setIsPaid(false); setWarning(null); }}
                 className="text-accent"
+                data-testid="exp-tre-pending"
               />
               <span className="text-sm text-[#E6EDF3]">Pendiente (CxP)</span>
             </label>
@@ -232,6 +234,7 @@ export default function ExpensePaymentModal({
               onChange={(e) => handleAccountChange(e.target.value)}
               className="input w-full"
               required
+              data-testid="exp-tre-account"
             >
               <option value="">Seleccionar cuenta</option>
               {accounts.map((a) => (
@@ -288,6 +291,7 @@ export default function ExpensePaymentModal({
             type="submit"
             className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
             disabled={loading || !form.amount || !form.category || !form.accountId}
+            data-testid="exp-tre-submit"
           >
             {loading ? 'Procesando...' : 'Registrar Gasto'}
           </button>

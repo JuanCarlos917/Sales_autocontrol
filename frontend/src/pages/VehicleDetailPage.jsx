@@ -356,6 +356,7 @@ export default function VehicleDetailPage() {
                 disabled={vehicle.stage === 'VENDIDO'}
                 title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se pueden agregar gastos' : ''}
                 className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="open-expense-treasury"
               >
                 + Gasto
               </button>
