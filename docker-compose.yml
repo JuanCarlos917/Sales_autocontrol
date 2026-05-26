@@ -61,6 +61,9 @@ services:
       # ── Observabilidad (opcional) ──
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0}
+      # ── IA: extracción de documentos (opcional) ──
+      # Sin esta variable, el upload funciona igual pero sin sugerencias.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - uploads_data:/app/uploads
     expose:
