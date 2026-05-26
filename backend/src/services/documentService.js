@@ -53,7 +53,9 @@ class DocumentService {
         filepath,
         mimetype: file.mimetype,
         size: file.size,
-        extractedData,
+        // Prisma 4 con Json? rechaza `null` literal; `undefined` omite el campo
+        // y la columna nullable queda como NULL en la DB.
+        extractedData: extractedData ?? undefined,
       },
     });
     return withUrl(doc);
