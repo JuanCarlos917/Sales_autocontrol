@@ -176,16 +176,19 @@ enum ExpenseCategory {
 // ══════════════════════════════════════════════════════════════
 
 model Document {
-  id        String       @id @default(cuid())
-  vehicleId String
-  vehicle   Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  type      DocumentType
-  filename  String
-  filepath  String
-  mimetype  String?
-  size      Int?
-  notes     String?
-  createdAt DateTime     @default(now())
+  id            String       @id @default(cuid())
+  vehicleId     String
+  vehicle       Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type          DocumentType
+  filename      String
+  filepath      String
+  mimetype      String?
+  size          Int?
+  notes         String?
+  // Datos extraídos por IA al subir el documento (p. ej. campos de la tarjeta de
+  // propiedad). Null si la extracción no se ejecutó o no produjo resultados.
+  extractedData Json?
+  createdAt     DateTime     @default(now())
 
   @@index([vehicleId])
   @@map("documents")
