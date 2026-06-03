@@ -95,3 +95,17 @@ export async function setUserRole(email: string, role: 'ADMIN' | 'SUPERVISOR' | 
     await client.query(`UPDATE users SET role = $1::"Role", "updatedAt" = NOW() WHERE email = $2`, [role, email]);
   });
 }
+
+/**
+ * Helper para queries de aserción en tests. Devuelve filas tipadas.
+ * No usar en código de producción — el ORM canónico es Prisma.
+ */
+export async function pgQuery<T = Record<string, unknown>>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  return withClient(async (client) => {
+    const result = await client.query(sql, params);
+    return result.rows as T[];
+  });
+}

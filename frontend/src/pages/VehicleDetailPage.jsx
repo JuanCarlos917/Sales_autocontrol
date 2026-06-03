@@ -290,6 +290,41 @@ export default function VehicleDetailPage() {
           </div>
         )}
 
+        {vehicle.fromTradeIn && vehicle.sourceVehicle && (
+          <button
+            type="button"
+            onClick={() => navigate(`/vehicles/${vehicle.sourceVehicle.id}`)}
+            className="mt-3 w-full text-left p-3 rounded-lg border border-[#BC8CFF]/30 bg-[#BC8CFF]/5 hover:bg-[#BC8CFF]/10 transition-colors"
+            data-testid="vehicle-cruce-source-link"
+          >
+            <div className="text-[11px] text-[#BC8CFF] font-semibold uppercase tracking-wide">⟳ Origen del cruce</div>
+            <div className="text-sm text-[#E6EDF3] mt-0.5">
+              Recibido en cruce por la venta de <span className="font-mono font-semibold">{vehicle.sourceVehicle.plate}</span>
+              <span className="text-[#6E7681] ml-1">→ ver detalle</span>
+            </div>
+          </button>
+        )}
+
+        {vehicle.tradeInsReceived?.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {vehicle.tradeInsReceived.map(ti => (
+              <button
+                key={ti.id}
+                type="button"
+                onClick={() => navigate(`/vehicles/${ti.id}`)}
+                className="w-full text-left p-3 rounded-lg border border-[#BC8CFF]/30 bg-[#BC8CFF]/5 hover:bg-[#BC8CFF]/10 transition-colors"
+                data-testid={`vehicle-cruce-received-link-${ti.plate}`}
+              >
+                <div className="text-[11px] text-[#BC8CFF] font-semibold uppercase tracking-wide">⟳ Recibido en cruce</div>
+                <div className="text-sm text-[#E6EDF3] mt-0.5">
+                  Entregó <span className="font-mono font-semibold">{ti.plate}</span> como parte de pago
+                  <span className="text-[#6E7681] ml-1">({ti.stage}) → ver detalle</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
       </div>
 
       {/* Tabs */}

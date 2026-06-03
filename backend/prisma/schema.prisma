@@ -86,6 +86,13 @@ model Vehicle {
   // arranca en NEGOCIANDO con negotiatedValue fijo = valor del cruce (inmutable).
   fromTradeIn Boolean @default(false)
 
+  // Self-relation: cuando fromTradeIn=true, sourceVehicleId apunta a la venta que
+  // generó este cruce. tradeInsReceived es la lista reverse de cruces que un
+  // vehículo VENDIDO recibió como parte de pago.
+  sourceVehicleId    String?
+  sourceVehicle      Vehicle?  @relation("VehicleTradeInSource", fields: [sourceVehicleId], references: [id], onDelete: SetNull)
+  tradeInsReceived   Vehicle[] @relation("VehicleTradeInSource")
+
   publishedPortals String[] @default([])
 
   // Terceros asociados al vehículo
@@ -113,6 +120,7 @@ model Vehicle {
   @@index([supplierId])
   @@index([partnerId])
   @@index([buyerId])
+  @@index([sourceVehicleId])
   @@map("vehicles")
 }
 

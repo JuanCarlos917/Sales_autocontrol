@@ -16,6 +16,10 @@ const VEHICLE_INCLUDE = {
   supplier: { select: { id: true, name: true, document: true, phone: true, type: true } },
   partner: { select: { id: true, name: true, document: true, phone: true, type: true } },
   buyer: { select: { id: true, name: true, document: true, phone: true, type: true } },
+  // Cruce: origen (cuando este vehículo nació de un cruce) y cruces recibidos
+  // (cuando este vehículo se vendió y recibió otros como parte de pago).
+  sourceVehicle: { select: { id: true, plate: true, stage: true, saleDate: true } },
+  tradeInsReceived: { select: { id: true, plate: true, stage: true, negotiatedValue: true } },
 };
 
 // Etapas que requieren valor negociado/precio de compra (todas menos NEGOCIANDO)
@@ -197,6 +201,19 @@ class VehicleService {
       if (lockedChanged.length > 0) {
         throw new AppError(
           `No se pueden modificar los siguientes campos después de registrar la compra: ${lockedChanged.join(', ')}`,
+          400
+        );
+      }
+    }
+
+    // Vehículos de cruce: no pueden tener socio ni participación parcial — son 100% del vendedor.
+    if (existing.fromTradeIn) {
+      const partnerFieldsTouched = ['partnerId', 'partnerContribution', 'partnerAssumesExpenses', 'participation']
+        .filter(f => f in data && String(data[f] ?? '') !== String(existing[f] ?? ''));
+      if (partnerFieldsTouched.length > 0) {
+        throw new AppError(
+          'Un vehículo recibido en cruce no admite socio: es 100% tuyo. No puedes modificar: ' +
+          partnerFieldsTouched.join(', '),
           400
         );
       }

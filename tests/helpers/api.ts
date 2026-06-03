@@ -90,6 +90,8 @@ export interface VehicleDetail {
   negotiatedValue: string | number | null;
   purchasePrice: string | number | null;
   fromTradeIn: boolean;
+  supplierId: string | null;
+  sourceVehicleId: string | null;
 }
 
 export async function apiGetVehicle(token: string, id: string): Promise<VehicleDetail> {
