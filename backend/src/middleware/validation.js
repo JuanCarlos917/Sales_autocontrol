@@ -100,9 +100,9 @@ const vehicleUpdateSchema = Joi.object({
   participation: Joi.number().min(0).max(1),
   purchaseDate: Joi.date().allow(null),
   saleDate: Joi.date().allow(null),
-  receivedVehicle: Joi.boolean(),
-  receivedVehiclePlate: Joi.string().max(10).allow('', null),
-  receivedVehicleValue: Joi.number().min(0).allow(null),
+  // Los campos receivedVehicle* solo pueden grabarse vía POST /vehicles/:id/sell
+  // (saleService.registerSale con tradeIn). El PUT los ignora para evitar que
+  // queden datos del cruce sin el vehículo en NEGOCIANDO y sin la CxC asociada.
   publishedPortals: Joi.array().items(Joi.string()),
   notes: Joi.string().max(2000).allow('', null),
   // Terceros asociados

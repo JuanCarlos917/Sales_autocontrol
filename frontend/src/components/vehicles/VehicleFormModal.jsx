@@ -34,9 +34,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     participation: vehicle?.participation ? (vehicle.participation * 100) : 100,
     partnerContribution: vehicle?.partnerContribution || '',
     partnerAssumesExpenses: vehicle?.partnerAssumesExpenses ?? true,
-    receivedVehicle: vehicle?.receivedVehicle || false,
-    receivedVehiclePlate: vehicle?.receivedVehiclePlate || '',
-    receivedVehicleValue: vehicle?.receivedVehicleValue || '',
     publishedPortals: vehicle?.publishedPortals || [],
     notes: vehicle?.notes || '',
     supplierId: vehicle?.supplierId || null,
@@ -305,7 +302,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         participation: participationDecimal,
         partnerContribution: partnerContribValue,
         partnerAssumesExpenses: !!f.partnerAssumesExpenses,
-        receivedVehicleValue: parseFloat(f.receivedVehicleValue) || null,
         year: f.year ? parseInt(f.year) : null,
         km: f.km ? parseInt(f.km) : null,
         purchaseDate: f.purchaseDate || null,
@@ -562,19 +558,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             </button>
           ))}
         </div>
-      </div>
-      )}
-
-      {/* Trade-in */}
-      {f.stage !== 'NEGOCIANDO' && (
-      <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-border">
-        <Checkbox label="⟳ Incluye vehículo recibido como parte de pago" checked={f.receivedVehicle} onChange={e => s('receivedVehicle', e.target.checked)} className="font-semibold" />
-        {f.receivedVehicle && (
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <Input label="Placa del cruce" value={f.receivedVehiclePlate} onChange={e => s('receivedVehiclePlate', e.target.value)} />
-            <Input label="Valor del cruce" type="number" value={f.receivedVehicleValue} onChange={e => s('receivedVehicleValue', e.target.value)} />
-          </div>
-        )}
       </div>
       )}
 
