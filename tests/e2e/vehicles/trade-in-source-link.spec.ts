@@ -5,6 +5,7 @@ import {
   apiGetVehicle,
   apiMoveStage,
   apiRegisterSale,
+  apiUpdateVehicleRaw,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 import { pgQuery } from '../../helpers/db';
@@ -52,14 +53,23 @@ test.describe('Vehículos — cruce con vínculo fuerte al origen', () => {
     expect(after.stage).toBe('ALISTAMIENTO');
   });
 
+  test('un cruce no admite socio: PUT con partnerId devuelve 400', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const { tradeInId } = await sellWithTradeIn(token, plate('NSO'));
+
+    const res = await apiUpdateVehicleRaw(token, tradeInId, {
+      partnerId: TEST_SEED_IDS.employee, // cualquier tercero válido, lo importante es el rechazo
+    } as never);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cruce.*no admite socio/i);
+  });
+
   test('el comprador (CLIENT) se auto-upgrade a BOTH al volverse proveedor del cruce', async ({ page }) => {
     const token = await loginAsAdmin(page);
 
-    const beforeRows = await pgQuery<{ type: string }>(
-      `SELECT type FROM third_parties WHERE id = $1`,
-      [TEST_SEED_IDS.buyer],
-    );
-    expect(beforeRows[0]?.type).toBe('CLIENT');
+    // Los third_parties son seed y no se truncan entre tests: forzamos CLIENT
+    // para no acoplar este test al orden de ejecución dentro del archivo.
+    await pgQuery(`UPDATE third_parties SET type = 'CLIENT' WHERE id = $1`, [TEST_SEED_IDS.buyer]);
 
     await sellWithTradeIn(token, plate('UPG'));
 

@@ -75,7 +75,7 @@ test.describe('Vehículos — cruce recibido entra a NEGOCIANDO', () => {
     await expect(page.getByTestId('vehicle-tab-tesoreria')).toContainText('Tesoreria (1)', { timeout: 10_000 });
   });
 
-  test('sigue las reglas del pipeline: COMPRADO→ALISTAMIENTO pide proveedor (sin aviso de identidad) y avanza al completarlo', async ({ page }) => {
+  test('COMPRADO→ALISTAMIENTO avanza directo (proveedor ya viene auto-asignado del cruce)', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const newId = await sellWithTradeIn(token);
     await apiMoveStage(token, newId, 'COMPRADO');
@@ -87,16 +87,8 @@ test.describe('Vehículos — cruce recibido entra a NEGOCIANDO', () => {
 
     await html5DragAndDrop(page, `[data-testid="vehicle-card-${plate}"]`, `[data-testid="kanban-column-ALISTAMIENTO"]`);
 
-    // Abre el formulario para completar: con banner de campos obligatorios y SIN el aviso de identidad.
-    await expect(page.getByTestId('vehicle-form-submit')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId('vehicle-form-admin-warning')).toHaveCount(0);
-    await expect(page.getByText(/Campos obligatorios por diligenciar/i)).toBeVisible();
-
-    // Completar proveedor → la card avanza a ALISTAMIENTO (CxP ya saldada por el cruce).
-    await page.getByPlaceholder('Seleccionar proveedor...').click();
-    await page.getByRole('button', { name: /Proveedor Test/ }).first().click();
-    await page.getByTestId('vehicle-form-submit').click();
-
+    // El proveedor del cruce = comprador del carro origen, asignado por saleService.
+    // Por eso ALISTAMIENTO debe avanzar sin abrir el formulario para pedir nada.
     await expect(page.getByTestId('kanban-column-ALISTAMIENTO').getByTestId(`vehicle-card-${plate}`)).toBeVisible({ timeout: 10_000 });
   });
 });

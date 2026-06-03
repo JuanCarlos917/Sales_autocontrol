@@ -475,29 +475,37 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             label="Proveedor (vendedor)"
             placeholder="Seleccionar proveedor..."
             required={f.stage !== 'NEGOCIANDO'}
-            disabled={supplierLocked}
+            disabled={supplierLocked || tradeInLocked}
+            help={tradeInLocked ? '🔒 Proveedor auto-asignado: comprador del carro origen del cruce' : undefined}
             error={highlight('supplier')}
           />
-          <ThirdPartySelector
-            value={f.partnerId}
-            onChange={(id) => s('partnerId', id)}
-            filterType="PARTNER"
-            label="Socio (opcional)"
-            placeholder="Sin socio..."
-            disabled={partnerLocked || partnerIdLocked}
-            error={highlight('partner')}
-          />
+          {!tradeInLocked && (
+            <ThirdPartySelector
+              value={f.partnerId}
+              onChange={(id) => s('partnerId', id)}
+              filterType="PARTNER"
+              label="Socio (opcional)"
+              placeholder="Sin socio..."
+              disabled={partnerLocked || partnerIdLocked}
+              error={highlight('partner')}
+            />
+          )}
         </div>
-        {f.stage !== 'NEGOCIANDO' && !f.supplierId && (
+        {f.stage !== 'NEGOCIANDO' && !f.supplierId && !tradeInLocked && (
           <div className="text-xs text-amber-400 mt-2">
             ⚠️ El proveedor es obligatorio para vehículos en estado {STAGES.find(st => st.id === f.stage)?.label}
+          </div>
+        )}
+        {tradeInLocked && (
+          <div className="text-[11px] text-[#6E7681] mt-2">
+            ℹ️ Vehículo recibido en cruce: es 100% tuyo, no admite socio.
           </div>
         )}
       </div>
       )}
 
-      {/* Sección de socio — solo cuando hay socio seleccionado */}
-      {f.stage !== 'NEGOCIANDO' && f.partnerId && (
+      {/* Sección de socio — solo cuando hay socio seleccionado y NO es cruce */}
+      {f.stage !== 'NEGOCIANDO' && f.partnerId && !tradeInLocked && (
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
           <div className="text-sm font-semibold text-[#E6EDF3] mb-1">🤝 Aporte del socio</div>
           <p className="text-[11px] text-[#6E7681] mb-3">

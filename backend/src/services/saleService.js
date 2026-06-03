@@ -113,10 +113,28 @@ const registerSale = async (vehicleId, saleData, userId) => {
     // 3. Procesar cruce de vehículo: el recibido entra a NEGOCIANDO con el valor del
     //    cruce como valor negociado (inmutable). La compra se difiere: no se registra
     //    CxP todavía; al avanzar a COMPRADO se salda automáticamente por el cruce.
+    //
+    //    El comprador de la venta queda registrado como proveedor del cruce
+    //    (es quien lo entregó como parte de pago), y sourceVehicleId apunta a la
+    //    venta de origen para trazabilidad bidireccional. Si el comprador era CLIENT,
+    //    se auto-upgrade a BOTH para que figure válidamente como proveedor.
     if (tradeIn?.plate && tradeIn?.value > 0) {
       const tradeInValue = parseFloat(tradeIn.value);
       totalReceived += tradeInValue;
       pendingAmount -= tradeInValue;
+
+      if (clientId) {
+        const buyerThirdParty = await tx.thirdParty.findUnique({
+          where: { id: clientId },
+          select: { id: true, type: true }
+        });
+        if (buyerThirdParty?.type === 'CLIENT') {
+          await tx.thirdParty.update({
+            where: { id: clientId },
+            data: { type: 'BOTH' }
+          });
+        }
+      }
 
       newVehicle = await tx.vehicle.create({
         data: {
@@ -129,6 +147,8 @@ const registerSale = async (vehicleId, saleData, userId) => {
           stage: 'NEGOCIANDO',
           negotiatedValue: tradeInValue,
           fromTradeIn: true,
+          sourceVehicleId: vehicleId,
+          supplierId: clientId || null,
           notes: `Recibido en cruce por venta de ${vehicle.plate}`,
           userId: vehicle.userId
         }
