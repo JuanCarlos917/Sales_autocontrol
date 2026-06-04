@@ -147,4 +147,42 @@ function calculateParticipation(purchasePrice, partnerContribution) {
   return (price - partner) / price;
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation };
+/**
+ * Calcula la base sobre la que se aplica el reparto 60/30/10 de comisiones.
+ *
+ * Base = (salePrice - purchasePrice - gastos directos NO-COMISION) × participación
+ *
+ * - No descuenta gastos fijos mensuales prorrateados (esa es la elección
+ *   explícita: comisiones se calculan sobre ganancia bruta, no neta).
+ * - Excluye expenses con category='COMISION' (legacy: antes las comisiones
+ *   se modelaban como expense del vehículo).
+ * - Para vehículos fromTradeIn=true (sin purchasePrice todavía o saldado por el cruce),
+ *   usa negotiatedValue como costo base.
+ * - Multiplica por participation para que con socio la base sea "mi parte".
+ * - Si el resultado es ≤ 0, devuelve skip=true.
+ */
+function calculateCommissionBase(vehicle) {
+  const expenses = vehicle.expenses || [];
+  const directExpenses = expenses
+    .filter(e => e.category !== 'COMISION')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const salePrice = Number(vehicle.salePrice || 0);
+  const purchasePrice = vehicle.fromTradeIn
+    ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
+    : Number(vehicle.purchasePrice || 0);
+
+  const grossProfitGlobal = salePrice - purchasePrice - directExpenses;
+  const participation = Number(vehicle.participation || 1);
+  const rawBase = grossProfitGlobal * participation;
+  const skip = rawBase <= 0;
+  const commissionBase = skip ? 0 : rawBase;
+
+  return {
+    grossProfitGlobal,
+    commissionBase,
+    skip,
+  };
+}
+
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase };
