@@ -61,4 +61,62 @@ const getCommissionConfig = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, update, getCommissionConfig };
+const updateCommissionConfig = async (req, res, next) => {
+  try {
+    const data = req.body;
+
+    // 1) Validar suma de los tres bolsillos (= 100)
+    const bucketSum =
+      Number(data.commission_share_pct) +
+      Number(data.reinvest_share_pct) +
+      Number(data.tax_share_pct);
+    if (Math.abs(bucketSum - 100) > 0.001) {
+      return res.status(400).json({
+        error: 'Los tres bolsillos (commission/reinvest/tax) deben sumar 100',
+      });
+    }
+
+    // 2) Validar suma de default captador + cerrador (= 100)
+    const splitSum =
+      Number(data.default_captador_pct) + Number(data.default_cerrador_pct);
+    if (Math.abs(splitSum - 100) > 0.001) {
+      return res.status(400).json({
+        error: 'default_captador_pct + default_cerrador_pct deben sumar 100',
+      });
+    }
+
+    // 3) Validar que las cuentas existen, son BUDGET y están activas
+    const accounts = await prisma.account.findMany({
+      where: { id: { in: [data.reinvest_account_id, data.tax_reserve_account_id] } },
+      select: { id: true, type: true, isActive: true },
+    });
+    const byId = Object.fromEntries(accounts.map(a => [a.id, a]));
+    const reinv = byId[data.reinvest_account_id];
+    const tax = byId[data.tax_reserve_account_id];
+    if (!reinv || reinv.type !== 'BUDGET' || !reinv.isActive) {
+      return res.status(400).json({
+        error: 'reinvest_account_id debe apuntar a una cuenta tipo BUDGET activa',
+      });
+    }
+    if (!tax || tax.type !== 'BUDGET' || !tax.isActive) {
+      return res.status(400).json({
+        error: 'tax_reserve_account_id debe apuntar a una cuenta tipo BUDGET activa',
+      });
+    }
+
+    // 4) Persistir los 7 ajustes en una transacción
+    const entries = Object.entries(data);
+    await prisma.$transaction(
+      entries.map(([key, value]) =>
+        prisma.setting.upsert({
+          where: { key },
+          update: { value: String(value) },
+          create: { key, value: String(value) },
+        })
+      )
+    );
+    res.json({ message: 'Configuración de comisiones actualizada' });
+  } catch (err) { next(err); }
+};
+
+module.exports = { getAll, update, getCommissionConfig, updateCommissionConfig };
