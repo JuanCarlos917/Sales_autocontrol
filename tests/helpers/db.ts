@@ -34,7 +34,9 @@ async function seedAccountsAndParties(client: Client) {
     `INSERT INTO accounts (id, name, type, "initialBalance", "isActive", "createdAt", "updatedAt")
      VALUES
        ($1, 'Caja Test', 'CASH', $3, true, NOW(), NOW()),
-       ($2, 'Banco Test', 'BANK', 0, true, NOW(), NOW())`,
+       ($2, 'Banco Test', 'BANK', 0, true, NOW(), NOW()),
+       ('budget-reinvest', 'Fondo Reinversión', 'BUDGET', 0, true, NOW(), NOW()),
+       ('budget-tax',      'Reserva Impuestos', 'BUDGET', 0, true, NOW(), NOW())`,
     [TEST_SEED_IDS.accountCash, TEST_SEED_IDS.accountBank, TEST_SEED_INITIAL_CASH],
   );
 
@@ -43,7 +45,8 @@ async function seedAccountsAndParties(client: Client) {
      VALUES
        ($1, 'Proveedor Test', 'SUPPLIER', true, NOW(), NOW()),
        ($2, 'Cliente Test', 'CLIENT', true, NOW(), NOW()),
-       ($3, 'Empleado Test', 'EMPLOYEE', true, NOW(), NOW())`,
+       ($3, 'Empleado Test', 'EMPLOYEE', true, NOW(), NOW()),
+       ('owner-self', 'Dueño / Yo', 'EMPLOYEE', true, NOW(), NOW())`,
     [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer, TEST_SEED_IDS.employee],
   );
 }

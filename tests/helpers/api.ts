@@ -425,3 +425,28 @@ export async function apiListTransactions(token: string, params: { accountId?: s
   const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
   return Array.isArray(res) ? res : res.transactions;
 }
+
+// ── Commission config ──────────────────────────────────
+
+export interface CommissionConfig {
+  commission_share_pct: string;
+  reinvest_share_pct: string;
+  tax_share_pct: string;
+  default_captador_pct: string;
+  default_cerrador_pct: string;
+  reinvest_account_id: string;
+  tax_reserve_account_id: string;
+  reinvest_account?: { id: string; name: string; type: string };
+  tax_reserve_account?: { id: string; name: string; type: string };
+}
+
+export async function apiGetCommissionConfig(token: string): Promise<CommissionConfig> {
+  return getJson('/settings/commission-config', token);
+}
+
+export async function apiUpdateCommissionConfig(
+  token: string,
+  body: Record<string, string | number>,
+): Promise<{ status: number; body: { error?: string; data?: CommissionConfig } }> {
+  return apiRequestRaw('PUT', '/settings/commission-config', token, body);
+}

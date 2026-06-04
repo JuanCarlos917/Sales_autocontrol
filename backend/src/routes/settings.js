@@ -8,5 +8,6 @@ router.use(authorize('ADMIN'));
 
 router.get('/', ctrl.getAll);
 router.put('/', ctrl.update);
+router.get('/commission-config', ctrl.getCommissionConfig);
 
 module.exports = router;
