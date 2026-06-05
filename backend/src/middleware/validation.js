@@ -220,6 +220,12 @@ const vehicleSaleSchema = Joi.object({
     dueDate: Joi.date().allow(null),
     notes: Joi.string().max(500).allow('', null),
   }).allow(null),
+  // Participantes de comisión (opcional). Si no viene, se usa el default (owner-self).
+  participants: Joi.array().items(Joi.object({
+    thirdPartyId: Joi.string().required(),
+    role: Joi.string().valid('CAPTADOR', 'CERRADOR', 'OTHER').required(),
+    sharePct: Joi.number().min(0).max(100).required(),
+  })).optional(),
 });
 
 // ── Vehicle Collection Schema (cobro de venta) ──
@@ -408,6 +414,26 @@ const loanCreateSchema = Joi.object({
   installments: Joi.array().items(loanInstallmentSchema).min(1).required(),
 });
 
+// ══════════════════════════════════════════════════════════════
+// COMMISSIONS SCHEMAS
+// ══════════════════════════════════════════════════════════════
+
+// ── Commission config Schema ──
+// Solo valida tipos y rangos por campo. Las validaciones cruzadas
+// (sumas de bolsillos y default captador/cerrador, tipo BUDGET de las
+// cuentas) viven en el controlador para poder retornar el mensaje
+// específico en `body.error` (el middleware de validación coloca los
+// detalles de Joi en `details`, no en `error`).
+const commissionConfigSchema = Joi.object({
+  commission_share_pct:   Joi.number().min(0).max(100).required(),
+  reinvest_share_pct:     Joi.number().min(0).max(100).required(),
+  tax_share_pct:          Joi.number().min(0).max(100).required(),
+  default_captador_pct:   Joi.number().min(0).max(100).required(),
+  default_cerrador_pct:   Joi.number().min(0).max(100).required(),
+  reinvest_account_id:    Joi.string().required(),
+  tax_reserve_account_id: Joi.string().required(),
+});
+
 const loanPaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta destino es requerida' }),
   principalAmount: Joi.number().min(0).required(),
@@ -457,5 +483,7 @@ module.exports = {
     // Loans
     loanCreate: loanCreateSchema,
     loanPayment: loanPaymentSchema,
+    // Commissions
+    commissionConfig: commissionConfigSchema,
   },
 };

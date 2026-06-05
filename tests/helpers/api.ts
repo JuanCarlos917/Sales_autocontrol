@@ -76,6 +76,7 @@ export interface VehicleInput {
   purchasePrice?: number;
   listedPrice?: number;
   supplierId?: string;
+  partnerId?: string;
   participation?: number;
 }
 
@@ -212,13 +213,43 @@ export interface RegisterSalePayload {
     km?: number | null;
   } | null;
   financing?: { dueDate?: string | null; notes?: string | null } | null;
+  participants?: Array<{
+    thirdPartyId: string;
+    role: 'CAPTADOR' | 'CERRADOR' | 'OTHER';
+    sharePct: number;
+  }>;
 }
 
 export interface RegisterSaleResult {
   vehicle: { id: string; plate: string };
   newVehicle: { id: string; plate: string } | null;
   receivable: unknown;
-  summary: { salePrice: number; totalReceived: number; pendingAmount: number; tradeInValue: number };
+  summary: {
+    salePrice: number;
+    totalReceived: number;
+    pendingAmount: number;
+    tradeInValue: number;
+    commissionBase?: number;
+    commissionPool?: number;
+    reinvestPool?: number;
+    taxPool?: number;
+    cashRatioApplied?: number;
+    participants?: Array<{
+      id: string;
+      thirdPartyId: string;
+      role: string;
+      sharePct: number;
+      amount: number;
+      payableId: string;
+    }>;
+    transfers?: Array<{
+      id: string;
+      fromAccountId: string;
+      toAccountId: string;
+      amount: number;
+      description: string;
+    }>;
+  };
 }
 
 export async function apiRegisterSale(token: string, vehicleId: string, payload: RegisterSalePayload): Promise<RegisterSaleResult> {
@@ -424,4 +455,29 @@ export async function apiListTransactions(token: string, params: { accountId?: s
   const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
   const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
   return Array.isArray(res) ? res : res.transactions;
+}
+
+// ── Commission config ──────────────────────────────────
+
+export interface CommissionConfig {
+  commission_share_pct: string;
+  reinvest_share_pct: string;
+  tax_share_pct: string;
+  default_captador_pct: string;
+  default_cerrador_pct: string;
+  reinvest_account_id: string;
+  tax_reserve_account_id: string;
+  reinvest_account?: { id: string; name: string; type: string };
+  tax_reserve_account?: { id: string; name: string; type: string };
+}
+
+export async function apiGetCommissionConfig(token: string): Promise<CommissionConfig> {
+  return getJson('/settings/commission-config', token);
+}
+
+export async function apiUpdateCommissionConfig(
+  token: string,
+  body: Record<string, string | number>,
+): Promise<{ status: number; body: { error?: string; data?: CommissionConfig } }> {
+  return apiRequestRaw('PUT', '/settings/commission-config', token, body);
 }

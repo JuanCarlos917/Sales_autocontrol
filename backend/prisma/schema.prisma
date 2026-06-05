@@ -109,11 +109,12 @@ model Vehicle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  expenses     Expense[]
-  documents    Document[]
-  payables     Payable[]
-  transactions Transaction[]
-  auditLogs    VehicleAuditLog[]
+  expenses         Expense[]
+  documents        Document[]
+  payables         Payable[]
+  transactions     Transaction[]
+  auditLogs        VehicleAuditLog[]
+  saleParticipants SaleParticipant[]
 
   @@index([userId, stage])
   @@index([plate])
@@ -254,6 +255,7 @@ model Account {
 enum AccountType {
   CASH
   BANK
+  BUDGET
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -278,6 +280,7 @@ model ThirdParty {
   vehiclesAsPartner  Vehicle[]     @relation("VehiclePartner")
   vehiclesAsBuyer    Vehicle[]     @relation("VehicleBuyer")
   loansAsBorrower    Loan[]        @relation("LoanBorrower")
+  saleParticipants   SaleParticipant[]
 
   @@map("third_parties")
 }
@@ -426,13 +429,38 @@ model Payable {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  payments PayablePayment[]
+  payments        PayablePayment[]
+  saleParticipant SaleParticipant?
 
   @@index([vehicleId])
   @@index([thirdPartyId])
   @@index([type, status])
   @@index([dueDate])
   @@map("payables")
+}
+
+model SaleParticipant {
+  id           String          @id @default(cuid())
+  vehicleId    String
+  vehicle      Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  thirdPartyId String
+  thirdParty   ThirdParty      @relation(fields: [thirdPartyId], references: [id])
+  role         ParticipantRole
+  sharePct     Decimal         @db.Decimal(5, 2)
+  amount       Decimal         @db.Decimal(15, 2)
+  payableId    String?         @unique
+  payable      Payable?        @relation(fields: [payableId], references: [id])
+  createdAt    DateTime        @default(now())
+
+  @@index([vehicleId])
+  @@index([thirdPartyId])
+  @@map("sale_participants")
+}
+
+enum ParticipantRole {
+  CAPTADOR
+  CERRADOR
+  OTHER
 }
 
 model PayablePayment {
@@ -451,6 +479,7 @@ model PayablePayment {
 enum PayableType {
   RECEIVABLE
   PAYABLE
+  COMMISSION
 }
 
 enum PayableStatus {

@@ -173,3 +173,82 @@ test('projectProfit: con participación, mi ganancia es proporcional', () => {
   assert.equal(p.netProfit, 4_000_000);
   assert.equal(p.myProfit, 2_000_000);
 });
+
+const {
+  calculateCommissionBase,
+} = require('../financial');
+
+// ── calculateCommissionBase ─────────────────────────────────
+test('calculateCommissionBase: vehículo sin socio, ganancia positiva', () => {
+  const v = {
+    salePrice: 40_000_000,
+    purchasePrice: 30_000_000,
+    expenses: [
+      { category: 'MECANICA', amount: 500_000 },
+      { category: 'ESTETICA', amount: 500_000 },
+    ],
+    participation: 1,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.grossProfitGlobal, 9_000_000);
+  assert.equal(r.commissionBase, 9_000_000);
+  assert.equal(r.skip, false);
+});
+
+test('calculateCommissionBase: vehículo con socio 50%, base = mi parte', () => {
+  const v = {
+    salePrice: 40_000_000,
+    purchasePrice: 30_000_000,
+    expenses: [{ category: 'MECANICA', amount: 1_000_000 }],
+    participation: 0.5,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.grossProfitGlobal, 9_000_000);
+  assert.equal(r.commissionBase, 4_500_000);
+  assert.equal(r.skip, false);
+});
+
+test('calculateCommissionBase: pérdida → skip true, base 0', () => {
+  const v = {
+    salePrice: 25_000_000,
+    purchasePrice: 30_000_000,
+    expenses: [],
+    participation: 1,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.commissionBase, 0);
+  assert.equal(r.skip, true);
+});
+
+test('calculateCommissionBase: fromTradeIn usa negotiatedValue como purchasePrice', () => {
+  const v = {
+    salePrice: 25_000_000,
+    purchasePrice: null,
+    negotiatedValue: 17_500_000,
+    expenses: [],
+    participation: 1,
+    fromTradeIn: true,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.grossProfitGlobal, 7_500_000);
+  assert.equal(r.commissionBase, 7_500_000);
+  assert.equal(r.skip, false);
+});
+
+test('calculateCommissionBase: expenses categoría COMISION quedan excluidos', () => {
+  const v = {
+    salePrice: 40_000_000,
+    purchasePrice: 30_000_000,
+    expenses: [
+      { category: 'MECANICA', amount: 500_000 },
+      { category: 'COMISION', amount: 2_000_000 }, // legacy, no debe restar
+    ],
+    participation: 1,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.grossProfitGlobal, 9_500_000);
+});

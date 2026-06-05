@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/shared/FormFields';
+import api from '@/lib/api';
 
 export default function SettingsPage() {
   const { fetchSettings, updateSettings } = useApp();
@@ -10,13 +11,34 @@ export default function SettingsPage() {
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
+  const [commCfg, setCommCfg] = useState(null);
+  const [commError, setCommError] = useState('');
+  const [commSuccess, setCommSuccess] = useState(false);
 
   useEffect(() => {
     fetchSettings().then(s => { if (s) setSettings({ fixedMonthly: s.fixedMonthly || '800000', alertDays: s.alertDays || '15' }); });
   }, [fetchSettings]);
 
+  useEffect(() => {
+    api.get('/settings/commission-config').then(r => setCommCfg(r.data)).catch(() => {});
+  }, []);
+
   const handleSaveSettings = () => {
     updateSettings(settings);
+  };
+
+  const handleSaveCommissions = async () => {
+    setCommError(''); setCommSuccess(false);
+    const bucketSum = Number(commCfg.commission_share_pct) + Number(commCfg.reinvest_share_pct) + Number(commCfg.tax_share_pct);
+    if (Math.abs(bucketSum - 100) > 0.001) { setCommError('Los tres bolsillos deben sumar 100'); return; }
+    const splitSum = Number(commCfg.default_captador_pct) + Number(commCfg.default_cerrador_pct);
+    if (Math.abs(splitSum - 100) > 0.001) { setCommError('Captador + cerrador deben sumar 100'); return; }
+    try {
+      await api.put('/settings/commission-config', commCfg);
+      setCommSuccess(true);
+    } catch (err) {
+      setCommError(err.response?.data?.error || 'Error al guardar');
+    }
   };
 
   const handleChangePassword = async () => {
@@ -40,6 +62,46 @@ export default function SettingsPage() {
           <button onClick={handleSaveSettings} className="btn-primary">Guardar Configuración</button>
         </div>
       </div>
+
+      {commCfg && (
+        <div className="card" data-testid="settings-commissions-card">
+          <div className="card-title">Comisiones y bolsillos</div>
+          <p className="text-xs text-[#6E7681] mb-3">
+            Cómo se reparte la ganancia bruta de cada venta. Los tres porcentajes deben sumar 100.
+          </p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <Input label="Comisiones %" type="number" value={commCfg.commission_share_pct}
+                onChange={e => setCommCfg({ ...commCfg, commission_share_pct: e.target.value })}
+                data-testid="settings-commission-pct" />
+              <Input label="Reinversión %" type="number" value={commCfg.reinvest_share_pct}
+                onChange={e => setCommCfg({ ...commCfg, reinvest_share_pct: e.target.value })}
+                data-testid="settings-reinvest-pct" />
+              <Input label="Impuestos %" type="number" value={commCfg.tax_share_pct}
+                onChange={e => setCommCfg({ ...commCfg, tax_share_pct: e.target.value })}
+                data-testid="settings-tax-pct" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Captador % (default)" type="number" value={commCfg.default_captador_pct}
+                onChange={e => setCommCfg({ ...commCfg, default_captador_pct: e.target.value })}
+                data-testid="settings-captador-pct" />
+              <Input label="Cerrador % (default)" type="number" value={commCfg.default_cerrador_pct}
+                onChange={e => setCommCfg({ ...commCfg, default_cerrador_pct: e.target.value })}
+                data-testid="settings-cerrador-pct" />
+            </div>
+            <div className="text-xs text-[#8B949E]">
+              Fondo Reinversión: <span className="text-[#E6EDF3] font-mono">{commCfg.reinvest_account?.name || commCfg.reinvest_account_id}</span>
+              {' · '}
+              Reserva Impuestos: <span className="text-[#E6EDF3] font-mono">{commCfg.tax_reserve_account?.name || commCfg.tax_reserve_account_id}</span>
+            </div>
+            {commError && <div className="text-[12px] text-red-400">{commError}</div>}
+            {commSuccess && <div className="text-[12px] text-green-400">Guardado.</div>}
+            <button onClick={handleSaveCommissions} className="btn-primary" data-testid="settings-save-commissions">
+              Guardar configuración de comisiones
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-title">Cambiar Contraseña</div>
