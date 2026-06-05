@@ -5,6 +5,7 @@ import {
   apiUpdateCommissionConfig,
   apiCreateVehicle,
   apiRegisterSale,
+  apiRequestRaw,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
@@ -207,5 +208,79 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.summary.commissionBase).toBeUndefined();
     expect(res.summary.participants).toBeUndefined();
     expect(res.summary.transfers).toBeUndefined();
+  });
+
+  test('venta con participants[] custom: respeta split y valida suma 100', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `CST${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    const res = await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: 'owner-self',           role: 'CERRADOR', sharePct: 70 },
+      ],
+    });
+    expect(res.summary.participants).toHaveLength(2);
+    const captador = res.summary.participants!.find(p => p.role === 'CAPTADOR');
+    const cerrador = res.summary.participants!.find(p => p.role === 'CERRADOR');
+    expect(captador?.amount).toBeCloseTo(1_800_000, 0); // 6M × 0.30
+    expect(cerrador?.amount).toBeCloseTo(4_200_000, 0); // 6M × 0.70
+  });
+
+  test('participants[] con suma ≠ 100 devuelve 400', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `BAD${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    const res = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: 'owner-self',           role: 'CERRADOR', sharePct: 50 }, // suma 80
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toMatch(/sumar 100|sharePct/i);
+  });
+
+  test('venta con socio 50%: base de comisión es mi parte (gross × 0.5)', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `PRT${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+      partnerId: TEST_SEED_IDS.partner,
+      participation: 0.5,
+    });
+    const res = await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+    });
+    // Gross profit global = 10M, mi parte = 10M × 0.5 = 5M
+    expect(res.summary.commissionBase).toBe(5_000_000);
+    expect(res.summary.commissionPool).toBe(3_000_000); // 60% de 5M
   });
 });

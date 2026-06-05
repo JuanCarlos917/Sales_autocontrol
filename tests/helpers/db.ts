@@ -46,8 +46,9 @@ async function seedAccountsAndParties(client: Client) {
        ($1, 'Proveedor Test', 'SUPPLIER', true, NOW(), NOW()),
        ($2, 'Cliente Test', 'CLIENT', true, NOW(), NOW()),
        ($3, 'Empleado Test', 'EMPLOYEE', true, NOW(), NOW()),
-       ('owner-self', 'Dueño / Yo', 'EMPLOYEE', true, NOW(), NOW())`,
-    [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer, TEST_SEED_IDS.employee],
+       ('owner-self', 'Dueño / Yo', 'EMPLOYEE', true, NOW(), NOW()),
+       ($4, 'Socio Test', 'PARTNER', true, NOW(), NOW())`,
+    [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer, TEST_SEED_IDS.employee, TEST_SEED_IDS.partner],
   );
 }
 

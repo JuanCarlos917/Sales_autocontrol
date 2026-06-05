@@ -6,6 +6,7 @@ export const TEST_SEED_IDS = {
   supplier: 'test-tp-supplier',
   buyer: 'test-tp-buyer',
   employee: 'test-tp-employee',
+  partner: 'test-tp-partner',
 } as const;
 
 export const TEST_SEED_INITIAL_CASH = 100_000_000;

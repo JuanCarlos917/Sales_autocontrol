@@ -76,6 +76,7 @@ export interface VehicleInput {
   purchasePrice?: number;
   listedPrice?: number;
   supplierId?: string;
+  partnerId?: string;
   participation?: number;
 }
 
