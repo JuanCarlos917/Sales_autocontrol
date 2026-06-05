@@ -220,6 +220,12 @@ const vehicleSaleSchema = Joi.object({
     dueDate: Joi.date().allow(null),
     notes: Joi.string().max(500).allow('', null),
   }).allow(null),
+  // Participantes de comisión (opcional). Si no viene, se usa el default (owner-self).
+  participants: Joi.array().items(Joi.object({
+    thirdPartyId: Joi.string().required(),
+    role: Joi.string().valid('CAPTADOR', 'CERRADOR', 'OTHER').required(),
+    sharePct: Joi.number().min(0).max(100).required(),
+  })).optional(),
 });
 
 // ── Vehicle Collection Schema (cobro de venta) ──

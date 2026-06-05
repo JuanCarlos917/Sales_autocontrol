@@ -212,13 +212,43 @@ export interface RegisterSalePayload {
     km?: number | null;
   } | null;
   financing?: { dueDate?: string | null; notes?: string | null } | null;
+  participants?: Array<{
+    thirdPartyId: string;
+    role: 'CAPTADOR' | 'CERRADOR' | 'OTHER';
+    sharePct: number;
+  }>;
 }
 
 export interface RegisterSaleResult {
   vehicle: { id: string; plate: string };
   newVehicle: { id: string; plate: string } | null;
   receivable: unknown;
-  summary: { salePrice: number; totalReceived: number; pendingAmount: number; tradeInValue: number };
+  summary: {
+    salePrice: number;
+    totalReceived: number;
+    pendingAmount: number;
+    tradeInValue: number;
+    commissionBase?: number;
+    commissionPool?: number;
+    reinvestPool?: number;
+    taxPool?: number;
+    cashRatioApplied?: number;
+    participants?: Array<{
+      id: string;
+      thirdPartyId: string;
+      role: string;
+      sharePct: number;
+      amount: number;
+      payableId: string;
+    }>;
+    transfers?: Array<{
+      id: string;
+      fromAccountId: string;
+      toAccountId: string;
+      amount: number;
+      description: string;
+    }>;
+  };
 }
 
 export async function apiRegisterSale(token: string, vehicleId: string, payload: RegisterSalePayload): Promise<RegisterSaleResult> {

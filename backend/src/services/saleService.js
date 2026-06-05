@@ -4,6 +4,8 @@
 
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
+const commissionService = require('./commissionService');
+const { calculateCommissionBase } = require('../utils/financial');
 
 /**
  * Tipos de pago de venta
@@ -183,6 +185,119 @@ const registerSale = async (vehicleId, saleData, userId) => {
       }
     }
 
+    // ─── Paso 5: Comisiones y bolsillos ─────────────────────────────
+    // Calcula la base, resuelve participantes, crea CxP COMMISSION por
+    // participante y Transfers proporcionales al efectivo recibido.
+    let commissionSummary = null;
+    const vehicleForBase = {
+      salePrice: salePriceNum,
+      purchasePrice: vehicle.purchasePrice,
+      negotiatedValue: vehicle.negotiatedValue,
+      fromTradeIn: vehicle.fromTradeIn,
+      participation: vehicle.participation,
+      expenses: vehicle.expenses,
+    };
+    const { commissionBase, skip } = calculateCommissionBase(vehicleForBase);
+
+    if (!skip) {
+      const cfg = await commissionService.loadCommissionConfig(tx);
+      const pools = commissionService.calculatePools(commissionBase, cfg);
+      const resolved = await commissionService.resolveParticipants(tx, saleData.participants);
+
+      // 5a. Crear SaleParticipant + Payable COMMISSION por cada uno
+      const participantResults = [];
+      for (const p of resolved) {
+        const amount = pools.commissionPool * (p.sharePct / 100);
+        const payable = await tx.payable.create({
+          data: {
+            type: 'COMMISSION',
+            status: 'PENDING',
+            totalAmount: amount,
+            paidAmount: 0,
+            description: `Comisión venta ${vehicle.plate} — ${p.role}`,
+            vehicleId,
+            thirdPartyId: p.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+        const sp = await tx.saleParticipant.create({
+          data: {
+            vehicleId,
+            thirdPartyId: p.thirdPartyId,
+            role: p.role,
+            sharePct: p.sharePct,
+            amount,
+            payableId: payable.id,
+          },
+        });
+        participantResults.push({
+          id: sp.id,
+          thirdPartyId: p.thirdPartyId,
+          role: p.role,
+          sharePct: p.sharePct,
+          amount,
+          payableId: payable.id,
+        });
+      }
+
+      // 5b. Transfers proporcionales al efectivo recibido
+      const tradeInValueNum = tradeIn?.value ? parseFloat(tradeIn.value) : 0;
+      const cashReceived = totalReceived - tradeInValueNum;
+      const cashRatio = commissionService.calculateCashRatio(totalReceived, cashReceived);
+      const transferResults = [];
+      if (cashReceived > 0 && moneyPayments.length > 0) {
+        const fromAccountId = moneyPayments[0].accountId;
+        const reinvestAmt = pools.reinvestPool * cashRatio;
+        const taxAmt = pools.taxPool * cashRatio;
+        if (reinvestAmt > 0) {
+          const t = await tx.transfer.create({
+            data: {
+              fromAccountId,
+              toAccountId: cfg.reinvestAccountId,
+              amount: reinvestAmt,
+              description: `Reinversión venta ${vehicle.plate}`,
+              createdBy: userId,
+            },
+          });
+          transferResults.push({
+            id: t.id,
+            fromAccountId,
+            toAccountId: cfg.reinvestAccountId,
+            amount: Number(t.amount),
+            description: t.description,
+          });
+        }
+        if (taxAmt > 0) {
+          const t = await tx.transfer.create({
+            data: {
+              fromAccountId,
+              toAccountId: cfg.taxReserveAccountId,
+              amount: taxAmt,
+              description: `Impuestos venta ${vehicle.plate}`,
+              createdBy: userId,
+            },
+          });
+          transferResults.push({
+            id: t.id,
+            fromAccountId,
+            toAccountId: cfg.taxReserveAccountId,
+            amount: Number(t.amount),
+            description: t.description,
+          });
+        }
+      }
+
+      commissionSummary = {
+        commissionBase,
+        commissionPool: pools.commissionPool,
+        reinvestPool: pools.reinvestPool,
+        taxPool: pools.taxPool,
+        cashRatioApplied: cashRatio,
+        participants: participantResults,
+        transfers: transferResults,
+      };
+    }
+
     return {
       vehicle: updatedVehicle,
       transactions,
@@ -192,7 +307,8 @@ const registerSale = async (vehicleId, saleData, userId) => {
         salePrice: salePriceNum,
         totalReceived,
         pendingAmount: pendingAmount > 0 ? pendingAmount : 0,
-        tradeInValue: tradeIn?.value || 0
+        tradeInValue: tradeIn?.value || 0,
+        ...(commissionSummary || {}),
       }
     };
   });
