@@ -186,4 +186,26 @@ test.describe('Comisiones — configuración global', () => {
     expect(reinvest?.amount).toBeCloseTo(1_500_000, 0);  // 3M × 0.5
     expect(tax?.amount).toBeCloseTo(500_000, 0);          // 1M × 0.5
   });
+
+  test('venta con pérdida: cero CxP, cero transfers, sin participants', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `LOSS${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 30_000_000,
+      purchasePrice: 30_000_000,
+      listedPrice: 25_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    const res = await apiRegisterSale(token, v.id, {
+      salePrice: 25_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 25_000_000 },
+    });
+
+    expect(res.summary.commissionBase).toBeUndefined();
+    expect(res.summary.participants).toBeUndefined();
+    expect(res.summary.transfers).toBeUndefined();
+  });
 });
