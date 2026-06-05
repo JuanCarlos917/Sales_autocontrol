@@ -506,6 +506,39 @@ const cancelSale = async (vehicleId, userId) => {
     throw new AppError('No se puede cancelar la venta porque ya hay transacciones registradas', 400);
   }
 
+  // Verificar si hay Payables COMMISSION asociadas
+  const commissionPayables = await prisma.payable.findMany({
+    where: { vehicleId, type: 'COMMISSION' },
+  });
+  if (commissionPayables.length > 0) {
+    throw new AppError(
+      'No se puede cancelar la venta porque hay comisiones devengadas. ' +
+      'Anula o paga las CxP de comisión primero.',
+      400
+    );
+  }
+
+  // Verificar si hay Transfers asociadas a cuentas BUDGET (reinversión / impuestos)
+  const cfg = await prisma.setting.findMany({
+    where: { key: { in: ['reinvest_account_id', 'tax_reserve_account_id'] } },
+  });
+  const budgetAccountIds = cfg.map(s => s.value).filter(Boolean);
+  if (budgetAccountIds.length > 0) {
+    const budgetTransfers = await prisma.transfer.findMany({
+      where: {
+        toAccountId: { in: budgetAccountIds },
+        description: { contains: vehicle.plate },
+      },
+    });
+    if (budgetTransfers.length > 0) {
+      throw new AppError(
+        'No se puede cancelar la venta porque hay transferencias a fondos de reinversión / impuestos. ' +
+        'Reversa esas transferencias primero.',
+        400
+      );
+    }
+  }
+
   // Revertir venta
   const result = await prisma.$transaction(async (tx) => {
     // Eliminar CxC si existe

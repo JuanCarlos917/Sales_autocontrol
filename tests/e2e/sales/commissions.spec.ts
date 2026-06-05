@@ -283,4 +283,26 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.summary.commissionBase).toBe(5_000_000);
     expect(res.summary.commissionPool).toBe(3_000_000); // 60% de 5M
   });
+
+  test('cancelSale bloqueado si hay Payables COMMISSION (incluso sin transacciones de caja)', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `CNX${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'TRADE_IN',
+      buyerId: TEST_SEED_IDS.buyer,
+      tradeIn: { plate: `RXC${Date.now().toString().slice(-6)}`, value: 30_000_000 },
+    });
+
+    const res = await apiRequestRaw('POST', `/vehicles/${v.id}/cancel-sale`, token);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/comisi[oó]n/i);
+  });
 });
