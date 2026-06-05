@@ -305,4 +305,20 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/comisi[oó]n/i);
   });
+
+  test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto('/settings');
+    await expect(page.getByTestId('settings-commissions-card')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('settings-commission-pct')).toHaveValue('60');
+    await page.getByTestId('settings-commission-pct').fill('55');
+    await page.getByTestId('settings-reinvest-pct').fill('35');
+    await page.getByTestId('settings-save-commissions').click();
+    await expect(page.getByText('Guardado.')).toBeVisible({ timeout: 5_000 });
+
+    // Restaurar defaults
+    await page.getByTestId('settings-commission-pct').fill('60');
+    await page.getByTestId('settings-reinvest-pct').fill('30');
+    await page.getByTestId('settings-save-commissions').click();
+  });
 });
