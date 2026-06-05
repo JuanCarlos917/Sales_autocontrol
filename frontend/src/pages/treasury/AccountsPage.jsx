@@ -89,15 +89,23 @@ export default function AccountsPage() {
         <button onClick={openCreate} className="btn-primary text-sm">+ Nueva Cuenta</button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {accounts.map((account) => (
+      {(() => {
+        const cashAccounts = accounts.filter((a) => a.type === 'CASH');
+        const bankAccounts = accounts.filter((a) => a.type === 'BANK');
+        const budgetAccounts = accounts.filter((a) => a.type === 'BUDGET');
+
+        const renderCard = (account) => (
           <div key={account.id} className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-lg font-semibold text-[#E6EDF3]">{account.name}</span>
               <span className={`text-xs px-2 py-0.5 rounded ${
-                account.type === 'CASH' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
+                account.type === 'CASH'
+                  ? 'bg-green-500/20 text-green-400'
+                  : account.type === 'BANK'
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'bg-purple-500/20 text-[#BC8CFF]'
               }`}>
-                {account.type === 'CASH' ? 'Efectivo' : 'Banco'}
+                {account.type === 'CASH' ? 'Efectivo' : account.type === 'BANK' ? 'Banco' : 'Fondo'}
               </span>
             </div>
             {account.bank && <div className="text-sm text-[#8B949E] mb-1">{account.bank}</div>}
@@ -110,8 +118,42 @@ export default function AccountsPage() {
               <button onClick={() => handleDelete(account.id)} className="btn-ghost text-xs text-red-400 hover:text-red-300">Eliminar</button>
             </div>
           </div>
-        ))}
-      </div>
+        );
+
+        return (
+          <div className="space-y-8">
+            {cashAccounts.length > 0 && (
+              <section>
+                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3">💵 Efectivo</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {cashAccounts.map(renderCard)}
+                </div>
+              </section>
+            )}
+
+            {bankAccounts.length > 0 && (
+              <section>
+                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3">🏦 Bancos</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {bankAccounts.map(renderCard)}
+                </div>
+              </section>
+            )}
+
+            {budgetAccounts.length > 0 && (
+              <section>
+                <h3 className="text-lg font-semibold text-[#BC8CFF] mb-1">🎯 Fondos / Reservas</h3>
+                <p className="text-sm text-[#8B949E] mb-3">
+                  Estas cuentas no son operativas: guardan los aportes automáticos de cada venta (reinversión, impuestos).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {budgetAccounts.map(renderCard)}
+                </div>
+              </section>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Cuenta' : 'Nueva Cuenta'}>
