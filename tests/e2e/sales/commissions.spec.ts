@@ -134,4 +134,56 @@ test.describe('Comisiones — configuración global', () => {
     expect(reinvest?.amount).toBe(3_000_000);
     expect(tax?.amount).toBe(1_000_000);
   });
+
+  test('venta 100% cruce: crea CxP COMMISSION pero 0 transfers', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `CRU${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    const res = await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'TRADE_IN',
+      buyerId: TEST_SEED_IDS.buyer,
+      tradeIn: { plate: `RCV${Date.now().toString().slice(-6)}`, value: 30_000_000 },
+    });
+
+    expect(res.summary.commissionBase).toBe(10_000_000);
+    expect(res.summary.cashRatioApplied).toBe(0);
+    expect(res.summary.participants).toHaveLength(1);
+    expect(res.summary.participants![0].amount).toBe(6_000_000); // CxP igual se causa
+    expect(res.summary.transfers).toHaveLength(0);                // sin caja, sin transfer
+  });
+
+  test('venta mixed (cash + cruce): transfers proporcionales al cash', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `MIX${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    // Total: 30M (15M cash + 15M cruce) → cashRatio = 0.5
+    const res = await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'MIXED',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayments: [{ accountId: TEST_SEED_IDS.accountCash, amount: 15_000_000, method: 'CASH' }],
+      tradeIn: { plate: `RCM${Date.now().toString().slice(-6)}`, value: 15_000_000 },
+    });
+
+    expect(res.summary.commissionBase).toBe(10_000_000);
+    expect(res.summary.cashRatioApplied).toBeCloseTo(0.5, 5);
+    expect(res.summary.transfers).toHaveLength(2);
+    const reinvest = res.summary.transfers!.find(t => t.toAccountId === 'budget-reinvest');
+    const tax = res.summary.transfers!.find(t => t.toAccountId === 'budget-tax');
+    expect(reinvest?.amount).toBeCloseTo(1_500_000, 0);  // 3M × 0.5
+    expect(tax?.amount).toBeCloseTo(500_000, 0);          // 1M × 0.5
+  });
 });
