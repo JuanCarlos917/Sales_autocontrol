@@ -40,7 +40,29 @@ class TransactionService {
       prisma.transaction.count({ where }),
     ]);
 
-    return { transactions, total, limit, offset };
+    // Transfers entre cuentas (incluye los automáticos a Fondo Reinversión / Reserva
+    // Impuestos generados por el flujo de comisiones). Se devuelven en un array
+    // aparte para que el cliente decida cómo intercalarlos con transactions.
+    const transferWhere = {};
+    if (accountId) {
+      transferWhere.OR = [{ fromAccountId: accountId }, { toAccountId: accountId }];
+    }
+    if (startDate || endDate) {
+      transferWhere.createdAt = {};
+      if (startDate) transferWhere.createdAt.gte = new Date(startDate);
+      if (endDate) transferWhere.createdAt.lte = new Date(endDate);
+    }
+    const transfers = await prisma.transfer.findMany({
+      where: transferWhere,
+      include: {
+        fromAccount: { select: { id: true, name: true, type: true } },
+        toAccount:   { select: { id: true, name: true, type: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return { transactions, transfers, total, limit, offset };
   }
 
   async findById(id) {

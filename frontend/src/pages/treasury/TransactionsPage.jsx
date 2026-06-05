@@ -81,7 +81,16 @@ export default function TransactionsPage() {
       if (filters.startDate) params.startDate = filters.startDate;
       if (filters.endDate) params.endDate = filters.endDate;
       const { data } = await transactionsApi.getAll(params);
-      setTransactions(data.transactions || []);
+
+      // Mezclar transactions y transfers en una sola lista cronológica.
+      // Transfers vienen como { id, fromAccount, toAccount, amount, description, createdAt }
+      // — los marcamos con kind='TRANSFER' para distinguirlos al renderizar.
+      const txs = (data.transactions || []).map(t => ({ ...t, kind: 'TX' }));
+      const trs = (data.transfers || []).map(t => ({ ...t, kind: 'TRANSFER' }));
+      const merged = [...txs, ...trs].sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setTransactions(merged);
     } catch (err) {
       console.error('Error loading transactions:', err);
     } finally {
@@ -244,7 +253,25 @@ export default function TransactionsPage() {
             </tr>
           </thead>
           <tbody>
-            {transactions.map((tx) => (
+            {transactions.map((tx) => tx.kind === 'TRANSFER' ? (
+              <tr key={`tr-${tx.id}`} className="border-t border-border hover:bg-surface-hover" data-testid="transaction-row-transfer">
+                <td className="p-3 text-[#8B949E] whitespace-nowrap">{formatDateTime(tx.createdAt)}</td>
+                <td className="p-3">
+                  <span className="text-xs font-medium text-[#BC8CFF]">↔ Transferencia</span>
+                </td>
+                <td className="p-3 text-[#E6EDF3] hidden md:table-cell">
+                  <span className="text-xs">{tx.fromAccount?.name} → {tx.toAccount?.name}</span>
+                </td>
+                <td className="p-3"><span className="text-[#6E7681] text-xs">—</span></td>
+                <td className="p-3 text-[#E6EDF3] text-xs">Transferencia</td>
+                <td className="p-3 text-[#E6EDF3] hidden lg:table-cell truncate max-w-[280px]">
+                  {tx.description || <span className="text-[#6E7681]">—</span>}
+                </td>
+                <td className="p-3 text-right font-semibold whitespace-nowrap text-[#BC8CFF]">
+                  {formatCurrency(tx.amount)}
+                </td>
+              </tr>
+            ) : (
               <tr key={tx.id} className="border-t border-border hover:bg-surface-hover">
                 <td className="p-3 text-[#8B949E] whitespace-nowrap">{formatDateTime(tx.createdAt)}</td>
                 <td className="p-3">

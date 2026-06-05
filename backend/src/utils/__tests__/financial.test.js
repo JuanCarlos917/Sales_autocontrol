@@ -252,3 +252,44 @@ test('calculateCommissionBase: expenses categoría COMISION quedan excluidos', (
   const r = calculateCommissionBase(v);
   assert.equal(r.grossProfitGlobal, 9_500_000);
 });
+
+test('calculateCommissionBase: sin purchasePrice (NULL) → skip true', () => {
+  // Caso producción: vehículo TES3232 que se vendió en 20M sin tener precio
+  // de compra registrado. Sin este guard, el cálculo trataba el costo como 0
+  // y cobraba comisión sobre todo el salePrice como si fuera ganancia pura.
+  const v = {
+    salePrice: 20_000_000,
+    purchasePrice: null,
+    expenses: [],
+    participation: 1,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.commissionBase, 0);
+  assert.equal(r.skip, true);
+});
+
+test('calculateCommissionBase: purchasePrice = 0 también es skip', () => {
+  const v = {
+    salePrice: 20_000_000,
+    purchasePrice: 0,
+    expenses: [],
+    participation: 1,
+    fromTradeIn: false,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.skip, true);
+});
+
+test('calculateCommissionBase: fromTradeIn sin negotiatedValue → skip true', () => {
+  const v = {
+    salePrice: 25_000_000,
+    purchasePrice: null,
+    negotiatedValue: null,
+    expenses: [],
+    participation: 1,
+    fromTradeIn: true,
+  };
+  const r = calculateCommissionBase(v);
+  assert.equal(r.skip, true);
+});

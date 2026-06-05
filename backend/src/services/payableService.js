@@ -158,10 +158,15 @@ const addPayment = async (payableId, paymentData, userId) => {
 
   // Determinar tipo y categoria de transaccion
   const isReceivable = payable.type === 'RECEIVABLE';
+  const isCommission = payable.type === 'COMMISSION';
   const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
+  // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
+  // es un egreso operativo por comisión al vendedor.
   const transactionCategory = isReceivable
     ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
-    : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+    : isCommission
+      ? 'COMMISSION'
+      : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
   // Transaccion atomica
   const result = await prisma.$transaction(async (tx) => {

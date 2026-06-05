@@ -306,6 +306,68 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.body.error).toMatch(/comisi[oó]n/i);
   });
 
+  test('pagar CxP COMMISSION genera Transaction con categoría COMMISSION (no VEHICLE_PURCHASE)', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `PYC${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    const sale = await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+    });
+    const payableId = sale.summary.participants![0].payableId;
+
+    const pay = await apiRequestRaw('POST', `/payables/${payableId}/payments`, token, {
+      accountId: TEST_SEED_IDS.accountCash,
+      amount: 6_000_000,
+      description: 'Pago comisión cerrador',
+    });
+    expect(pay.status).toBe(201);
+
+    // La transacción generada por el pago debe estar categorizada como COMMISSION,
+    // no como VEHICLE_PURCHASE (que era el bug original al pagar CxP type=COMMISSION).
+    const list = await apiRequestRaw('GET', `/treasury/transactions?vehicleId=${v.id}`, token);
+    expect(list.status).toBe(200);
+    const txs = (list.body as { transactions?: Array<{ category: string; amount: string }> }).transactions || [];
+    const commissionTx = txs.find(t => Number(t.amount) === 6_000_000 && t.category === 'COMMISSION');
+    expect(commissionTx).toBeDefined();
+  });
+
+  test('GET /treasury/transactions devuelve transactions Y transfers', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    // Generar movimientos: vender un vehículo cash que dispara transfers automáticos
+    const v = await apiCreateVehicle(token, {
+      plate: `MOV${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+    });
+
+    const res = await apiRequestRaw('GET', `/treasury/transactions?accountId=${TEST_SEED_IDS.accountCash}`, token);
+    expect(res.status).toBe(200);
+    const body = res.body as { transactions?: unknown[]; transfers?: unknown[] };
+    expect(Array.isArray(body.transactions)).toBe(true);
+    expect(Array.isArray(body.transfers)).toBe(true);
+    // Debe contener al menos la transacción de venta + 2 transfers (reinvest + tax)
+    expect(body.transactions!.length).toBeGreaterThanOrEqual(1);
+    expect(body.transfers!.length).toBeGreaterThanOrEqual(2);
+  });
+
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/settings');

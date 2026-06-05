@@ -172,6 +172,13 @@ function calculateCommissionBase(vehicle) {
     ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
     : Number(vehicle.purchasePrice || 0);
 
+  // Sin base de costo (vehículo vendido sin precio de compra registrado, o
+  // cruce sin valor negociado), no hay forma de calcular ganancia real.
+  // Evitamos cobrar comisión sobre el salePrice completo tratándolo como skip.
+  if (purchasePrice <= 0) {
+    return { grossProfitGlobal: 0, commissionBase: 0, skip: true };
+  }
+
   const grossProfitGlobal = salePrice - purchasePrice - directExpenses;
   const participation = Number(vehicle.participation || 1);
   const rawBase = grossProfitGlobal * participation;
