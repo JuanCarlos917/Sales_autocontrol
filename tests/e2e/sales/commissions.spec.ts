@@ -340,9 +340,11 @@ test.describe('Comisiones — configuración global', () => {
     expect(commissionTx).toBeDefined();
   });
 
-  test('GET /treasury/transactions devuelve transactions Y transfers', async ({ page }) => {
+  test('venta cash genera TRANSFER_OUT en cuenta origen y TRANSFER_IN en cuentas BUDGET', async ({ page }) => {
     const token = await loginAsAdmin(page);
-    // Generar movimientos: vender un vehículo cash que dispara transfers automáticos
+    // Vender un vehículo cash dispara: 1 INCOME en origen + 2 TRANSFER_OUT en origen
+    // + 2 TRANSFER_IN en cuentas BUDGET. Esas TRANSFER_IN/OUT son las que
+    // calculateBalance suma al saldo (sin ellas, las cuentas BUDGET quedan en 0).
     const v = await apiCreateVehicle(token, {
       plate: `MOV${Date.now().toString().slice(-6)}`,
       stage: 'COMPRADO',
@@ -358,14 +360,24 @@ test.describe('Comisiones — configuración global', () => {
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
     });
 
-    const res = await apiRequestRaw('GET', `/treasury/transactions?accountId=${TEST_SEED_IDS.accountCash}`, token);
-    expect(res.status).toBe(200);
-    const body = res.body as { transactions?: unknown[]; transfers?: unknown[] };
-    expect(Array.isArray(body.transactions)).toBe(true);
-    expect(Array.isArray(body.transfers)).toBe(true);
-    // Debe contener al menos la transacción de venta + 2 transfers (reinvest + tax)
-    expect(body.transactions!.length).toBeGreaterThanOrEqual(1);
-    expect(body.transfers!.length).toBeGreaterThanOrEqual(2);
+    // En la cuenta origen: 1 INCOME (la venta) + 2 TRANSFER_OUT (reinvest + tax)
+    const fromRes = await apiRequestRaw('GET', `/treasury/transactions?accountId=${TEST_SEED_IDS.accountCash}&vehicleId=${v.id}`, token);
+    expect(fromRes.status).toBe(200);
+    const fromTxs = (fromRes.body as { transactions?: Array<{ type: string; amount: string }> }).transactions || [];
+    const transferOuts = fromTxs.filter(t => t.type === 'TRANSFER_OUT');
+    expect(transferOuts.length).toBe(2);
+
+    // En la cuenta de reinversión: 1 TRANSFER_IN (3M = 30% de 10M de ganancia)
+    const reinvRes = await apiRequestRaw('GET', `/treasury/transactions?accountId=budget-reinvest`, token);
+    expect(reinvRes.status).toBe(200);
+    const reinvTxs = (reinvRes.body as { transactions?: Array<{ type: string; amount: string }> }).transactions || [];
+    const reinvIn = reinvTxs.find(t => t.type === 'TRANSFER_IN' && Number(t.amount) === 3_000_000);
+    expect(reinvIn).toBeDefined();
+
+    // Y el saldo calculado de la cuenta BUDGET sube
+    const accRes = await apiRequestRaw('GET', `/treasury/accounts/budget-reinvest`, token);
+    const acc = accRes.body as { currentBalance?: string | number };
+    expect(Number(acc.currentBalance)).toBeGreaterThanOrEqual(3_000_000);
   });
 
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {

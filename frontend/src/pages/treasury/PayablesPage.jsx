@@ -42,6 +42,7 @@ export default function PayablesPage() {
       const params = {};
       if (filter === 'receivable') params.type = 'RECEIVABLE';
       if (filter === 'payable') params.type = 'PAYABLE';
+      if (filter === 'commission') params.type = 'COMMISSION';
 
       const { data } = await payablesApi.getAll(params);
       // Filtrar solo pendientes y parciales en el frontend
@@ -109,11 +110,13 @@ export default function PayablesPage() {
     { id: 'all', label: 'Todas', icon: '📋' },
     { id: 'receivable', label: 'Por Cobrar (CxC)', icon: '📥', color: 'text-green-400' },
     { id: 'payable', label: 'Por Pagar (CxP)', icon: '📤', color: 'text-red-400' },
+    { id: 'commission', label: 'Comisiones', icon: '💼', color: 'text-[#BC8CFF]' },
   ];
 
   const totals = {
     receivable: payables.filter(p => p.type === 'RECEIVABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
     payable: payables.filter(p => p.type === 'PAYABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
+    commission: payables.filter(p => p.type === 'COMMISSION').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
   };
 
   return (
@@ -141,6 +144,11 @@ export default function PayablesPage() {
             <div className="text-[#6E7681]">Por pagar</div>
             <div className="font-mono font-bold text-red-400">{formatCurrency(totals.payable)}</div>
           </div>
+          <div className="w-px h-8 bg-border" />
+          <div className="text-right">
+            <div className="text-[#6E7681]">Comisiones</div>
+            <div className="font-mono font-bold text-[#BC8CFF]">{formatCurrency(totals.commission)}</div>
+          </div>
         </div>
       </div>
 
@@ -162,9 +170,12 @@ export default function PayablesPage() {
               <span className={`ml-1 text-xs px-1.5 py-0.5 rounded ${
                 filter === tab.id ? 'bg-accent/30' : 'bg-surface-hover'
               }`}>
-                {payables.filter(p =>
-                  tab.id === 'receivable' ? p.type === 'RECEIVABLE' : p.type === 'PAYABLE'
-                ).length}
+                {payables.filter(p => {
+                  if (tab.id === 'receivable') return p.type === 'RECEIVABLE';
+                  if (tab.id === 'payable') return p.type === 'PAYABLE';
+                  if (tab.id === 'commission') return p.type === 'COMMISSION';
+                  return false;
+                }).length}
               </span>
             )}
           </button>
@@ -189,6 +200,7 @@ export default function PayablesPage() {
           <p className="text-sm text-[#6E7681]">
             {filter === 'receivable' && 'No hay cuentas por cobrar en este momento'}
             {filter === 'payable' && 'No hay cuentas por pagar en este momento'}
+            {filter === 'commission' && 'No hay comisiones pendientes en este momento'}
             {filter === 'all' && 'Todas las cuentas están al día'}
           </p>
         </div>

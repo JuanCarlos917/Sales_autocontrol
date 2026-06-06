@@ -43,7 +43,15 @@ test.describe('Tesorería — venta Mixto con pago dividido desde el modal', () 
 
     const cashAfter = parseFloat((await apiGetAccount(token, TEST_SEED_IDS.accountCash)).currentBalance as string);
     const bankAfter = parseFloat((await apiGetAccount(token, TEST_SEED_IDS.accountBank)).currentBalance as string);
-    expect(cashAfter - cashBefore).toBe(12_000_000);
+    // Después del fix de comisiones (PR #28), saleService transfiere
+    // reinvest + tax desde el primer cashPayment (la cuenta cash). Sale = 22M,
+    // compra = 18M, ganancia bruta = 4M → reinvest 30% = 1.2M, tax 10% = 0.4M.
+    // Cash recibe los 12M de la venta pero pierde 1.6M en transfers → +10.4M neto.
+    // Bank no se ve afectado por las transfers automáticas.
+    const profit = 22_000_000 - 18_000_000;
+    const reinvest = profit * 0.30;
+    const tax = profit * 0.10;
+    expect(cashAfter - cashBefore).toBeCloseTo(12_000_000 - reinvest - tax, 0);
     expect(bankAfter - bankBefore).toBe(10_000_000);
   });
 });

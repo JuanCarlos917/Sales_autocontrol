@@ -240,46 +240,76 @@ const registerSale = async (vehicleId, saleData, userId) => {
         });
       }
 
-      // 5b. Transfers proporcionales al efectivo recibido
+      // 5b. Transfers proporcionales al efectivo recibido.
+      //
+      // El patrón estándar del proyecto (transferService.create) crea 1 Transfer
+      // + 2 Transactions (TRANSFER_OUT en origen, TRANSFER_IN en destino).
+      // Ambas transactions son indispensables para que accountService.calculateBalance
+      // las sume al saldo de las cuentas; sin ellas las cuentas BUDGET quedan con
+      // saldo 0 aunque el Transfer exista.
       const tradeInValueNum = tradeIn?.value ? parseFloat(tradeIn.value) : 0;
       const cashReceived = totalReceived - tradeInValueNum;
       const cashRatio = commissionService.calculateCashRatio(totalReceived, cashReceived);
       const transferResults = [];
+
+      const createBucketTransfer = async (toAccountId, amount, descriptionLabel) => {
+        const transfer = await tx.transfer.create({
+          data: {
+            fromAccountId: moneyPayments[0].accountId,
+            toAccountId,
+            amount,
+            description: `${descriptionLabel} venta ${vehicle.plate}`,
+            date: new Date(),
+            createdBy: userId,
+          },
+        });
+        await tx.transaction.create({
+          data: {
+            accountId: moneyPayments[0].accountId,
+            type: 'TRANSFER_OUT',
+            category: 'TRANSFER',
+            amount,
+            description: `${descriptionLabel} venta ${vehicle.plate}`,
+            date: new Date(),
+            vehicleId,
+            transferId: transfer.id,
+            createdBy: userId,
+          },
+        });
+        await tx.transaction.create({
+          data: {
+            accountId: toAccountId,
+            type: 'TRANSFER_IN',
+            category: 'TRANSFER',
+            amount,
+            description: `${descriptionLabel} venta ${vehicle.plate}`,
+            date: new Date(),
+            vehicleId,
+            transferId: transfer.id,
+            createdBy: userId,
+          },
+        });
+        return transfer;
+      };
+
       if (cashReceived > 0 && moneyPayments.length > 0) {
-        const fromAccountId = moneyPayments[0].accountId;
         const reinvestAmt = pools.reinvestPool * cashRatio;
         const taxAmt = pools.taxPool * cashRatio;
         if (reinvestAmt > 0) {
-          const t = await tx.transfer.create({
-            data: {
-              fromAccountId,
-              toAccountId: cfg.reinvestAccountId,
-              amount: reinvestAmt,
-              description: `Reinversión venta ${vehicle.plate}`,
-              createdBy: userId,
-            },
-          });
+          const t = await createBucketTransfer(cfg.reinvestAccountId, reinvestAmt, 'Reinversión');
           transferResults.push({
             id: t.id,
-            fromAccountId,
+            fromAccountId: moneyPayments[0].accountId,
             toAccountId: cfg.reinvestAccountId,
             amount: Number(t.amount),
             description: t.description,
           });
         }
         if (taxAmt > 0) {
-          const t = await tx.transfer.create({
-            data: {
-              fromAccountId,
-              toAccountId: cfg.taxReserveAccountId,
-              amount: taxAmt,
-              description: `Impuestos venta ${vehicle.plate}`,
-              createdBy: userId,
-            },
-          });
+          const t = await createBucketTransfer(cfg.taxReserveAccountId, taxAmt, 'Impuestos');
           transferResults.push({
             id: t.id,
-            fromAccountId,
+            fromAccountId: moneyPayments[0].accountId,
             toAccountId: cfg.taxReserveAccountId,
             amount: Number(t.amount),
             description: t.description,
