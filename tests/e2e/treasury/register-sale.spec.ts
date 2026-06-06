@@ -59,8 +59,17 @@ test.describe('Tesorería — registrar venta desde Kanban', () => {
       page.getByTestId('kanban-column-COMPRADO').getByTestId(`vehicle-card-${plate}`),
     ).toHaveCount(0);
 
+    // Después del fix de comisiones (PR #28), de la cuenta cash se descuentan
+    // automáticamente las transfers a Fondo Reinversión + Reserva Impuestos
+    // basadas en la ganancia bruta (sale - purchase = 4M; reinvest 30% = 1.2M;
+    // tax 10% = 0.4M; total transferido = 1.6M). El neto que queda en cash
+    // es SALE_AMOUNT - 1.6M = 20.4M.
+    const profit = SALE_AMOUNT - 18_000_000;
+    const reinvest = profit * 0.30;
+    const tax = profit * 0.10;
+    const expectedDelta = SALE_AMOUNT - reinvest - tax;
     const afterAccount = await apiGetAccount(token, TEST_SEED_IDS.accountCash);
     const afterBalance = parseFloat(afterAccount.currentBalance as string);
-    expect(afterBalance - beforeBalance).toBe(SALE_AMOUNT);
+    expect(afterBalance - beforeBalance).toBeCloseTo(expectedDelta, 0);
   });
 });
