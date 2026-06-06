@@ -202,7 +202,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
     if (!skip) {
       const cfg = await commissionService.loadCommissionConfig(tx);
       const pools = commissionService.calculatePools(commissionBase, cfg);
-      const resolved = await commissionService.resolveParticipants(tx, saleData.participants);
+      const resolved = await commissionService.resolveParticipants(tx, saleData.participants, cfg);
 
       // 5a. Crear SaleParticipant + Payable COMMISSION por cada uno
       const participantResults = [];

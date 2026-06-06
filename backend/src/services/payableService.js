@@ -260,10 +260,11 @@ const getSummary = async () => {
     _count: true
   });
 
-  // Total por pagar (CxP)
+  // Total por pagar (CxP) — incluye PAYABLE de compras y COMMISSION de comisiones
+  // ya devengadas. Ambas son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: 'PAYABLE',
+      type: { in: ['PAYABLE', 'COMMISSION'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -281,7 +282,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: 'PAYABLE',
+      type: { in: ['PAYABLE', 'COMMISSION'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }

@@ -122,11 +122,14 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.summary.taxPool).toBe(1_000_000);          // 10%
     expect(res.summary.cashRatioApplied).toBe(1);         // 100% cash
 
-    // Default: 1 participant (owner-self) con 100% del pool
-    expect(res.summary.participants).toHaveLength(1);
-    expect(res.summary.participants![0].thirdPartyId).toBe('owner-self');
-    expect(res.summary.participants![0].role).toBe('CERRADOR');
-    expect(res.summary.participants![0].amount).toBe(6_000_000);
+    // Default desde Settings (30% captador + 70% cerrador): 2 CxPs separadas a owner-self
+    expect(res.summary.participants).toHaveLength(2);
+    const captador = res.summary.participants!.find(p => p.role === 'CAPTADOR');
+    const cerrador = res.summary.participants!.find(p => p.role === 'CERRADOR');
+    expect(captador?.thirdPartyId).toBe('owner-self');
+    expect(cerrador?.thirdPartyId).toBe('owner-self');
+    expect(captador?.amount).toBe(1_800_000);   // 6M × 30%
+    expect(cerrador?.amount).toBe(4_200_000);   // 6M × 70%
 
     // 2 Transfers: reinvest 3M y tax 1M
     expect(res.summary.transfers).toHaveLength(2);
@@ -155,8 +158,10 @@ test.describe('Comisiones — configuración global', () => {
 
     expect(res.summary.commissionBase).toBe(10_000_000);
     expect(res.summary.cashRatioApplied).toBe(0);
-    expect(res.summary.participants).toHaveLength(1);
-    expect(res.summary.participants![0].amount).toBe(6_000_000); // CxP igual se causa
+    // Default 30/70 split → 2 CxPs (captador 1.8M + cerrador 4.2M = pool 6M)
+    expect(res.summary.participants).toHaveLength(2);
+    const totalCommitted = res.summary.participants!.reduce((s, p) => s + p.amount, 0);
+    expect(totalCommitted).toBe(6_000_000);
     expect(res.summary.transfers).toHaveLength(0);                // sin caja, sin transfer
   });
 
@@ -322,11 +327,13 @@ test.describe('Comisiones — configuración global', () => {
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
     });
-    const payableId = sale.summary.participants![0].payableId;
+    // Paga la CxP del CERRADOR (4.2M = 70% de 6M pool con default split 30/70)
+    const cerradorPayable = sale.summary.participants!.find(p => p.role === 'CERRADOR');
+    expect(cerradorPayable).toBeDefined();
 
-    const pay = await apiRequestRaw('POST', `/payables/${payableId}/payments`, token, {
+    const pay = await apiRequestRaw('POST', `/payables/${cerradorPayable!.payableId}/payments`, token, {
       accountId: TEST_SEED_IDS.accountCash,
-      amount: 6_000_000,
+      amount: cerradorPayable!.amount,
       description: 'Pago comisión cerrador',
     });
     expect(pay.status).toBe(201);
@@ -336,7 +343,7 @@ test.describe('Comisiones — configuración global', () => {
     const list = await apiRequestRaw('GET', `/treasury/transactions?vehicleId=${v.id}`, token);
     expect(list.status).toBe(200);
     const txs = (list.body as { transactions?: Array<{ category: string; amount: string }> }).transactions || [];
-    const commissionTx = txs.find(t => Number(t.amount) === 6_000_000 && t.category === 'COMMISSION');
+    const commissionTx = txs.find(t => Number(t.amount) === cerradorPayable!.amount && t.category === 'COMMISSION');
     expect(commissionTx).toBeDefined();
   });
 
@@ -378,6 +385,32 @@ test.describe('Comisiones — configuración global', () => {
     const accRes = await apiRequestRaw('GET', `/treasury/accounts/budget-reinvest`, token);
     const acc = accRes.body as { currentBalance?: string | number };
     expect(Number(acc.currentBalance)).toBeGreaterThanOrEqual(3_000_000);
+  });
+
+  test('GET /payables/summary incluye CxPs COMMISSION en el total payables', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `SUM${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+    });
+
+    const res = await apiRequestRaw('GET', '/payables/summary', token);
+    expect(res.status).toBe(200);
+    const body = res.body as { payables?: { total: number; count: number } };
+    expect(body.payables).toBeDefined();
+    // El total Por Pagar incluye las CxP COMMISSION (al menos 6M de esta venta)
+    expect(body.payables!.total).toBeGreaterThanOrEqual(6_000_000);
+    expect(body.payables!.count).toBeGreaterThanOrEqual(2); // al menos 2 nuevas (cap+cer)
   });
 
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
