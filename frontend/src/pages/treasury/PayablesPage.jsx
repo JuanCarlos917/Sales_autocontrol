@@ -25,9 +25,12 @@ export default function PayablesPage() {
   const [selectedPayable, setSelectedPayable] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
 
+  // Cargar TODAS las CxPs una sola vez. El filtrado por tab (Receivable/Payable/
+  // Commission) se hace en cliente — así los counters del header y los badges de
+  // las pestañas siempre reflejan el total real sin esperar refetch al cambiar tab.
   useEffect(() => {
     loadPayables();
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     const type = searchParams.get('type');
@@ -39,13 +42,7 @@ export default function PayablesPage() {
   const loadPayables = async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (filter === 'receivable') params.type = 'RECEIVABLE';
-      if (filter === 'payable') params.type = 'PAYABLE';
-      if (filter === 'commission') params.type = 'COMMISSION';
-
-      const { data } = await payablesApi.getAll(params);
-      // Filtrar solo pendientes y parciales en el frontend
+      const { data } = await payablesApi.getAll({});
       const pendingPayables = (data || []).filter(p => p.status === 'PENDING' || p.status === 'PARTIAL');
       setPayables(pendingPayables);
     } catch (err) {
@@ -125,6 +122,14 @@ export default function PayablesPage() {
     commissionCaptador: commissionsByRole('CAPTADOR'),
     commissionCerrador: commissionsByRole('CERRADOR'),
   };
+
+  // Lista visible según pestaña activa (filtrado client-side, instantáneo)
+  const visiblePayables = filter === 'all' ? payables : payables.filter(p => {
+    if (filter === 'receivable') return p.type === 'RECEIVABLE';
+    if (filter === 'payable') return p.type === 'PAYABLE';
+    if (filter === 'commission') return p.type === 'COMMISSION';
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -206,7 +211,7 @@ export default function PayablesPage() {
             </div>
           ))}
         </div>
-      ) : payables.length === 0 ? (
+      ) : visiblePayables.length === 0 ? (
         <div className="card p-12 text-center">
           <div className="text-4xl mb-4">✅</div>
           <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Sin cuentas pendientes</h3>
@@ -224,7 +229,7 @@ export default function PayablesPage() {
             const ROLE_LABEL = { CAPTADOR: 'Captador', CERRADOR: 'Cerrador', OTHER: 'Otro' };
             const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
             const groupsByVehicle = new Map();
-            for (const p of payables) {
+            for (const p of visiblePayables) {
               if (p.type === 'COMMISSION' && p.vehicleId) {
                 if (!groupsByVehicle.has(p.vehicleId)) groupsByVehicle.set(p.vehicleId, []);
                 groupsByVehicle.get(p.vehicleId).push(p);
@@ -333,7 +338,7 @@ export default function PayablesPage() {
           })()}
 
           {/* CxC y CxP regulares (no-COMMISSION) usan el layout original */}
-          {payables.filter(p => !(p.type === 'COMMISSION' && p.vehicleId)).map(payable => {
+          {visiblePayables.filter(p => !(p.type === 'COMMISSION' && p.vehicleId)).map(payable => {
             const pending = parseFloat(payable.totalAmount) - parseFloat(payable.paidAmount);
             const isReceivable = payable.type === 'RECEIVABLE';
             const isCommission = payable.type === 'COMMISSION';
