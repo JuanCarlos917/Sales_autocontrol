@@ -219,7 +219,121 @@ export default function PayablesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {payables.map(payable => {
+          {/* Agrupar CxPs COMMISSION por vehículo (1 card por venta con desglose por rol) */}
+          {(() => {
+            const ROLE_LABEL = { CAPTADOR: 'Captador', CERRADOR: 'Cerrador', OTHER: 'Otro' };
+            const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
+            const groupsByVehicle = new Map();
+            for (const p of payables) {
+              if (p.type === 'COMMISSION' && p.vehicleId) {
+                if (!groupsByVehicle.has(p.vehicleId)) groupsByVehicle.set(p.vehicleId, []);
+                groupsByVehicle.get(p.vehicleId).push(p);
+              }
+            }
+            return Array.from(groupsByVehicle.entries()).map(([vehicleId, group]) => {
+              const vehicle = group[0].vehicle;
+              const totalAmount = group.reduce((s, p) => s + parseFloat(p.totalAmount), 0);
+              const sorted = [...group].sort((a, b) =>
+                (ROLE_ORDER[a.saleParticipant?.role] ?? 99) - (ROLE_ORDER[b.saleParticipant?.role] ?? 99)
+              );
+              return (
+                <div
+                  key={`commission-group-${vehicleId}`}
+                  className="card p-4 transition-all border-[#BC8CFF]/20"
+                  data-testid={`commission-group-${vehicle?.plate || vehicleId}`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg text-[#BC8CFF]">💼</span>
+                      <span className="text-xs px-2 py-0.5 rounded font-semibold bg-[#BC8CFF]/20 text-[#BC8CFF]">
+                        Comisión venta
+                      </span>
+                    </div>
+                  </div>
+
+                  {vehicle && (
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl">🚗</span>
+                        <span className="plate-text text-lg">{vehicle.plate}</span>
+                      </div>
+                      <div className="text-sm text-[#8B949E]">
+                        {vehicle.brand} {vehicle.model} {vehicle.year}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 mb-3">
+                    {sorted.map(p => {
+                      const role = p.saleParticipant?.role || 'OTHER';
+                      const sharePct = p.saleParticipant?.sharePct ? Number(p.saleParticipant.sharePct) : null;
+                      const pending = parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
+                      const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.PENDING;
+                      const isPaid = p.status === 'PAID' || p.status === 'CANCELLED';
+                      const roleLabel = ROLE_LABEL[role] || role;
+                      return (
+                        <div
+                          key={p.id}
+                          className="bg-[#0F1419] rounded-lg p-3 border border-border"
+                          data-testid={`commission-role-${role.toLowerCase()}-${vehicle?.plate || vehicleId}`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-[#BC8CFF]/10 text-[#BC8CFF] border border-[#BC8CFF]/30">
+                              {role}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${status.color}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                          <div className="flex items-end justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-[#6E7681]">
+                                {roleLabel}{sharePct != null ? ` (${sharePct}%)` : ''}
+                              </div>
+                              <div className="text-base font-mono font-bold text-[#BC8CFF]">
+                                {formatCurrency(pending)}
+                              </div>
+                              {p.status === 'PARTIAL' && (
+                                <div className="text-[10px] font-mono text-[#8B949E] mt-0.5">
+                                  Pagado {formatCurrency(p.paidAmount)} / {formatCurrency(p.totalAmount)}
+                                </div>
+                              )}
+                            </div>
+                            {!isPaid && (
+                              <button
+                                onClick={(e) => handlePaymentClick(e, p)}
+                                data-testid={`payable-pay-${p.id}`}
+                                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors whitespace-nowrap"
+                              >
+                                💸 Pagar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <span className="text-xs text-[#6E7681]">Total comisión venta</span>
+                    <span className="text-sm font-mono font-bold text-[#BC8CFF]">{formatCurrency(totalAmount)}</span>
+                  </div>
+
+                  {vehicle && (
+                    <button
+                      onClick={() => navigate(`/vehicles/${vehicleId}`)}
+                      className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-surface-hover text-[#E6EDF3] hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      Ver vehículo →
+                    </button>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
+          {/* CxC y CxP regulares (no-COMMISSION) usan el layout original */}
+          {payables.filter(p => !(p.type === 'COMMISSION' && p.vehicleId)).map(payable => {
             const pending = parseFloat(payable.totalAmount) - parseFloat(payable.paidAmount);
             const isReceivable = payable.type === 'RECEIVABLE';
             const isCommission = payable.type === 'COMMISSION';

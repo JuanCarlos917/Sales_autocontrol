@@ -413,11 +413,12 @@ test.describe('Comisiones — configuración global', () => {
     expect(body.payables!.count).toBeGreaterThanOrEqual(2); // al menos 2 nuevas (cap+cer)
   });
 
-  test('PayablesPage muestra desglose Captador/Cerrador en card Comisiones', async ({ page }) => {
+  test('PayablesPage muestra 1 card por venta con desglose Captador/Cerrador y % de Settings', async ({ page }) => {
     const token = await loginAsAdmin(page);
-    // Generar una venta cash con ganancia 10M → pool comisión 6M → captador 1.8M + cerrador 4.2M
+    // Venta cash con ganancia 10M → pool comisión 6M → captador 1.8M (30%) + cerrador 4.2M (70%)
+    const plate = `PYD${Date.now().toString().slice(-6)}`;
     const v = await apiCreateVehicle(token, {
-      plate: `PYD${Date.now().toString().slice(-6)}`,
+      plate,
       stage: 'COMPRADO',
       negotiatedValue: 20_000_000,
       purchasePrice: 20_000_000,
@@ -432,10 +433,29 @@ test.describe('Comisiones — configuración global', () => {
     });
 
     await page.goto('/treasury/payables');
-    await expect(page.getByTestId('commissions-total')).toBeVisible({ timeout: 10_000 });
-    // El desglose debe mostrar ambos roles con sus montos respectivos
+
+    // Header card de totales sigue mostrando los subtotales por rol
     await expect(page.getByTestId('commissions-captador')).toContainText(/1\.800\.000|1,800,000/);
     await expect(page.getByTestId('commissions-cerrador')).toContainText(/4\.200\.000|4,200,000/);
+
+    // En el listado debe aparecer UNA card agrupada por venta con desglose interno
+    const group = page.getByTestId(`commission-group-${plate}`);
+    await expect(group).toBeVisible({ timeout: 10_000 });
+
+    const captadorRow = page.getByTestId(`commission-role-captador-${plate}`);
+    const cerradorRow = page.getByTestId(`commission-role-cerrador-${plate}`);
+    await expect(captadorRow).toBeVisible();
+    await expect(cerradorRow).toBeVisible();
+
+    // Cada row muestra el % junto al monto (tomado de Settings: 30% y 70%)
+    await expect(captadorRow).toContainText(/Captador.*30%/);
+    await expect(captadorRow).toContainText(/1\.800\.000|1,800,000/);
+    await expect(cerradorRow).toContainText(/Cerrador.*70%/);
+    await expect(cerradorRow).toContainText(/4\.200\.000|4,200,000/);
+
+    // Cada rol tiene su propio botón Pagar
+    await expect(captadorRow.getByText(/Pagar/)).toBeVisible();
+    await expect(cerradorRow.getByText(/Pagar/)).toBeVisible();
   });
 
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
