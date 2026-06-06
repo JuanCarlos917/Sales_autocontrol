@@ -113,10 +113,17 @@ export default function PayablesPage() {
     { id: 'commission', label: 'Comisiones', icon: '💼', color: 'text-[#BC8CFF]' },
   ];
 
+  const pendingDelta = (p) => parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
+  const commissionsByRole = (role) => payables
+    .filter(p => p.type === 'COMMISSION' && p.saleParticipant?.role === role)
+    .reduce((s, p) => s + pendingDelta(p), 0);
+
   const totals = {
-    receivable: payables.filter(p => p.type === 'RECEIVABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
-    payable: payables.filter(p => p.type === 'PAYABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
-    commission: payables.filter(p => p.type === 'COMMISSION').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
+    receivable: payables.filter(p => p.type === 'RECEIVABLE').reduce((s, p) => s + pendingDelta(p), 0),
+    payable: payables.filter(p => p.type === 'PAYABLE').reduce((s, p) => s + pendingDelta(p), 0),
+    commission: payables.filter(p => p.type === 'COMMISSION').reduce((s, p) => s + pendingDelta(p), 0),
+    commissionCaptador: commissionsByRole('CAPTADOR'),
+    commissionCerrador: commissionsByRole('CERRADOR'),
   };
 
   return (
@@ -147,7 +154,13 @@ export default function PayablesPage() {
           <div className="w-px h-8 bg-border" />
           <div className="text-right">
             <div className="text-[#6E7681]">Comisiones</div>
-            <div className="font-mono font-bold text-[#BC8CFF]">{formatCurrency(totals.commission)}</div>
+            <div className="font-mono font-bold text-[#BC8CFF]" data-testid="commissions-total">{formatCurrency(totals.commission)}</div>
+            {totals.commission > 0 && (
+              <div className="mt-1 text-[10px] text-[#8B949E] leading-tight">
+                <div data-testid="commissions-captador">Captador: <span className="font-mono text-[#BC8CFF]/80">{formatCurrency(totals.commissionCaptador)}</span></div>
+                <div data-testid="commissions-cerrador">Cerrador: <span className="font-mono text-[#BC8CFF]/80">{formatCurrency(totals.commissionCerrador)}</span></div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -209,6 +222,8 @@ export default function PayablesPage() {
           {payables.map(payable => {
             const pending = parseFloat(payable.totalAmount) - parseFloat(payable.paidAmount);
             const isReceivable = payable.type === 'RECEIVABLE';
+            const isCommission = payable.type === 'COMMISSION';
+            const commissionRole = payable.saleParticipant?.role;
             const overdue = isOverdue(payable.dueDate) && payable.status !== 'PAID';
             const daysInfo = getDaysInfo(payable.dueDate);
             const hasVehicle = !!payable.vehicleId;
@@ -224,15 +239,24 @@ export default function PayablesPage() {
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-lg ${isReceivable ? 'text-green-400' : 'text-red-400'}`}>
-                      {isReceivable ? '📥' : '📤'}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-lg ${isReceivable ? 'text-green-400' : isCommission ? 'text-[#BC8CFF]' : 'text-red-400'}`}>
+                      {isReceivable ? '📥' : isCommission ? '💼' : '📤'}
                     </span>
                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                      isReceivable ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      isReceivable
+                        ? 'bg-green-500/20 text-green-400'
+                        : isCommission
+                          ? 'bg-[#BC8CFF]/20 text-[#BC8CFF]'
+                          : 'bg-red-500/20 text-red-400'
                     }`}>
-                      {isReceivable ? 'CxC' : 'CxP'}
+                      {isReceivable ? 'CxC' : isCommission ? 'Comisión' : 'CxP'}
                     </span>
+                    {isCommission && commissionRole && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-[#BC8CFF]/10 text-[#BC8CFF] border border-[#BC8CFF]/30">
+                        {commissionRole}
+                      </span>
+                    )}
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusConfig.color}`}>
                     {statusConfig.label}

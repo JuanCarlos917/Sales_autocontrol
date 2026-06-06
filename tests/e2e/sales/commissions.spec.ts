@@ -413,6 +413,31 @@ test.describe('Comisiones — configuración global', () => {
     expect(body.payables!.count).toBeGreaterThanOrEqual(2); // al menos 2 nuevas (cap+cer)
   });
 
+  test('PayablesPage muestra desglose Captador/Cerrador en card Comisiones', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    // Generar una venta cash con ganancia 10M → pool comisión 6M → captador 1.8M + cerrador 4.2M
+    const v = await apiCreateVehicle(token, {
+      plate: `PYD${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+    });
+
+    await page.goto('/treasury/payables');
+    await expect(page.getByTestId('commissions-total')).toBeVisible({ timeout: 10_000 });
+    // El desglose debe mostrar ambos roles con sus montos respectivos
+    await expect(page.getByTestId('commissions-captador')).toContainText(/1\.800\.000|1,800,000/);
+    await expect(page.getByTestId('commissions-cerrador')).toContainText(/4\.200\.000|4,200,000/);
+  });
+
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/settings');
