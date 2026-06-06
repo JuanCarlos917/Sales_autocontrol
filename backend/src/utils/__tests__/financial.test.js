@@ -47,23 +47,61 @@ test('calculateParticipation: proporción normal (precio-aporte)/precio', () => 
 });
 
 // ── calculateVehicleMetrics ──────────────────────────────────
-test('métricas: categoriza gastos y calcula no pagados', () => {
+test('métricas: categoriza gastos y calcula no pagados (sin comisiones legacy)', () => {
+  // La categoría COMISION fue eliminada del enum. Ahora las comisiones
+  // se modelan vía commissionPayables (3er parámetro), no como expenses.
   const v = {
     expenses: [
       { amount: 1_000_000, category: 'MECANICA', paid: true },
       { amount: 300_000, category: 'ESTETICA', paid: true },
-      { amount: 500_000, category: 'COMISION', paid: false },
       { amount: 200_000, category: 'IMPUESTOS', paid: true },
       { amount: 100_000, category: 'TRAMITE', paid: false },
     ],
   };
   const m = calculateVehicleMetrics(v);
-  assert.equal(m.totalExpenses, 2_100_000);
+  assert.equal(m.totalExpenses, 1_600_000);
   assert.equal(m.repairs, 1_300_000); // MECANICA + ESTETICA
-  assert.equal(m.commissions, 500_000); // COMISION
-  assert.equal(m.taxes, 300_000); // IMPUESTOS + TRAMITE
-  assert.equal(m.unpaidExpenses, 600_000); // COMISION + TRAMITE
-  assert.equal(m.expenseCount, 5);
+  assert.equal(m.commissions, 0);     // ya no se calculan desde expenses
+  assert.equal(m.commissionTotal, 0);
+  assert.equal(m.taxes, 300_000);     // IMPUESTOS + TRAMITE
+  assert.equal(m.unpaidExpenses, 100_000); // TRAMITE
+  assert.equal(m.expenseCount, 4);
+});
+
+test('métricas: comisiones desde commissionPayables, descuenta solo lo pagado', () => {
+  // Venta 30M - compra 20M = ganancia 10M. Comisión pool 60% = 6M.
+  // Captador 30% = 1.8M (pagado), Cerrador 70% = 4.2M (pendiente).
+  // netProfit debe restar solo lo PAGADO (1.8M), no el total.
+  const v = {
+    stage: 'VENDIDO',
+    purchasePrice: 20_000_000,
+    salePrice: 30_000_000,
+    expenses: [],
+    // sin purchaseDate → 0 días fijo
+  };
+  const payables = [
+    { totalAmount: 1_800_000, paidAmount: 1_800_000, saleParticipant: { role: 'CAPTADOR' } },
+    { totalAmount: 4_200_000, paidAmount: 0,         saleParticipant: { role: 'CERRADOR' } },
+  ];
+  const m = calculateVehicleMetrics(v, 800_000, payables);
+  assert.equal(m.commissionTotal, 6_000_000);
+  assert.equal(m.commissionPaid, 1_800_000);
+  assert.equal(m.commissionPending, 4_200_000);
+  assert.equal(m.commissionCaptador, 1_800_000);
+  assert.equal(m.commissionCerrador, 4_200_000);
+  // netProfit = 30M - 20M (sin gastos ni fijo) - 1.8M pagado = 8.2M
+  assert.equal(m.netProfit, 8_200_000);
+});
+
+test('métricas: comisión pendiente NO descuenta netProfit', () => {
+  const v = { stage: 'VENDIDO', purchasePrice: 20_000_000, salePrice: 30_000_000, expenses: [] };
+  const payables = [
+    { totalAmount: 6_000_000, paidAmount: 0, saleParticipant: { role: 'CERRADOR' } },
+  ];
+  const m = calculateVehicleMetrics(v, 800_000, payables);
+  assert.equal(m.commissionPaid, 0);
+  assert.equal(m.commissionPending, 6_000_000);
+  assert.equal(m.netProfit, 10_000_000); // pendiente NO descuenta
 });
 
 test('métricas: sin precio de referencia → sin ganancia', () => {
@@ -98,7 +136,7 @@ test('métricas: vendido sin socio → ganancia real con gasto fijo prorrateado'
     saleDate: '2026-01-31', // 30 días → fijo = fixedMonthly
     expenses: [
       { amount: 1_000_000, category: 'MECANICA', paid: true },
-      { amount: 500_000, category: 'COMISION', paid: false },
+      { amount: 500_000, category: 'OTRO', paid: false }, // antes COMISION (eliminada)
     ],
   }); // fixedMonthly default 800_000
   assert.equal(m.daysInInventory, 30);

@@ -146,7 +146,19 @@ class VehicleService {
       (vehicle.documents || []).map(async (d) => ({ ...d, url: await storage.getUrl(d.filepath) }))
     );
 
-    return { ...vehicle, documents, metrics: calculateVehicleMetrics(vehicle, fixedMonthly) };
+    // Comisiones devengadas/pagadas para el vehículo (Payable type=COMMISSION).
+    // Hidratamos saleParticipant para que el cálculo agrupe por rol (CAPTADOR/CERRADOR).
+    const commissionPayables = await prisma.payable.findMany({
+      where: { vehicleId: id, type: 'COMMISSION' },
+      include: { saleParticipant: { select: { role: true, sharePct: true } } },
+    });
+
+    return {
+      ...vehicle,
+      documents,
+      commissionPayables,
+      metrics: calculateVehicleMetrics(vehicle, fixedMonthly, commissionPayables),
+    };
   }
 
   async create(data, userId) {

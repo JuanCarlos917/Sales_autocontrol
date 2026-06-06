@@ -604,7 +604,26 @@ export default function VehicleDetailPage() {
             <FinCard label="Gastos Fijos Prorrateados" value={formatCurrency(m.fixedProrated)} sub={`${m.daysInInventory}d`} />
             <FinCard label="COSTO REAL TOTAL" value={formatCurrency(m.realCostWithFixed)} color="text-accent" highlight />
             <FinCard label="Reparaciones" value={formatCurrency(m.repairs)} color="text-[#EF4444]" />
-            <FinCard label="Comisiones" value={formatCurrency(m.commissions)} color="text-[#F472B6]" />
+            <FinCard
+              label="Comisiones de la venta"
+              value={formatCurrency(m.commissionTotal || 0)}
+              color="text-[#BC8CFF]"
+              sub={
+                vehicle.stage === 'VENDIDO' && (m.commissionTotal || 0) > 0
+                  ? `Captador: ${formatCurrency(m.commissionCaptador || 0)} · Cerrador: ${formatCurrency(m.commissionCerrador || 0)}`
+                  : (m.commissionTotal > 0
+                      ? null
+                      : (vehicle.stage === 'VENDIDO' ? 'Sin comisiones registradas' : 'Solo al vender se calculan'))
+              }
+            />
+            {(m.commissionTotal || 0) > 0 && (
+              <FinCard
+                label="Comisiones — estado"
+                value={`Pendiente: ${formatCurrency(m.commissionPending || 0)}`}
+                color="text-amber-400"
+                sub={`Pagado: ${formatCurrency(m.commissionPaid || 0)} (descontado de ganancia)`}
+              />
+            )}
             <FinCard label="Trámites / Impuestos" value={formatCurrency(m.taxes)} color="text-[#5B8DEF]" />
             {vehicle.partnerId && m.partnerContribution > 0 && (
               <>

@@ -11,12 +11,14 @@ export const STAGES = [
   { id: 'VENDIDO', label: 'Vendido', color: '#10B981', bg: 'bg-[#10B98115]', text: 'text-[#10B981]', desc: 'Negocio cerrado' },
 ];
 
+// Nota: la categoría COMISION fue eliminada — las comisiones se modelan vía
+// Payable type=COMMISSION (uno por participante) en el flujo de venta, no como
+// gasto del vehículo. Ver pestaña Financiero del vehículo y /treasury/payables.
 export const EXPENSE_CATEGORIES = [
   { id: 'MECANICA', label: 'Mecánica', icon: '⚙', color: '#EF4444' },
   { id: 'ESTETICA', label: 'Estética / Lavado', icon: '✦', color: '#A78BFA' },
   { id: 'IMPUESTOS', label: 'Impuestos', icon: '§', color: '#E9A23B' },
   { id: 'TRAMITE', label: 'Trámite / Notaría', icon: '⊞', color: '#5B8DEF' },
-  { id: 'COMISION', label: 'Comisión', icon: '⊕', color: '#F472B6' },
   { id: 'PARQUEADERO', label: 'Parqueadero', icon: '⊟', color: '#6B7280' },
   { id: 'PUBLICIDAD', label: 'Publicidad', icon: '◈', color: '#14B8A6' },
   { id: 'COMBUSTIBLE', label: 'Combustible', icon: '◉', color: '#F97316' },

@@ -239,7 +239,7 @@ const vehicleCollectionSchema = Joi.object({
 // ── Expense Schemas ──
 const expenseSchema = Joi.object({
   vehicleId: Joi.string().required(),
-  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'COMISION', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO').required(),
+  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO').required(),
   amount: Joi.number().min(0).required(),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(1000).allow('', null),
@@ -251,7 +251,7 @@ const expenseSchema = Joi.object({
 // accountId SIEMPRE obligatorio: todo gasto debe estar asociado a una cuenta
 const expenseWithTreasurySchema = Joi.object({
   vehicleId: Joi.string().required(),
-  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'COMISION', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO').required(),
+  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO').required(),
   amount: Joi.number().positive().required(),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(1000).allow('', null),
@@ -272,7 +272,7 @@ const expensePaymentSchema = Joi.object({
 // ── Expense Update Schema (campos editables + reason opcional) ──
 const expenseUpdateSchema = Joi.object({
   accountId: Joi.string(),
-  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'COMISION', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO'),
+  category: Joi.string().valid('MECANICA', 'ESTETICA', 'IMPUESTOS', 'TRAMITE', 'PARQUEADERO', 'PUBLICIDAD', 'COMBUSTIBLE', 'OTRO'),
   amount: Joi.number().positive(),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(1000).allow('', null),

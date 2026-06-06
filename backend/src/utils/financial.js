@@ -23,7 +23,7 @@ function daysBetween(startDate, endDate = null) {
  *     · partnerAssumesExpenses=true  → socio asume su parte de gastos (pro-rata sobre ganancia neta).
  *     · partnerAssumesExpenses=false → yo asumo 100% de gastos; socio recibe su % sobre ganancia bruta (salePrice - purchasePrice).
  */
-function calculateVehicleMetrics(vehicle, fixedMonthly = 800000) {
+function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayables = []) {
   const expenses = vehicle.expenses || [];
 
   const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
@@ -32,9 +32,19 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000) {
     .filter(e => ['MECANICA', 'ESTETICA'].includes(e.category))
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const commissions = expenses
-    .filter(e => e.category === 'COMISION')
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  // Comisiones: ya no se modelan como Expense con categoría COMISION (eliminada).
+  // Se computan desde los Payable type=COMMISSION asociados al vehículo, que vienen
+  // del flujo de venta (un Payable por participante: captador, cerrador).
+  // El total es informativo; lo PAGADO es lo que efectivamente descuenta del netProfit
+  // (un Payable PENDING todavía no salió de tesorería).
+  const commissionTotal = commissionPayables.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0);
+  const commissionPaid = commissionPayables.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
+  const commissionPending = commissionTotal - commissionPaid;
+  const sumByRole = (role) => commissionPayables
+    .filter(p => (p.saleParticipant?.role || p.role) === role)
+    .reduce((sum, p) => sum + Number(p.totalAmount || 0), 0);
+  const commissionCaptador = sumByRole('CAPTADOR');
+  const commissionCerrador = sumByRole('CERRADOR');
 
   const taxes = expenses
     .filter(e => ['IMPUESTOS', 'TRAMITE'].includes(e.category))
@@ -70,7 +80,8 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000) {
   let roi = null;
 
   if (hasProfitData) {
-    netProfit = referencePrice - realCostWithFixed;
+    // netProfit descuenta solo la comisión PAGADA (el pendiente todavía no salió de caja).
+    netProfit = referencePrice - realCostWithFixed - commissionPaid;
     roi = realCostWithFixed > 0 ? netProfit / realCostWithFixed : 0;
 
     if (partnerShare > 0 && !partnerAssumesExpenses) {
@@ -96,7 +107,12 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000) {
   return {
     totalExpenses,
     repairs,
-    commissions,
+    commissions: commissionTotal,         // alias retro-compatible
+    commissionTotal,
+    commissionPaid,
+    commissionPending,
+    commissionCaptador,
+    commissionCerrador,
     taxes,
     unpaidExpenses,
     daysInInventory,
@@ -163,6 +179,8 @@ function calculateParticipation(purchasePrice, partnerContribution) {
  */
 function calculateCommissionBase(vehicle) {
   const expenses = vehicle.expenses || [];
+  // La categoría COMISION fue eliminada del enum; el filtro queda como guard
+  // defensivo por si llega data legacy desde una caller que no pasó por la DB.
   const directExpenses = expenses
     .filter(e => e.category !== 'COMISION')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
