@@ -30,16 +30,14 @@ test.describe('Gastos — soft delete y undo', () => {
     const visible = await apiListExpenses(token);
     expect(visible.find((e) => e.id === expense.id)).toBeUndefined();
 
-    // Transacciones: original + reverso (net = 0)
+    // Listing rollup: el gasto borrado no aparece como movimiento visible.
+    // El original VEHICLE_EXPENSE y el EXPENSE_REVERSAL existen en DB (para audit
+    // trail y para que el balance de cuenta esté correcto), pero el endpoint los
+    // oculta porque suman 0 / el expense está soft-deleted.
     const txs = await apiListTransactions(token, { accountId: TEST_SEED_IDS.accountCash });
     const expenseTxs = txs.filter((t) => t.expenseId === expense.id);
-    expect(expenseTxs.length).toBe(2);
-    const reversal = expenseTxs.find((t) => t.category === 'EXPENSE_REVERSAL');
-    expect(reversal).toBeDefined();
-    expect(reversal?.type).toBe('INCOME');
-
-    const net = expenseTxs.reduce((s, t) => s + (t.type === 'EXPENSE' ? -1 : 1) * parseFloat(t.amount as string), 0);
-    expect(net).toBe(0);
+    expect(expenseTxs.length).toBe(0);
+    expect(txs.find((t) => t.category === 'EXPENSE_REVERSAL')).toBeUndefined();
 
     const audit = await apiGetExpenseAudit(token, expense.id);
     const del = audit.find((a) => a.action === 'DELETE');

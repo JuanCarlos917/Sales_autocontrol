@@ -12,6 +12,70 @@ const TRANSACTION_INCLUDE = {
   vehicle: { select: { id: true, plate: true, brand: true, model: true } },
 };
 
+/**
+ * Rollup de transacciones ligadas a gastos:
+ *  - Filtra EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL (son ruido contable interno
+ *    para preservar audit trail; no deben aparecer como movimientos visibles).
+ *  - Para VEHICLE_EXPENSE con expenseId: override el amount y la cuenta con el
+ *    estado actual del Expense (refleja ediciones de monto / cambio de cuenta).
+ *  - Omite gastos soft-deleted (la transacción original ya no aplica).
+ *  - Conserva intactas las transacciones sin expenseId (ventas, compras, transfers,
+ *    ingresos manuales, etc.).
+ *
+ * Importante: NO toca el balance de las cuentas. accountService.calculateBalance
+ * sigue sumando TODAS las transacciones (originales + adjustments + reversals),
+ * que ya están matemáticamente compensadas. Esto es solo presentación.
+ */
+async function rollupExpenseTransactions(transactions) {
+  const expenseIds = [...new Set(transactions.filter(t => t.expenseId).map(t => t.expenseId))];
+  if (expenseIds.length === 0) {
+    return transactions.filter(t => t.category !== 'EXPENSE_ADJUSTMENT' && t.category !== 'EXPENSE_REVERSAL');
+  }
+  const expenses = await prisma.expense.findMany({
+    where: { id: { in: expenseIds } },
+    select: { id: true, amount: true, accountId: true, deletedAt: true },
+  });
+  const expensesById = Object.fromEntries(expenses.map(e => [e.id, e]));
+
+  // Cuentas nuevas (si hubo cambio de cuenta) para hidratar el account.name del response
+  const overrideAccountIds = [...new Set(
+    transactions
+      .filter(t => t.expenseId && t.category === 'VEHICLE_EXPENSE')
+      .map(t => {
+        const exp = expensesById[t.expenseId];
+        return exp && !exp.deletedAt && exp.accountId !== t.accountId ? exp.accountId : null;
+      })
+      .filter(Boolean)
+  )];
+  const overrideAccounts = overrideAccountIds.length > 0
+    ? Object.fromEntries(
+        (await prisma.account.findMany({
+          where: { id: { in: overrideAccountIds } },
+          select: { id: true, name: true, type: true },
+        })).map(a => [a.id, a])
+      )
+    : {};
+
+  const result = [];
+  for (const tx of transactions) {
+    if (tx.category === 'EXPENSE_ADJUSTMENT' || tx.category === 'EXPENSE_REVERSAL') continue;
+    if (tx.expenseId && tx.category === 'VEHICLE_EXPENSE') {
+      const exp = expensesById[tx.expenseId];
+      if (!exp || exp.deletedAt) continue; // gasto borrado → no se ve
+      const accountChanged = exp.accountId !== tx.accountId;
+      result.push({
+        ...tx,
+        amount: exp.amount,
+        accountId: exp.accountId,
+        account: accountChanged ? (overrideAccounts[exp.accountId] || tx.account) : tx.account,
+      });
+      continue;
+    }
+    result.push(tx);
+  }
+  return result;
+}
+
 class TransactionService {
   async findAll({ accountId, vehicleId, thirdPartyId, type, category, startDate, endDate, limit = 100, offset = 0 } = {}) {
     const where = {};
@@ -40,7 +104,8 @@ class TransactionService {
       prisma.transaction.count({ where }),
     ]);
 
-    return { transactions, total, limit, offset };
+    const rolled = await rollupExpenseTransactions(transactions);
+    return { transactions: rolled, total, limit, offset };
   }
 
   async findById(id) {
@@ -53,11 +118,12 @@ class TransactionService {
   }
 
   async findByVehicle(vehicleId) {
-    return prisma.transaction.findMany({
+    const transactions = await prisma.transaction.findMany({
       where: { vehicleId },
       include: TRANSACTION_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return rollupExpenseTransactions(transactions);
   }
 
   async createIncome(data, userId) {
