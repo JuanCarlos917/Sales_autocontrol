@@ -40,6 +40,33 @@ Stack: React 18 + Vite + TailwindCSS (frontend) | Node.js + Express + Prisma + P
 - Idioma de la UI: Español (Colombia)
 - Idioma del código: Inglés (variables, funciones, comentarios técnicos)
 
+## Modelo de Claude
+
+**Política**: este proyecto siempre usa el modelo de Claude **más avanzado disponible** en producción. Cuando Anthropic libere una versión superior (ej. Opus 5.x), actualizar TODOS los lugares listados abajo al mismo tiempo para evitar mezclas de versiones.
+
+**Versión actual:** Claude **Opus 4.7** (ID: `claude-opus-4-7`)
+
+**Familia Claude 4.X (referencia):**
+
+| Tier | Modelo | ID | Uso recomendado |
+|---|---|---|---|
+| Top | Opus 4.7 | `claude-opus-4-7` | Razonamiento profundo, código complejo, decisiones arquitectónicas |
+| Estándar | Sonnet 4.6 | `claude-sonnet-4-6` | Coding diario, refactors, features estándar |
+| Económico | Haiku 4.5 | `claude-haiku-4-5-20251001` | Tareas mecánicas frecuentes, batch, embeddings |
+
+**Lugares donde está hard-codeado el modelo** (mantener en sync al actualizar):
+
+| Archivo | Línea | Propósito |
+|---|---|---|
+| `.claude/settings.json` | `"model"` | Modelo que usa Claude Code en este proyecto |
+| `backend/src/utils/aiExtractor.js` | `const MODEL` | Modelo para extracción IA de tarjeta de propiedad |
+
+**Cómo actualizar a una nueva versión:**
+1. Verificar el ID exacto del modelo nuevo en docs.anthropic.com
+2. Reemplazar el ID en los 2 archivos listados arriba en un solo PR
+3. Actualizar la tabla "Familia Claude 4.X" si la familia cambia
+4. Ejecutar suite e2e + unit completa para verificar que el modelo nuevo se comporta igual
+
 ## Base de Datos
 - Schema en `backend/prisma/schema.prisma` — es la fuente de verdad
 - Enums: VehicleStage, ExpenseCategory, DocumentType, Role
