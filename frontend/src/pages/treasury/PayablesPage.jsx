@@ -25,9 +25,12 @@ export default function PayablesPage() {
   const [selectedPayable, setSelectedPayable] = useState(null);
   const [processingPayment, setProcessingPayment] = useState(false);
 
+  // Cargar TODAS las CxPs una sola vez. El filtrado por tab (Receivable/Payable/
+  // Commission) se hace en cliente — así los counters del header y los badges de
+  // las pestañas siempre reflejan el total real sin esperar refetch al cambiar tab.
   useEffect(() => {
     loadPayables();
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
     const type = searchParams.get('type');
@@ -39,13 +42,7 @@ export default function PayablesPage() {
   const loadPayables = async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (filter === 'receivable') params.type = 'RECEIVABLE';
-      if (filter === 'payable') params.type = 'PAYABLE';
-      if (filter === 'commission') params.type = 'COMMISSION';
-
-      const { data } = await payablesApi.getAll(params);
-      // Filtrar solo pendientes y parciales en el frontend
+      const { data } = await payablesApi.getAll({});
       const pendingPayables = (data || []).filter(p => p.status === 'PENDING' || p.status === 'PARTIAL');
       setPayables(pendingPayables);
     } catch (err) {
@@ -113,11 +110,26 @@ export default function PayablesPage() {
     { id: 'commission', label: 'Comisiones', icon: '💼', color: 'text-[#BC8CFF]' },
   ];
 
+  const pendingDelta = (p) => parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
+  const commissionsByRole = (role) => payables
+    .filter(p => p.type === 'COMMISSION' && p.saleParticipant?.role === role)
+    .reduce((s, p) => s + pendingDelta(p), 0);
+
   const totals = {
-    receivable: payables.filter(p => p.type === 'RECEIVABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
-    payable: payables.filter(p => p.type === 'PAYABLE').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
-    commission: payables.filter(p => p.type === 'COMMISSION').reduce((s, p) => s + parseFloat(p.totalAmount) - parseFloat(p.paidAmount), 0),
+    receivable: payables.filter(p => p.type === 'RECEIVABLE').reduce((s, p) => s + pendingDelta(p), 0),
+    payable: payables.filter(p => p.type === 'PAYABLE').reduce((s, p) => s + pendingDelta(p), 0),
+    commission: payables.filter(p => p.type === 'COMMISSION').reduce((s, p) => s + pendingDelta(p), 0),
+    commissionCaptador: commissionsByRole('CAPTADOR'),
+    commissionCerrador: commissionsByRole('CERRADOR'),
   };
+
+  // Lista visible según pestaña activa (filtrado client-side, instantáneo)
+  const visiblePayables = filter === 'all' ? payables : payables.filter(p => {
+    if (filter === 'receivable') return p.type === 'RECEIVABLE';
+    if (filter === 'payable') return p.type === 'PAYABLE';
+    if (filter === 'commission') return p.type === 'COMMISSION';
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -147,7 +159,13 @@ export default function PayablesPage() {
           <div className="w-px h-8 bg-border" />
           <div className="text-right">
             <div className="text-[#6E7681]">Comisiones</div>
-            <div className="font-mono font-bold text-[#BC8CFF]">{formatCurrency(totals.commission)}</div>
+            <div className="font-mono font-bold text-[#BC8CFF]" data-testid="commissions-total">{formatCurrency(totals.commission)}</div>
+            {totals.commission > 0 && (
+              <div className="mt-1 text-[10px] text-[#8B949E] leading-tight">
+                <div data-testid="commissions-captador">Captador: <span className="font-mono text-[#BC8CFF]/80">{formatCurrency(totals.commissionCaptador)}</span></div>
+                <div data-testid="commissions-cerrador">Cerrador: <span className="font-mono text-[#BC8CFF]/80">{formatCurrency(totals.commissionCerrador)}</span></div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -193,7 +211,7 @@ export default function PayablesPage() {
             </div>
           ))}
         </div>
-      ) : payables.length === 0 ? (
+      ) : visiblePayables.length === 0 ? (
         <div className="card p-12 text-center">
           <div className="text-4xl mb-4">✅</div>
           <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Sin cuentas pendientes</h3>
@@ -206,9 +224,125 @@ export default function PayablesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {payables.map(payable => {
+          {/* Agrupar CxPs COMMISSION por vehículo (1 card por venta con desglose por rol) */}
+          {(() => {
+            const ROLE_LABEL = { CAPTADOR: 'Captador', CERRADOR: 'Cerrador', OTHER: 'Otro' };
+            const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
+            const groupsByVehicle = new Map();
+            for (const p of visiblePayables) {
+              if (p.type === 'COMMISSION' && p.vehicleId) {
+                if (!groupsByVehicle.has(p.vehicleId)) groupsByVehicle.set(p.vehicleId, []);
+                groupsByVehicle.get(p.vehicleId).push(p);
+              }
+            }
+            return Array.from(groupsByVehicle.entries()).map(([vehicleId, group]) => {
+              const vehicle = group[0].vehicle;
+              const totalAmount = group.reduce((s, p) => s + parseFloat(p.totalAmount), 0);
+              const sorted = [...group].sort((a, b) =>
+                (ROLE_ORDER[a.saleParticipant?.role] ?? 99) - (ROLE_ORDER[b.saleParticipant?.role] ?? 99)
+              );
+              return (
+                <div
+                  key={`commission-group-${vehicleId}`}
+                  className="card p-4 transition-all border-[#BC8CFF]/20"
+                  data-testid={`commission-group-${vehicle?.plate || vehicleId}`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg text-[#BC8CFF]">💼</span>
+                      <span className="text-xs px-2 py-0.5 rounded font-semibold bg-[#BC8CFF]/20 text-[#BC8CFF]">
+                        Comisión venta
+                      </span>
+                    </div>
+                  </div>
+
+                  {vehicle && (
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl">🚗</span>
+                        <span className="plate-text text-lg">{vehicle.plate}</span>
+                      </div>
+                      <div className="text-sm text-[#8B949E]">
+                        {vehicle.brand} {vehicle.model} {vehicle.year}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 mb-3">
+                    {sorted.map(p => {
+                      const role = p.saleParticipant?.role || 'OTHER';
+                      const sharePct = p.saleParticipant?.sharePct ? Number(p.saleParticipant.sharePct) : null;
+                      const pending = parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
+                      const status = STATUS_CONFIG[p.status] || STATUS_CONFIG.PENDING;
+                      const isPaid = p.status === 'PAID' || p.status === 'CANCELLED';
+                      const roleLabel = ROLE_LABEL[role] || role;
+                      return (
+                        <div
+                          key={p.id}
+                          className="bg-[#0F1419] rounded-lg p-3 border border-border"
+                          data-testid={`commission-role-${role.toLowerCase()}-${vehicle?.plate || vehicleId}`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-[#BC8CFF]/10 text-[#BC8CFF] border border-[#BC8CFF]/30">
+                              {role}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${status.color}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                          <div className="flex items-end justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[11px] text-[#6E7681]">
+                                {roleLabel}{sharePct != null ? ` (${sharePct}%)` : ''}
+                              </div>
+                              <div className="text-base font-mono font-bold text-[#BC8CFF]">
+                                {formatCurrency(pending)}
+                              </div>
+                              {p.status === 'PARTIAL' && (
+                                <div className="text-[10px] font-mono text-[#8B949E] mt-0.5">
+                                  Pagado {formatCurrency(p.paidAmount)} / {formatCurrency(p.totalAmount)}
+                                </div>
+                              )}
+                            </div>
+                            {!isPaid && (
+                              <button
+                                onClick={(e) => handlePaymentClick(e, p)}
+                                data-testid={`payable-pay-${p.id}`}
+                                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors whitespace-nowrap"
+                              >
+                                💸 Pagar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <span className="text-xs text-[#6E7681]">Total comisión venta</span>
+                    <span className="text-sm font-mono font-bold text-[#BC8CFF]">{formatCurrency(totalAmount)}</span>
+                  </div>
+
+                  {vehicle && (
+                    <button
+                      onClick={() => navigate(`/vehicles/${vehicleId}`)}
+                      className="mt-3 w-full py-2 rounded-lg text-xs font-semibold bg-surface-hover text-[#E6EDF3] hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      Ver vehículo →
+                    </button>
+                  )}
+                </div>
+              );
+            });
+          })()}
+
+          {/* CxC y CxP regulares (no-COMMISSION) usan el layout original */}
+          {visiblePayables.filter(p => !(p.type === 'COMMISSION' && p.vehicleId)).map(payable => {
             const pending = parseFloat(payable.totalAmount) - parseFloat(payable.paidAmount);
             const isReceivable = payable.type === 'RECEIVABLE';
+            const isCommission = payable.type === 'COMMISSION';
+            const commissionRole = payable.saleParticipant?.role;
             const overdue = isOverdue(payable.dueDate) && payable.status !== 'PAID';
             const daysInfo = getDaysInfo(payable.dueDate);
             const hasVehicle = !!payable.vehicleId;
@@ -224,15 +358,24 @@ export default function PayablesPage() {
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-lg ${isReceivable ? 'text-green-400' : 'text-red-400'}`}>
-                      {isReceivable ? '📥' : '📤'}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-lg ${isReceivable ? 'text-green-400' : isCommission ? 'text-[#BC8CFF]' : 'text-red-400'}`}>
+                      {isReceivable ? '📥' : isCommission ? '💼' : '📤'}
                     </span>
                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                      isReceivable ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                      isReceivable
+                        ? 'bg-green-500/20 text-green-400'
+                        : isCommission
+                          ? 'bg-[#BC8CFF]/20 text-[#BC8CFF]'
+                          : 'bg-red-500/20 text-red-400'
                     }`}>
-                      {isReceivable ? 'CxC' : 'CxP'}
+                      {isReceivable ? 'CxC' : isCommission ? 'Comisión' : 'CxP'}
                     </span>
+                    {isCommission && commissionRole && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-[#BC8CFF]/10 text-[#BC8CFF] border border-[#BC8CFF]/30">
+                        {commissionRole}
+                      </span>
+                    )}
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusConfig.color}`}>
                     {statusConfig.label}

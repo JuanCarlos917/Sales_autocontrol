@@ -48,11 +48,15 @@ async function loadCommissionConfig(prismaOrTx) {
 /**
  * Resuelve la lista de participantes para una venta:
  * - Si saleData.participants viene, valida que sume 100 y que cada thirdPartyId exista.
- * - Si no viene, devuelve el default: el ThirdParty "owner-self" como CERRADOR 100%.
+ * - Si no viene, devuelve 2 participantes default desde Settings:
+ *     - "owner-self" como CAPTADOR con default_captador_pct
+ *     - "owner-self" como CERRADOR con default_cerrador_pct
+ *   Hasta que la UI permita reasignar (Fase 2), ambos roles van al dueño con sus
+ *   % configurados — pero como CxPs separadas: son pagos diferentes por rol.
  *
  * Devuelve [{ thirdPartyId, role, sharePct }].
  */
-async function resolveParticipants(prismaOrTx, saleParticipants) {
+async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
   if (Array.isArray(saleParticipants) && saleParticipants.length > 0) {
     const sum = saleParticipants.reduce((acc, p) => acc + Number(p.sharePct || 0), 0);
     if (Math.abs(sum - 100) > 0.001) {
@@ -75,7 +79,7 @@ async function resolveParticipants(prismaOrTx, saleParticipants) {
     }));
   }
 
-  // Default: owner-self como CERRADOR 100%
+  // Default: 2 CxPs separadas (captador + cerrador) desde Settings.
   const owner = await prismaOrTx.thirdParty.findUnique({
     where: { id: 'owner-self' },
     select: { id: true },
@@ -86,7 +90,12 @@ async function resolveParticipants(prismaOrTx, saleParticipants) {
       500
     );
   }
-  return [{ thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: 100 }];
+  const captadorPct = cfg?.defaultCaptadorPct ?? 30;
+  const cerradorPct = cfg?.defaultCerradorPct ?? 70;
+  return [
+    { thirdPartyId: 'owner-self', role: 'CAPTADOR', sharePct: captadorPct },
+    { thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: cerradorPct },
+  ];
 }
 
 /**

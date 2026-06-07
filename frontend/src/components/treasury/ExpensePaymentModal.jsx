@@ -12,7 +12,6 @@ const EXPENSE_CATEGORIES = [
   { id: 'ESTETICA', label: 'Estetica' },
   { id: 'IMPUESTOS', label: 'Impuestos' },
   { id: 'TRAMITE', label: 'Tramite' },
-  { id: 'COMISION', label: 'Comision' },
   { id: 'PARQUEADERO', label: 'Parqueadero' },
   { id: 'PUBLICIDAD', label: 'Publicidad' },
   { id: 'COMBUSTIBLE', label: 'Combustible' },

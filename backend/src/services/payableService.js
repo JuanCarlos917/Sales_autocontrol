@@ -41,6 +41,9 @@ const getAll = async (filters = {}) => {
       vehicle: { select: { id: true, plate: true, brand: true, model: true, year: true } },
       expense: { select: { id: true, category: true, description: true } },
       thirdParty: { select: { id: true, name: true, type: true } },
+      // Para CxP COMMISSION: exponer el rol (CAPTADOR/CERRADOR) y % aplicado
+      // para que el cliente pueda agrupar/sumar por rol sin parsear descripciones.
+      saleParticipant: { select: { role: true, sharePct: true } },
       payments: {
         include: {
           transaction: { select: { id: true, date: true, account: { select: { name: true } } } }
@@ -260,10 +263,11 @@ const getSummary = async () => {
     _count: true
   });
 
-  // Total por pagar (CxP)
+  // Total por pagar (CxP) — incluye PAYABLE de compras y COMMISSION de comisiones
+  // ya devengadas. Ambas son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: 'PAYABLE',
+      type: { in: ['PAYABLE', 'COMMISSION'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -281,7 +285,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: 'PAYABLE',
+      type: { in: ['PAYABLE', 'COMMISSION'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }
