@@ -34,9 +34,28 @@ const CATEGORY_LABELS = {
   OTHER_INCOME: 'Otro Ingreso',
   OTHER_EXPENSE: 'Otro Gasto',
   TRANSFER: 'Transferencia',
+  EXPENSE_ADJUSTMENT: 'Ajuste de Gasto',
+  EXPENSE_REVERSAL: 'Reverso de Gasto',
 };
 
 const getCategoryLabel = (category) => CATEGORY_LABELS[category] || category || '—';
+
+// Badges para movimientos derivados: edición o borrado de un gasto crea
+// EXPENSE_ADJUSTMENT / EXPENSE_REVERSAL con reversesTransactionId apuntando
+// al VEHICLE_EXPENSE original. La UI los marca con color para que el usuario
+// los distinga de un movimiento normal.
+const ORIGIN_BADGE = {
+  EXPENSE_ADJUSTMENT: {
+    label: 'Ajuste',
+    className: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  },
+  EXPENSE_REVERSAL: {
+    label: 'Reverso',
+    className: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+  },
+};
+
+const shortId = (id) => (id ? `#${id.slice(-6)}` : '');
 
 export default function TransactionsPage() {
   const { role } = useAuth();
@@ -262,9 +281,31 @@ export default function TransactionsPage() {
                     <span className="text-[#6E7681] text-xs">—</span>
                   )}
                 </td>
-                <td className="p-3 text-[#E6EDF3] text-xs">{getCategoryLabel(tx.category)}</td>
+                <td className="p-3 text-[#E6EDF3] text-xs">
+                  <div className="flex items-center gap-2">
+                    <span>{getCategoryLabel(tx.category)}</span>
+                    {ORIGIN_BADGE[tx.category] && (
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${ORIGIN_BADGE[tx.category].className}`}
+                        title={
+                          tx.reversesTransactionId
+                            ? `Derivado del movimiento ${shortId(tx.reversesTransactionId)}`
+                            : 'Movimiento derivado de edición/borrado de un gasto'
+                        }
+                        data-testid={`origin-badge-${tx.category}`}
+                      >
+                        {ORIGIN_BADGE[tx.category].label}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="p-3 text-[#E6EDF3] hidden lg:table-cell truncate max-w-[280px]">
                   {tx.description || <span className="text-[#6E7681]">—</span>}
+                  {tx.reversesTransactionId && (
+                    <span className="ml-2 text-[10px] text-[#6E7681]" title={tx.reversesTransactionId}>
+                      ← {shortId(tx.reversesTransactionId)}
+                    </span>
+                  )}
                 </td>
                 <td className={`p-3 text-right font-semibold whitespace-nowrap ${getTypeColor(tx.type)}`}>
                   {tx.type === 'INCOME' || tx.type === 'TRANSFER_IN' ? '+' : '-'}

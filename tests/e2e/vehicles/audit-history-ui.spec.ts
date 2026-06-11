@@ -15,7 +15,8 @@ test.describe('Vehículos — historial de auditoría en VehicleDetailPage', () 
 
     await page.goto(`/vehicles/${v.id}?tab=historial`);
 
-    const entry = page.getByTestId('vehicle-audit-entry').first();
+    // El timeline unificado renderiza la edición como entrada VEHICLE_AUDIT.
+    const entry = page.getByTestId('timeline-VEHICLE_AUDIT').first();
     await expect(entry).toBeVisible();
     await expect(entry).toContainText('Edición');
     await expect(entry).toContainText('Marca');
@@ -29,6 +30,6 @@ test.describe('Vehículos — historial de auditoría en VehicleDetailPage', () 
 
     await page.goto(`/vehicles/${v.id}?tab=historial`);
 
-    await expect(page.getByTestId('vehicle-audit-empty')).toBeVisible();
+    await expect(page.getByTestId('vehicle-timeline-empty')).toBeVisible();
   });
 });

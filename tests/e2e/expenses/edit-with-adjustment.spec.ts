@@ -29,14 +29,17 @@ test.describe('Gastos — edit con ajuste de tesorería', () => {
     const txs = await apiListTransactions(token, { accountId: TEST_SEED_IDS.accountCash });
     const expenseTxs = txs.filter((t) => t.expenseId === expense.id);
 
-    // Listing rollup: el endpoint oculta EXPENSE_ADJUSTMENT y muestra el VEHICLE_EXPENSE
-    // con el monto ACTUAL (400k después de la edición). Los ajustes siguen en DB y
-    // mantienen los balances correctos, pero no asoman como movimientos separados.
-    expect(expenseTxs.length).toBe(1);
-    expect(expenseTxs[0].category).toBe('VEHICLE_EXPENSE');
-    expect(expenseTxs[0].type).toBe('EXPENSE');
-    expect(parseFloat(expenseTxs[0].amount as string)).toBe(400_000);
-    expect(txs.find((t) => t.category === 'EXPENSE_ADJUSTMENT')).toBeUndefined();
+    // Visibilidad total: el listing muestra el VEHICLE_EXPENSE original
+    // (500k) + el EXPENSE_ADJUSTMENT con el delta (-100k, type INCOME). El
+    // ajuste enlaza al original via reversesTransactionId.
+    expect(expenseTxs.length).toBe(2);
+    const original = expenseTxs.find((t) => t.category === 'VEHICLE_EXPENSE')!;
+    const adjustment = expenseTxs.find((t) => t.category === 'EXPENSE_ADJUSTMENT')!;
+    expect(original.type).toBe('EXPENSE');
+    expect(parseFloat(original.amount as string)).toBe(500_000);
+    expect(adjustment.type).toBe('INCOME'); // bajó el monto → compensación INCOME
+    expect(parseFloat(adjustment.amount as string)).toBe(100_000);
+    expect(adjustment.reversesTransactionId).toBe(original.id);
 
     // Audit log refleja el UPDATE
     const audit = await apiGetExpenseAudit(token, expense.id);

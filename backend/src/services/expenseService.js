@@ -435,6 +435,15 @@ class ExpenseService {
       throw new AppError('No se puede modificar monto ni cuenta de un gasto con pagos parciales registrados', 400);
     }
 
+    // Cambios financieros o de categoría requieren motivo (auditoría operativa)
+    const sensitiveChange =
+      changes.amount !== undefined ||
+      changes.accountId !== undefined ||
+      changes.category !== undefined;
+    if (sensitiveChange && (!reason || reason.trim().length < 10)) {
+      throw new AppError('Debe indicar un motivo (mín 10 caracteres) para modificar monto, cuenta o categoría del gasto', 400);
+    }
+
     const before = snapshot(expense);
 
     const result = await prisma.$transaction(async (tx) => {
@@ -460,6 +469,13 @@ class ExpenseService {
 
       // Caso pagado: generar Transactions de ajuste
       if (isPaidNow && touchesFinancials) {
+        // Transaction original VEHICLE_EXPENSE para vincular como reversesTransactionId
+        const originalTx = await tx.transaction.findFirst({
+          where: { expenseId: expense.id, category: 'VEHICLE_EXPENSE' },
+          orderBy: { createdAt: 'asc' },
+        });
+        const originalTxId = originalTx?.id || null;
+
         if (accountChanged) {
           // Reverso completo en cuenta vieja + cargo completo en cuenta nueva
           await tx.transaction.create({
@@ -472,6 +488,7 @@ class ExpenseService {
               date: new Date(),
               vehicleId: expense.vehicleId,
               expenseId: expense.id,
+              reversesTransactionId: originalTxId,
               createdBy: userId,
             },
           });
@@ -485,6 +502,7 @@ class ExpenseService {
               date: new Date(),
               vehicleId: expense.vehicleId,
               expenseId: expense.id,
+              reversesTransactionId: originalTxId,
               createdBy: userId,
             },
           });
@@ -500,6 +518,7 @@ class ExpenseService {
               date: new Date(),
               vehicleId: expense.vehicleId,
               expenseId: expense.id,
+              reversesTransactionId: originalTxId,
               createdBy: userId,
             },
           });
@@ -556,7 +575,8 @@ class ExpenseService {
     await prisma.$transaction(async (tx) => {
       await assertVehicleEditable(tx, expense.vehicleId);
 
-      // Crear reverso para cada Transaction no-reversal vinculada al gasto
+      // Crear reverso para cada Transaction no-reversal vinculada al gasto.
+      // Cada REVERSAL apunta a la transaction original que compensa vía reversesTransactionId.
       const toReverse = expense.transactions.filter((t) => t.category !== 'EXPENSE_REVERSAL');
       for (const t of toReverse) {
         const oppositeType = t.type === 'EXPENSE' ? 'INCOME' : 'EXPENSE';
@@ -571,6 +591,7 @@ class ExpenseService {
             vehicleId: t.vehicleId,
             expenseId: expense.id,
             thirdPartyId: t.thirdPartyId,
+            reversesTransactionId: t.id,
             createdBy: userId,
           },
         });

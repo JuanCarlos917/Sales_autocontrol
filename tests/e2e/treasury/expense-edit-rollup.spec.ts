@@ -10,15 +10,16 @@ import {
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
-// El backend crea EXPENSE_ADJUSTMENT al editar monto/cuenta y EXPENSE_REVERSAL al
-// borrar, para preservar audit trail. Pero el endpoint /treasury/transactions debe
-// ocultar ese ruido y mostrar cada gasto una vez con su estado ACTUAL (después de
-// la edición), o no mostrarlo si fue borrado. El balance de cuenta sí se calcula
-// sobre todas las transacciones (originales + adjustments + reversals), que están
-// matemáticamente compensadas.
+// Decisión 2026-06-08: movimientos inmutables + visibilidad total. El listing
+// /treasury/transactions NO oculta EXPENSE_ADJUSTMENT ni EXPENSE_REVERSAL; cada
+// uno aparece como su propia fila con reversesTransactionId apuntando al
+// movimiento original. El balance de las cuentas sigue saliendo bien porque
+// originales + ajustes + reversos están matemáticamente compensados.
 
-test.describe('Tesorería — rollup de gastos editados/borrados', () => {
-  test('editar monto de gasto pagado: listing muestra 1 transaction con el monto NUEVO', async ({ page }) => {
+type Row = { id: string; category: string; amount: string | number; accountId: string; type: string };
+
+test.describe('Tesorería — visibilidad de ajustes y reversos de gastos', () => {
+  test('editar monto de gasto pagado: listing muestra original + ADJUSTMENT y balance refleja monto nuevo', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `EDM${Date.now().toString().slice(-6)}`,
@@ -35,25 +36,27 @@ test.describe('Tesorería — rollup de gastos editados/borrados', () => {
       accountId: TEST_SEED_IDS.accountCash,
       isPaid: true,
     });
-    await apiUpdateExpense(token, expense.id, { amount: 700_000, reason: 'Corrección de monto' });
+    await apiUpdateExpense(token, expense.id, { amount: 700_000, reason: 'Corrección de monto por factura' });
 
-    // En DB hay: VEHICLE_EXPENSE 600 + EXPENSE_ADJUSTMENT 100. Listing debe colapsar a 1.
     const res = await apiRequestRaw('GET', `/treasury/transactions?vehicleId=${v.id}`, token);
-    const txs = (res.body as { transactions?: Array<{ category: string; amount: string }> }).transactions || [];
-    const expenseTxs = txs.filter(t => t.category === 'VEHICLE_EXPENSE');
-    expect(expenseTxs).toHaveLength(1);
-    expect(Number(expenseTxs[0].amount)).toBe(700_000);
+    const txs = ((res.body as { transactions?: Row[] }).transactions || [])
+      .filter((t) => t.category === 'VEHICLE_EXPENSE' || t.category === 'EXPENSE_ADJUSTMENT');
 
-    // Y ningún ADJUSTMENT debe asomar en el listing
-    expect(txs.find(t => t.category === 'EXPENSE_ADJUSTMENT')).toBeUndefined();
+    expect(txs).toHaveLength(2);
+    const original = txs.find((t) => t.category === 'VEHICLE_EXPENSE');
+    const adjustment = txs.find((t) => t.category === 'EXPENSE_ADJUSTMENT');
+    expect(original).toBeDefined();
+    expect(adjustment).toBeDefined();
+    expect(Number(original!.amount)).toBe(600_000);
+    expect(Number(adjustment!.amount)).toBe(100_000); // delta
+    expect(adjustment!.type).toBe('EXPENSE'); // monto subió → cargo adicional
 
-    // El balance de cuenta refleja el descuento real (700k)
+    // Balance: 100M - 600k - 100k = 100M - 700k
     const acc = await apiGetAccount(token, TEST_SEED_IDS.accountCash);
-    // initial 100M - compra (no aplica aquí) - 700k = 99.3M (con seed inicial 100M)
     expect(Number(acc.currentBalance)).toBe(100_000_000 - 700_000);
   });
 
-  test('borrar gasto pagado: listing no muestra la transaction (queda solo audit en DB)', async ({ page }) => {
+  test('borrar gasto pagado: listing muestra original + REVERSAL y balance vuelve al inicial', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `EDD${Date.now().toString().slice(-6)}`,
@@ -70,20 +73,26 @@ test.describe('Tesorería — rollup de gastos editados/borrados', () => {
       accountId: TEST_SEED_IDS.accountCash,
       isPaid: true,
     });
-    await apiDeleteExpense(token, expense.id, 'Fue cargado por error');
+    await apiDeleteExpense(token, expense.id, 'Fue cargado por error y se elimina');
 
     const res = await apiRequestRaw('GET', `/treasury/transactions?vehicleId=${v.id}`, token);
-    const txs = (res.body as { transactions?: Array<{ category: string; amount: string }> }).transactions || [];
-    // Sin VEHICLE_EXPENSE, sin REVERSAL en el listing
-    expect(txs.find(t => t.category === 'VEHICLE_EXPENSE')).toBeUndefined();
-    expect(txs.find(t => t.category === 'EXPENSE_REVERSAL')).toBeUndefined();
+    const txs = ((res.body as { transactions?: Row[] }).transactions || [])
+      .filter((t) => t.category === 'VEHICLE_EXPENSE' || t.category === 'EXPENSE_REVERSAL');
 
-    // Balance vuelve al inicial (la transacción original + el reverso se cancelan)
+    expect(txs).toHaveLength(2);
+    const original = txs.find((t) => t.category === 'VEHICLE_EXPENSE');
+    const reversal = txs.find((t) => t.category === 'EXPENSE_REVERSAL');
+    expect(original).toBeDefined();
+    expect(reversal).toBeDefined();
+    expect(Number(original!.amount)).toBe(500_000);
+    expect(Number(reversal!.amount)).toBe(500_000);
+    expect(reversal!.type).toBe('INCOME'); // reverso compensa el EXPENSE original
+
     const acc = await apiGetAccount(token, TEST_SEED_IDS.accountCash);
     expect(Number(acc.currentBalance)).toBe(100_000_000);
   });
 
-  test('editar cuenta de gasto pagado: listing muestra 1 transaction en la cuenta NUEVA', async ({ page }) => {
+  test('editar cuenta de gasto pagado: listing muestra original en cash + ADJUSTMENT INCOME en cash + ADJUSTMENT EXPENSE en bank', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `EDA${Date.now().toString().slice(-6)}`,
@@ -100,15 +109,33 @@ test.describe('Tesorería — rollup de gastos editados/borrados', () => {
       accountId: TEST_SEED_IDS.accountCash,
       isPaid: true,
     });
-    await apiUpdateExpense(token, expense.id, { accountId: TEST_SEED_IDS.accountBank, reason: 'Pago salió del banco' });
+    await apiUpdateExpense(token, expense.id, {
+      accountId: TEST_SEED_IDS.accountBank,
+      reason: 'Pago salió del banco, no de caja',
+    });
 
-    // En DB: VEHICLE_EXPENSE en cash + ADJUSTMENT reverso en cash + ADJUSTMENT cargo en bank.
-    // Listing debe colapsar a 1 sola transaction visible en cuenta bank.
     const res = await apiRequestRaw('GET', `/treasury/transactions?vehicleId=${v.id}`, token);
-    const txs = (res.body as { transactions?: Array<{ category: string; amount: string; accountId: string }> }).transactions || [];
-    const expenseTxs = txs.filter(t => t.category === 'VEHICLE_EXPENSE');
-    expect(expenseTxs).toHaveLength(1);
-    expect(expenseTxs[0].accountId).toBe(TEST_SEED_IDS.accountBank);
-    expect(Number(expenseTxs[0].amount)).toBe(200_000);
+    const txs = ((res.body as { transactions?: Row[] }).transactions || [])
+      .filter((t) => t.category === 'VEHICLE_EXPENSE' || t.category === 'EXPENSE_ADJUSTMENT');
+
+    expect(txs).toHaveLength(3);
+    const original = txs.find((t) => t.category === 'VEHICLE_EXPENSE');
+    const adjustments = txs.filter((t) => t.category === 'EXPENSE_ADJUSTMENT');
+    expect(original).toBeDefined();
+    expect(adjustments).toHaveLength(2);
+
+    expect(original!.accountId).toBe(TEST_SEED_IDS.accountCash);
+    expect(Number(original!.amount)).toBe(200_000);
+
+    const reverseInCash = adjustments.find(
+      (a) => a.accountId === TEST_SEED_IDS.accountCash && a.type === 'INCOME',
+    );
+    const chargeInBank = adjustments.find(
+      (a) => a.accountId === TEST_SEED_IDS.accountBank && a.type === 'EXPENSE',
+    );
+    expect(reverseInCash).toBeDefined();
+    expect(chargeInBank).toBeDefined();
+    expect(Number(reverseInCash!.amount)).toBe(200_000);
+    expect(Number(chargeInBank!.amount)).toBe(200_000);
   });
 });

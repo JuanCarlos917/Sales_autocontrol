@@ -288,6 +288,15 @@ const expenseDeleteSchema = Joi.object({
   }),
 });
 
+// ── Schema reutilizable para acciones destructivas en tesorería ──
+// (delete de Transaction manual, delete de Transfer, cancel de Payable)
+const treasuryDestructiveSchema = Joi.object({
+  reason: Joi.string().min(10).max(500).required().messages({
+    'any.required': 'Debe indicar un motivo (mín 10 caracteres) para esta acción',
+    'string.min': 'El motivo debe tener al menos 10 caracteres',
+  }),
+});
+
 // ── Settings Schema ──
 const settingsSchema = Joi.object({
   fixedMonthly: Joi.number().min(0).optional(),
@@ -313,6 +322,7 @@ const accountUpdateSchema = Joi.object({
   bank: Joi.string().max(100).allow('', null),
   accountNumber: Joi.string().max(50).allow('', null),
   isActive: Joi.boolean(),
+  reason: Joi.string().min(10).max(500).optional(),
 });
 
 // ── ThirdParty Schemas ──
@@ -467,6 +477,7 @@ module.exports = {
     expensePayment: expensePaymentSchema,
     expenseUpdate: expenseUpdateSchema,
     expenseDelete: expenseDeleteSchema,
+    treasuryDestructive: treasuryDestructiveSchema,
     settings: settingsSchema,
     // Tesorería
     account: accountSchema,

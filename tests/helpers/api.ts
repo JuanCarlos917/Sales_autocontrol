@@ -163,6 +163,22 @@ export interface VehicleAuditEntry {
   user: { id: string; name: string | null; email: string };
 }
 
+export interface VehicleTimelineEvent {
+  type: 'VEHICLE_AUDIT' | 'EXPENSE_AUDIT' | 'TRANSACTION';
+  id: string;
+  createdAt: string;
+  actor: { id: string; name: string | null; email: string } | null;
+  action: string | null;
+  category: string | null;
+  amount: string | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export async function apiGetVehicleTimeline(token: string, id: string): Promise<{ events: VehicleTimelineEvent[] }> {
+  return getJson(`/vehicles/${id}/timeline`, token);
+}
+
 export async function apiGetVehicleAudit(token: string, id: string): Promise<VehicleAuditEntry[]> {
   return getJson(`/vehicles/${id}/audit`, token);
 }
@@ -434,6 +450,7 @@ export interface TransactionRaw {
   amount: string | number;
   description: string | null;
   expenseId: string | null;
+  reversesTransactionId: string | null;
   date: string;
 }
 
@@ -455,6 +472,57 @@ export async function apiListTransactions(token: string, params: { accountId?: s
   const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
   const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
   return Array.isArray(res) ? res : res.transactions;
+}
+
+export async function apiDeleteTransactionRaw(
+  token: string,
+  id: string,
+  body: Record<string, unknown> = {},
+): Promise<{ status: number; body: { message?: string; error?: string } }> {
+  const res = await fetch(`${API_BASE}/treasury/transactions/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  return { status: res.status, body: json };
+}
+
+export interface TreasuryAuditEntry {
+  id: string;
+  entityType: 'TRANSACTION' | 'TRANSFER' | 'ACCOUNT' | 'PAYABLE' | 'PAYABLE_PAYMENT';
+  entityId: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'CANCEL' | 'PAYMENT';
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  createdAt: string;
+  user: { id: string; name: string | null; email: string };
+}
+
+export async function apiGetTreasuryAudit(
+  token: string,
+  entityType: TreasuryAuditEntry['entityType'],
+  entityId: string,
+): Promise<TreasuryAuditEntry[]> {
+  return getJson(
+    `/treasury/audit?entityType=${entityType}&entityId=${encodeURIComponent(entityId)}`,
+    token,
+  );
+}
+
+export async function apiDeleteTransferRaw(
+  token: string,
+  id: string,
+  body: Record<string, unknown> = {},
+): Promise<{ status: number; body: { message?: string; error?: string } }> {
+  const res = await fetch(`${API_BASE}/treasury/transfers/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+  return { status: res.status, body: json };
 }
 
 // ── Commission config ──────────────────────────────────

@@ -79,6 +79,7 @@ export default function VehicleDetailPage() {
   const [deletingExpense, setDeletingExpense] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [auditLog, setAuditLog] = useState([]);
+  const [timeline, setTimeline] = useState([]);
   const [tab, setTab] = useState(searchParams.get('tab') || 'resumen');
   const [showEditForm, setShowEditForm] = useState(false);
 
@@ -154,12 +155,22 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const loadTimeline = async () => {
+    try {
+      const { data } = await api.get(`/vehicles/${id}/timeline`);
+      setTimeline(data.events || []);
+    } catch (err) {
+      console.error('Error loading timeline:', err);
+    }
+  };
+
   useEffect(() => {
     loadVehicle();
     loadVehicleTransactions();
     loadAccounts();
     loadPaymentStatus();
     loadAuditLog();
+    loadTimeline();
   }, [id]);
 
   // Abrir formulario de edición si viene con ?edit=true
@@ -335,7 +346,7 @@ export default function VehicleDetailPage() {
           { id: 'tesoreria', label: `Tesoreria (${treasuryCount})` },
           { id: 'financiero', label: 'Financiero' },
           { id: 'documentos', label: `Docs (${docs.length})` },
-          { id: 'historial', label: `Historial (${auditLog.length})` },
+          { id: 'historial', label: `Historial (${timeline.length})` },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} data-testid={`vehicle-tab-${t.id}`}
             className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${tab === t.id ? 'border-accent text-accent' : 'border-transparent text-[#6E7681]'}`}>
@@ -666,7 +677,7 @@ export default function VehicleDetailPage() {
       )}
 
       {tab === 'historial' && (
-        <AuditTimeline entries={auditLog} />
+        <VehicleTimeline events={timeline} />
       )}
 
       {/* Footer Actions (acciones de escritura: ocultas en modo consulta) */}
@@ -867,6 +878,123 @@ function ProfitSummary({ vehicle, metrics }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Renderiza eventos heterogéneos del vehículo: cambios de identidad, cambios
+// de gasto y movimientos de tesorería en un mismo flujo cronológico.
+function VehicleTimeline({ events }) {
+  if (!events || events.length === 0) {
+    return (
+      <p className="text-center text-[#6E7681] py-10" data-testid="vehicle-timeline-empty">
+        Sin actividad registrada todavía. Los cambios del vehículo, gastos y movimientos quedarán aquí.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2" data-testid="vehicle-timeline">
+      {events.map((e) => <VehicleTimelineEvent key={`${e.type}-${e.id}`} event={e} />)}
+    </div>
+  );
+}
+
+const TIMELINE_TYPE_META = {
+  VEHICLE_AUDIT: { icon: '📝', color: '#58A6FF', label: 'Vehículo' },
+  EXPENSE_AUDIT: { icon: '🧾', color: '#D29922', label: 'Gasto' },
+  TRANSACTION: { icon: '💸', color: '#3FB950', label: 'Movimiento' },
+};
+
+function VehicleTimelineEvent({ event }) {
+  const meta = TIMELINE_TYPE_META[event.type] || { icon: '·', color: '#6E7681', label: event.type };
+  const who = event.actor?.name || event.actor?.email || null;
+  const when = formatDateTime(event.createdAt);
+  const reason = event.metadata?.reason || null;
+
+  let title = event.description || '';
+  let detail = null;
+
+  if (event.type === 'VEHICLE_AUDIT') {
+    const actionLabel = AUDIT_ACTION_LABELS[event.action] || event.action;
+    title = `${actionLabel}: ${event.description}`;
+    const changes = event.action === 'STAGE_CHANGE'
+      ? [{ field: 'stage', before: event.metadata?.before?.stage, after: event.metadata?.after?.stage }]
+      : diffAuditSnapshots(event.metadata?.before, event.metadata?.after);
+    if (changes.length > 0) {
+      detail = (
+        <ul className="mt-2 space-y-1">
+          {changes.map((c) => (
+            <li key={c.field} className="text-[12px] text-[#8B949E] flex flex-wrap items-baseline gap-1.5">
+              <span className="text-[#E6EDF3] font-medium">{AUDIT_FIELD_LABELS[c.field] || c.field}:</span>
+              <span className="line-through opacity-70">{fmtAuditValue(c.field, c.before)}</span>
+              <span className="text-[#6E7681]">→</span>
+              <span className="text-[#E6EDF3]">{fmtAuditValue(c.field, c.after)}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+  } else if (event.type === 'EXPENSE_AUDIT') {
+    const map = { CREATE: 'Gasto creado', UPDATE: 'Gasto editado', DELETE: 'Gasto eliminado', RESTORE: 'Gasto restaurado' };
+    title = `${map[event.action] || event.action}: ${event.description}`;
+    if (event.amount) {
+      detail = <div className="mt-1 text-[12px] text-[#8B949E]">Monto: {formatCurrency(event.amount)}</div>;
+    }
+  } else if (event.type === 'TRANSACTION') {
+    const txType = event.metadata?.transactionType;
+    const signed = (txType === 'INCOME' || txType === 'TRANSFER_IN') ? '+' : '-';
+    const catLabels = {
+      VEHICLE_PURCHASE: 'Compra del vehículo',
+      VEHICLE_SALE: 'Venta del vehículo',
+      VEHICLE_SALE_PARTIAL: 'Abono de venta',
+      VEHICLE_EXPENSE: 'Gasto',
+      EXPENSE_ADJUSTMENT: 'Ajuste de gasto',
+      EXPENSE_REVERSAL: 'Reverso de gasto',
+      COMMISSION: 'Comisión',
+      OTHER_INCOME: 'Ingreso',
+      OTHER_EXPENSE: 'Egreso',
+    };
+    title = catLabels[event.category] || event.category || 'Movimiento';
+    detail = (
+      <div className="mt-1 text-[12px] text-[#8B949E] flex flex-wrap gap-x-3 gap-y-0.5">
+        <span>{signed}{formatCurrency(event.amount)}</span>
+        {event.metadata?.accountName && <span>en {event.metadata.accountName}</span>}
+        {event.metadata?.thirdPartyName && <span>· {event.metadata.thirdPartyName}</span>}
+        {event.description && <span className="text-[#6E7681]">— {event.description}</span>}
+        {event.metadata?.reversesTransactionId && (
+          <span className="text-[#6E7681]" title={event.metadata.reversesTransactionId}>
+            ← {String(event.metadata.reversesTransactionId).slice(-6)}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-start gap-3 p-3 bg-surface border border-border rounded-lg"
+      data-testid={`timeline-${event.type}`}
+    >
+      <div className="w-1 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: meta.color }} />
+      <div className="text-base leading-none mt-0.5" aria-hidden>{meta.icon}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex justify-between items-center gap-2 flex-wrap">
+          <span
+            className="text-[12px] font-semibold px-2 py-0.5 rounded"
+            style={{ background: meta.color + '20', color: meta.color }}
+          >
+            {meta.label}
+          </span>
+          <span className="text-[11px] text-[#6E7681]">
+            {who ? `${who} · ` : ''}{when}
+          </span>
+        </div>
+        <div className="mt-1.5 text-[13px] text-[#E6EDF3] font-medium">{title}</div>
+        {detail}
+        {reason && (
+          <div className="mt-1.5 text-[11px] text-[#6E7681] italic">📝 {reason}</div>
+        )}
+      </div>
     </div>
   );
 }

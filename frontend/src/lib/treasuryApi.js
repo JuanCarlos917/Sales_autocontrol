@@ -33,7 +33,8 @@ export const transactionsApi = {
   createIncome: (data) => api.post('/treasury/transactions/income', data),
   createExpense: (data) => api.post('/treasury/transactions/expense', data),
   update: (id, data) => api.put(`/treasury/transactions/${id}`, data),
-  delete: (id) => api.delete(`/treasury/transactions/${id}`),
+  // Movimientos inmutables: no hay delete. Las correcciones se hacen
+  // editando el gasto origen o creando un nuevo movimiento.
 };
 
 // ── Transferencias ──
@@ -41,7 +42,7 @@ export const transfersApi = {
   getAll: (params) => api.get('/treasury/transfers', { params }),
   getOne: (id) => api.get(`/treasury/transfers/${id}`),
   create: (data) => api.post('/treasury/transfers', data),
-  delete: (id) => api.delete(`/treasury/transfers/${id}`),
+  // Transferencias inmutables: tampoco hay delete.
 };
 
 // ── Arqueos ──

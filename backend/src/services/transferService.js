@@ -115,24 +115,6 @@ class TransferService {
     return this.findById(result.id);
   }
 
-  async delete(id) {
-    const transfer = await prisma.transfer.findUnique({
-      where: { id },
-      include: { transactions: true },
-    });
-
-    if (!transfer) throw new AppError('Transferencia no encontrada', 404);
-
-    // Eliminar en transacción atómica
-    await prisma.$transaction(async (tx) => {
-      // Eliminar movimientos asociados
-      await tx.transaction.deleteMany({ where: { transferId: id } });
-      // Eliminar transferencia
-      await tx.transfer.delete({ where: { id } });
-    });
-
-    return { deleted: true };
-  }
 }
 
 module.exports = new TransferService();

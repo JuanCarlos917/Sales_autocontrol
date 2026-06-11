@@ -23,8 +23,8 @@ export const payablesApi = {
   // Registrar pago a una CxC/CxP
   addPayment: (id, paymentData) => api.post(`/payables/${id}/payments`, paymentData),
 
-  // Cancelar una CxC/CxP
-  cancel: (id) => api.post(`/payables/${id}/cancel`),
+  // Cancelar una CxC/CxP (requiere reason de mín. 10 caracteres)
+  cancel: (id, reason) => api.post(`/payables/${id}/cancel`, { reason }),
 };
 
 // ═══════════════════════════════════════════════════════════════

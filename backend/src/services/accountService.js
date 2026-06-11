@@ -4,6 +4,12 @@
 
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
+const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+
+const ACCOUNT_AUDIT_FIELDS = [
+  'id', 'name', 'type', 'currency', 'initialBalance', 'currentBalance',
+  'description', 'isActive', 'createdAt', 'updatedAt',
+];
 
 class AccountService {
   async findAll({ isActive } = {}) {
@@ -59,11 +65,30 @@ class AccountService {
     return { ...account, currentBalance: initialBalanceNum };
   }
 
-  async update(id, data) {
+  async update(id, data, userId, { reason } = {}) {
     const existing = await prisma.account.findUnique({ where: { id } });
     if (!existing) throw new AppError('Cuenta no encontrada', 404);
 
-    return prisma.account.update({ where: { id }, data });
+    // Atómico: update + audit. Si falta userId (rutas legacy) no se rompe el update,
+    // pero se loguea warning para detectar callers que aún no pasan el contexto.
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.account.update({ where: { id }, data });
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'ACCOUNT',
+          entityId: id,
+          userId,
+          action: 'UPDATE',
+          before: snapshotEntity(existing, ACCOUNT_AUDIT_FIELDS),
+          after: snapshotEntity(updated, ACCOUNT_AUDIT_FIELDS),
+          reason,
+        });
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`[accountService.update] sin userId; audit omitido para account ${id}`);
+      }
+      return updated;
+    });
   }
 
   async delete(id) {
