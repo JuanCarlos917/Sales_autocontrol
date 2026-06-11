@@ -57,13 +57,6 @@ const update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-const remove = async (req, res, next) => {
-  try {
-    await transactionService.delete(req.params.id);
-    res.json({ message: 'Movimiento eliminado' });
-  } catch (err) { next(err); }
-};
-
 const getSummary = async (req, res, next) => {
   try {
     const { startDate, endDate, accountId } = req.query;
@@ -72,4 +65,4 @@ const getSummary = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, getOne, getByVehicle, createIncome, createExpense, update, remove, getSummary };
+module.exports = { getAll, getOne, getByVehicle, createIncome, createExpense, update, getSummary };

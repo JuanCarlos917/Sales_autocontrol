@@ -30,7 +30,8 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const account = await accountService.update(req.params.id, req.body);
+    const { reason, ...data } = req.body || {};
+    const account = await accountService.update(req.params.id, data, req.user.id, { reason });
     res.json(account);
   } catch (err) { next(err); }
 };

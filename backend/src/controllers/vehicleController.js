@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const vehicleService = require('../services/vehicleService');
+const vehicleTimelineService = require('../services/vehicleTimelineService');
 const purchaseService = require('../services/purchaseService');
 const saleService = require('../services/saleService');
 
@@ -39,6 +40,13 @@ const getAuditLog = async (req, res, next) => {
   try {
     const logs = await vehicleService.getAuditLog(req.params.id, req.user.id);
     res.json(logs);
+  } catch (err) { next(err); }
+};
+
+const getTimeline = async (req, res, next) => {
+  try {
+    const result = await vehicleTimelineService.getTimeline(req.params.id, req.user.id);
+    res.json(result);
   } catch (err) { next(err); }
 };
 
@@ -181,6 +189,7 @@ module.exports = {
   create,
   update,
   getAuditLog,
+  getTimeline,
   updateStage,
   remove,
   createWithPurchase,

@@ -10,7 +10,7 @@ import { TEST_SEED_IDS } from '../../global-setup';
 const API_BASE = process.env.API_BASE || 'http://localhost:4000/api';
 
 test.describe('Gastos — bypass por /treasury/transactions bloqueado', () => {
-  test('PUT y DELETE sobre Transaction con expenseId devuelven 403', async ({ page }) => {
+  test('PUT sobre Transaction con expenseId devuelve 403; DELETE no existe (404)', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const vehicle = await apiCreateVehicle(token, { plate: `BYP${Date.now().toString().slice(-7)}` });
 
@@ -26,15 +26,17 @@ test.describe('Gastos — bypass por /treasury/transactions bloqueado', () => {
     const expenseTx = txs.find((t) => t.expenseId === expense.id);
     expect(expenseTx).toBeDefined();
 
+    // PUT sigue existiendo pero el service rechaza si la Transaction proviene de un gasto.
     const putRes = await page.request.put(`${API_BASE}/treasury/transactions/${expenseTx!.id}`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { description: 'hack' },
     });
     expect(putRes.status()).toBe(403);
 
+    // DELETE ya no existe a nivel API — los movimientos son inmutables.
     const delRes = await page.request.delete(`${API_BASE}/treasury/transactions/${expenseTx!.id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(delRes.status()).toBe(403);
+    expect(delRes.status()).toBe(404);
   });
 });

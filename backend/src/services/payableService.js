@@ -3,6 +3,12 @@
 // ═══════════════════════════════════════════════════════════════
 
 const prisma = require('../config/database');
+const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+
+const PAYABLE_AUDIT_FIELDS = [
+  'id', 'type', 'vehicleId', 'thirdPartyId', 'totalAmount', 'paidAmount',
+  'status', 'description', 'dueDate', 'createdAt',
+];
 
 // Parsea una fecha string (YYYY-MM-DD) a Date en zona horaria de Colombia
 // Evita el problema de que new Date("2026-04-19") se interprete como UTC
@@ -215,6 +221,23 @@ const addPayment = async (payableId, paymentData, userId) => {
       }
     });
 
+    await writeTreasuryAudit(tx, {
+      entityType: 'PAYABLE_PAYMENT',
+      entityId: payment.id,
+      userId,
+      action: 'PAYMENT',
+      after: {
+        payableId,
+        amount: paymentAmount,
+        transactionId: transaction.id,
+        accountId,
+        date: parseLocalDate(date).toISOString(),
+        previousPaidAmount: currentPaid,
+        newPaidAmount,
+        newStatus,
+      },
+    });
+
     return { payable: updatedPayable, transaction, payment };
   });
 
@@ -224,7 +247,11 @@ const addPayment = async (payableId, paymentData, userId) => {
 /**
  * Cancelar una CxC/CxP
  */
-const cancel = async (id, userId) => {
+const cancel = async (id, userId, { reason } = {}) => {
+  if (!reason || reason.trim().length < 10) {
+    throw new Error('Debe indicar un motivo (mín 10 caracteres) para cancelar esta cuenta');
+  }
+
   const payable = await prisma.payable.findUnique({ where: { id } });
 
   if (!payable) {
@@ -239,9 +266,21 @@ const cancel = async (id, userId) => {
     throw new Error('No se puede cancelar una cuenta con pagos parciales');
   }
 
-  const updated = await prisma.payable.update({
-    where: { id },
-    data: { status: 'CANCELLED' }
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.payable.update({
+      where: { id },
+      data: { status: 'CANCELLED' }
+    });
+    await writeTreasuryAudit(tx, {
+      entityType: 'PAYABLE',
+      entityId: id,
+      userId,
+      action: 'CANCEL',
+      before: snapshotEntity(payable, PAYABLE_AUDIT_FIELDS),
+      after: snapshotEntity(u, PAYABLE_AUDIT_FIELDS),
+      reason,
+    });
+    return u;
   });
 
   return updated;

@@ -107,9 +107,9 @@ router.post('/:id/payments', validate(schemas.payablePayment), async (req, res) 
  * POST /api/payables/:id/cancel
  * Cancelar una CxC/CxP
  */
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', validate(schemas.treasuryDestructive), async (req, res) => {
   try {
-    const payable = await payableService.cancel(req.params.id, req.user.id);
+    const payable = await payableService.cancel(req.params.id, req.user.id, { reason: req.body.reason });
     res.json(payable);
   } catch (error) {
     console.error('Error cancelling payable:', error);

@@ -31,11 +31,4 @@ const create = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-const remove = async (req, res, next) => {
-  try {
-    await transferService.delete(req.params.id);
-    res.json({ message: 'Transferencia eliminada' });
-  } catch (err) { next(err); }
-};
-
-module.exports = { getAll, getOne, create, remove };
+module.exports = { getAll, getOne, create };

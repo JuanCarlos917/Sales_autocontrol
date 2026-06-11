@@ -30,16 +30,16 @@ test.describe('Gastos — soft delete y undo', () => {
     const visible = await apiListExpenses(token);
     expect(visible.find((e) => e.id === expense.id)).toBeUndefined();
 
-    // Transacciones: original + reverso (net = 0)
+    // Visibilidad total: el listing devuelve el VEHICLE_EXPENSE original y el
+    // EXPENSE_REVERSAL que lo compensa, enlazado via reversesTransactionId.
     const txs = await apiListTransactions(token, { accountId: TEST_SEED_IDS.accountCash });
     const expenseTxs = txs.filter((t) => t.expenseId === expense.id);
     expect(expenseTxs.length).toBe(2);
-    const reversal = expenseTxs.find((t) => t.category === 'EXPENSE_REVERSAL');
-    expect(reversal).toBeDefined();
-    expect(reversal?.type).toBe('INCOME');
-
-    const net = expenseTxs.reduce((s, t) => s + (t.type === 'EXPENSE' ? -1 : 1) * parseFloat(t.amount as string), 0);
-    expect(net).toBe(0);
+    const original = expenseTxs.find((t) => t.category === 'VEHICLE_EXPENSE')!;
+    const reversal = expenseTxs.find((t) => t.category === 'EXPENSE_REVERSAL')!;
+    expect(reversal.type).toBe('INCOME');
+    expect(parseFloat(reversal.amount as string)).toBe(50_000);
+    expect(reversal.reversesTransactionId).toBe(original.id);
 
     const audit = await apiGetExpenseAudit(token, expense.id);
     const del = audit.find((a) => a.action === 'DELETE');

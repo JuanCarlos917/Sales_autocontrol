@@ -6,10 +6,16 @@ const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 
+// Cada Transaction se devuelve como fila propia (decisión 2026-06-08).
+// Las EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL ya no se ocultan: enlazan al
+// movimiento original via reversesTransactionId y la UI las pinta con badge.
 const TRANSACTION_INCLUDE = {
   account: { select: { id: true, name: true, type: true } },
   thirdParty: { select: { id: true, name: true, type: true } },
   vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+  reversesTransaction: {
+    select: { id: true, category: true, amount: true, date: true, accountId: true },
+  },
 };
 
 class TransactionService {
@@ -53,11 +59,12 @@ class TransactionService {
   }
 
   async findByVehicle(vehicleId) {
-    return prisma.transaction.findMany({
+    const transactions = await prisma.transaction.findMany({
       where: { vehicleId },
       include: TRANSACTION_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return transactions;
   }
 
   async createIncome(data, userId) {
@@ -123,32 +130,6 @@ class TransactionService {
       data: updateData,
       include: TRANSACTION_INCLUDE,
     });
-  }
-
-  async delete(id) {
-    const existing = await prisma.transaction.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Movimiento no encontrado', 404);
-
-    // Transactions ligadas a un gasto: se borran a través del gasto (soft delete + reverso)
-    if (existing.expenseId) {
-      throw new AppError('Este movimiento proviene de un gasto. Eliminá el gasto en /expenses.', 403);
-    }
-
-    // No permitir eliminar si está vinculado a un vehículo vendido
-    if (existing.vehicleId) {
-      const vehicle = await prisma.vehicle.findUnique({ where: { id: existing.vehicleId } });
-      if (vehicle && vehicle.stage === 'VENDIDO') {
-        throw new AppError('No se puede eliminar un movimiento de un vehículo vendido', 400);
-      }
-    }
-
-    // No permitir eliminar movimientos de transferencia directamente
-    if (existing.transferId) {
-      throw new AppError('Para eliminar una transferencia, use el endpoint de transferencias', 400);
-    }
-
-    await prisma.transaction.delete({ where: { id } });
-    return { deleted: true };
   }
 
   async getSummary({ startDate, endDate, accountId } = {}) {

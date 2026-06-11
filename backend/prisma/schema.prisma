@@ -28,10 +28,11 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  vehicles         Vehicle[]
-  refreshTokens    RefreshToken[]
-  expenseAuditLogs ExpenseAuditLog[]
-  vehicleAuditLogs VehicleAuditLog[]
+  vehicles          Vehicle[]
+  refreshTokens     RefreshToken[]
+  expenseAuditLogs  ExpenseAuditLog[]
+  vehicleAuditLogs  VehicleAuditLog[]
+  treasuryAuditLogs TreasuryAuditLog[]
 
   @@map("users")
 }
@@ -314,6 +315,12 @@ model Transaction {
   transfer     Transfer?           @relation(fields: [transferId], references: [id])
   expenseId    String?
   expense      Expense?            @relation(fields: [expenseId], references: [id])
+  // Self-relation: cuando una Transaction es un EXPENSE_ADJUSTMENT o
+  // EXPENSE_REVERSAL, apunta a la Transaction original que ajusta/reversa.
+  // Permite navegar lineage sin parsear descripciones.
+  reversesTransactionId String?
+  reversesTransaction   Transaction?  @relation("TransactionReverses", fields: [reversesTransactionId], references: [id], onDelete: SetNull)
+  reversedBy            Transaction[] @relation("TransactionReverses")
   createdBy    String
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
@@ -332,6 +339,7 @@ model Transaction {
   @@index([loanId])
   @@index([loanPaymentId])
   @@index([expenseId])
+  @@index([reversesTransactionId])
   @@map("transactions")
 }
 
@@ -622,4 +630,42 @@ enum VehicleAuditAction {
   UPDATE
   STAGE_CHANGE
   DELETE
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESORERÍA - AUDIT LOG POLIMÓRFICO
+// ══════════════════════════════════════════════════════════════
+
+model TreasuryAuditLog {
+  id         String              @id @default(cuid())
+  entityType TreasuryAuditEntity
+  entityId   String
+  userId     String
+  user       User                @relation(fields: [userId], references: [id])
+  action     TreasuryAuditAction
+  before     Json?
+  after      Json?
+  reason     String?
+  createdAt  DateTime            @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("treasury_audit_logs")
+}
+
+enum TreasuryAuditEntity {
+  TRANSACTION
+  TRANSFER
+  ACCOUNT
+  PAYABLE
+  PAYABLE_PAYMENT
+}
+
+enum TreasuryAuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  CANCEL
+  PAYMENT
 }

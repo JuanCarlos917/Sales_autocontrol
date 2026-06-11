@@ -12,6 +12,7 @@ const transactionCtrl = require('../controllers/transactionController');
 const transferCtrl = require('../controllers/transferController');
 const cashCountCtrl = require('../controllers/cashCountController');
 const reportCtrl = require('../controllers/treasuryReportController');
+const auditCtrl = require('../controllers/treasuryAuditController');
 
 const router = Router();
 
@@ -21,6 +22,7 @@ const router = Router();
 // REPORTES Y DASHBOARD
 // ══════════════════════════════════════════════════════════════
 router.get('/dashboard', reportCtrl.getDashboard);
+router.get('/audit', auditCtrl.list);
 router.get('/reports/cash-flow', reportCtrl.getCashFlow);
 router.get('/reports/projection', reportCtrl.getProjection);
 router.get('/reports/vehicle/:vehicleId', reportCtrl.getVehicleTransactions);
@@ -55,7 +57,8 @@ router.get('/transactions/:id', transactionCtrl.getOne);
 router.post('/transactions/income', validate(schemas.income), transactionCtrl.createIncome);
 router.post('/transactions/expense', validate(schemas.expenseTreasury), transactionCtrl.createExpense);
 router.put('/transactions/:id', validate(schemas.transactionUpdate), transactionCtrl.update);
-router.delete('/transactions/:id', transactionCtrl.remove);
+// Movimientos inmutables: ya no hay DELETE. Las correcciones se hacen
+// editando el gasto origen o creando un movimiento de ajuste.
 
 // ══════════════════════════════════════════════════════════════
 // TRANSFERENCIAS
@@ -63,7 +66,8 @@ router.delete('/transactions/:id', transactionCtrl.remove);
 router.get('/transfers', transferCtrl.getAll);
 router.get('/transfers/:id', transferCtrl.getOne);
 router.post('/transfers', validate(schemas.transfer), transferCtrl.create);
-router.delete('/transfers/:id', transferCtrl.remove);
+// Transferencias inmutables: ya no hay DELETE. Una transferencia errada
+// se compensa con otra transferencia en sentido opuesto.
 
 // ══════════════════════════════════════════════════════════════
 // ARQUEOS
