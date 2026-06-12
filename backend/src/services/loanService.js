@@ -5,7 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
-const { calcLoanInterest } = require('../utils/financial');
+const { calcLoanInterest, splitLoanPayment } = require('../utils/financial');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -159,7 +159,8 @@ class LoanService {
     if (loan.status === 'CANCELLED') throw new AppError('Préstamo cancelado', 400);
     if (loan.status === 'PAID') throw new AppError('Préstamo ya está totalmente pagado', 400);
 
-    const remaining = parseFloat(loan.principalAmount) - parseFloat(loan.paidAmount);
+    const totalToRepay = parseFloat(loan.principalAmount) + parseFloat(loan.interestAmount);
+    const remaining = totalToRepay - parseFloat(loan.paidAmount);
     if (principal > remaining + 0.001) {
       throw new AppError(`El monto principal (${principal}) excede el saldo pendiente (${remaining}). Usá el campo extra para el sobrante.`, 400);
     }
@@ -185,7 +186,20 @@ class LoanService {
 
     const newLoanPaid = parseFloat(loan.paidAmount) + principal;
     const newLoanExtra = parseFloat(loan.extraReceived) + extra;
-    const newLoanStatus = recomputeLoanStatus(loan.principalAmount, newLoanPaid);
+    const newLoanStatus = recomputeLoanStatus(totalToRepay, newLoanPaid);
+
+    // Reparto capital/interés del abono. Si el préstamo queda saldado,
+    // el interés de este pago absorbe el remanente exacto para que
+    // interestReceived cierre en interestAmount (evita drift de redondeo).
+    const interestAmount = parseFloat(loan.interestAmount);
+    let split;
+    if (newLoanStatus === 'PAID') {
+      const interestPortion = Math.max(0, interestAmount - parseFloat(loan.interestReceived));
+      split = { interestPortion, capitalPortion: principal - interestPortion };
+    } else {
+      split = splitLoanPayment(principal, interestAmount, totalToRepay);
+    }
+    const newInterestReceived = parseFloat(loan.interestReceived) + split.interestPortion;
 
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.loanPayment.create({
@@ -194,20 +208,39 @@ class LoanService {
           accountId,
           principalAmount: principal,
           extraAmount: extra,
+          capitalPortion: split.capitalPortion,
+          interestPortion: split.interestPortion,
           date: new Date(), // fecha de contabilización = instante de registro
           notes: notes || null,
           createdBy: userId,
         },
       });
 
-      if (principal > 0) {
+      if (split.capitalPortion > 0) {
         await tx.transaction.create({
           data: {
             accountId,
             type: 'INCOME',
             category: 'LOAN_REPAYMENT',
-            amount: principal,
-            description: `Pago préstamo: ${loan.borrower.name}`,
+            amount: split.capitalPortion,
+            description: `Pago préstamo (capital): ${loan.borrower.name}`,
+            date: new Date(), // fecha de contabilización = instante de registro
+            thirdPartyId: loan.borrowerId,
+            loanId,
+            loanPaymentId: payment.id,
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (split.interestPortion > 0) {
+        await tx.transaction.create({
+          data: {
+            accountId,
+            type: 'INCOME',
+            category: 'LOAN_INTEREST_INCOME',
+            amount: split.interestPortion,
+            description: `Interés préstamo: ${loan.borrower.name}`,
             date: new Date(), // fecha de contabilización = instante de registro
             thirdPartyId: loan.borrowerId,
             loanId,
@@ -245,6 +278,7 @@ class LoanService {
         where: { id: loanId },
         data: {
           paidAmount: newLoanPaid,
+          interestReceived: newInterestReceived,
           extraReceived: newLoanExtra,
           status: newLoanStatus,
         },
