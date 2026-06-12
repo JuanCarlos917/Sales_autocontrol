@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
+const { calcLoanInterest } = require('../utils/financial');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -44,12 +45,15 @@ function annotateOverdue(loan) {
 }
 
 class LoanService {
-  async create({ borrowerId, originAccountId, principalAmount, description, notes, disbursementDate, installments }, userId) {
+  async create({ borrowerId, originAccountId, principalAmount, interestRate, description, notes, disbursementDate, installments }, userId) {
     const principal = parseFloat(principalAmount);
+    const rate = parseFloat(interestRate) || 0;
+    const interestAmount = calcLoanInterest(principal, rate);
+    const totalToRepay = principal + interestAmount;
 
     const installmentsSum = installments.reduce((s, i) => s + parseFloat(i.plannedAmount), 0);
-    if (Math.abs(installmentsSum - principal) > 0.01) {
-      throw new AppError(`La suma de cuotas (${installmentsSum}) no coincide con el principal (${principal})`, 400);
+    if (Math.abs(installmentsSum - totalToRepay) > 0.01) {
+      throw new AppError(`La suma de cuotas (${installmentsSum}) no coincide con el total a devolver (${totalToRepay})`, 400);
     }
 
     const sequences = installments.map((i) => i.sequence).sort((a, b) => a - b);
@@ -80,6 +84,8 @@ class LoanService {
           borrowerId,
           originAccountId,
           principalAmount: principal,
+          interestRate: rate,
+          interestAmount,
           description: description || null,
           notes: notes || null,
           disbursementDate: disbursementDate ? new Date(disbursementDate) : new Date(),
