@@ -418,6 +418,7 @@ const loanCreateSchema = Joi.object({
   borrowerId: Joi.string().required().messages({ 'any.required': 'Deudor es requerido' }),
   originAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
   principalAmount: Joi.number().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
+  interestRate: Joi.number().min(0).max(100).default(0),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(2000).allow('', null),
   disbursementDate: Joi.date().allow(null),
