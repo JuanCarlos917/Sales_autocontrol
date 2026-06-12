@@ -331,3 +331,49 @@ test('calculateCommissionBase: fromTradeIn sin negotiatedValue → skip true', (
   const r = calculateCommissionBase(v);
   assert.equal(r.skip, true);
 });
+
+const {
+  roundCop,
+  calcLoanInterest,
+  splitLoanPayment,
+} = require('../financial');
+
+// ── roundCop ─────────────────────────────────────────────────
+test('roundCop: redondea a entero (COP sin decimales)', () => {
+  assert.equal(roundCop(1000.4), 1000);
+  assert.equal(roundCop(1000.5), 1001);
+  assert.equal(roundCop(0), 0);
+});
+
+// ── calcLoanInterest ─────────────────────────────────────────
+test('calcLoanInterest: 10% de 10M = 1M', () => {
+  assert.equal(calcLoanInterest(10_000_000, 10), 1_000_000);
+});
+
+test('calcLoanInterest: tasa 0 o nula = 0', () => {
+  assert.equal(calcLoanInterest(10_000_000, 0), 0);
+  assert.equal(calcLoanInterest(10_000_000, null), 0);
+});
+
+test('calcLoanInterest: redondea a entero', () => {
+  assert.equal(calcLoanInterest(3_333_333, 10), 333_333);
+});
+
+// ── splitLoanPayment ─────────────────────────────────────────
+test('splitLoanPayment: reparte proporcional capital/interés', () => {
+  // total 11M, interés 1M => 9.0909% interés
+  const r = splitLoanPayment(1_100_000, 1_000_000, 11_000_000);
+  assert.equal(r.interestPortion, 100_000);
+  assert.equal(r.capitalPortion, 1_000_000);
+});
+
+test('splitLoanPayment: sin interés todo es capital', () => {
+  const r = splitLoanPayment(500_000, 0, 5_000_000);
+  assert.equal(r.interestPortion, 0);
+  assert.equal(r.capitalPortion, 500_000);
+});
+
+test('splitLoanPayment: capital + interés siempre suman el abono', () => {
+  const r = splitLoanPayment(777_777, 1_000_000, 11_000_000);
+  assert.equal(r.capitalPortion + r.interestPortion, 777_777);
+});

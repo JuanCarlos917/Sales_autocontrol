@@ -210,4 +210,31 @@ function calculateCommissionBase(vehicle) {
   };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase };
+// ── Préstamos: interés y reparto de pagos ────────────────────
+// COP no maneja decimales: todo monto se redondea a entero.
+function roundCop(n) {
+  return Math.round(parseFloat(n) || 0);
+}
+
+// Interés fijo único sobre el principal (congelado al crear el préstamo).
+function calcLoanInterest(principal, ratePct) {
+  const p = parseFloat(principal) || 0;
+  const r = parseFloat(ratePct) || 0;
+  return roundCop((p * r) / 100);
+}
+
+// Reparte un abono entre capital recuperado e interés ganado,
+// proporcional al peso del interés sobre el total a devolver.
+// Garantiza capitalPortion + interestPortion === amount.
+function splitLoanPayment(amount, interestAmount, totalToRepay) {
+  const a = roundCop(amount);
+  const interest = parseFloat(interestAmount) || 0;
+  const total = parseFloat(totalToRepay) || 0;
+  if (total <= 0 || interest <= 0) {
+    return { capitalPortion: a, interestPortion: 0 };
+  }
+  const interestPortion = roundCop((a * interest) / total);
+  return { capitalPortion: a - interestPortion, interestPortion };
+}
+
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment };
