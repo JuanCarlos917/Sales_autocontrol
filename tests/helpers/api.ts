@@ -304,6 +304,7 @@ export interface LoanCreateInput {
   borrowerId: string;
   originAccountId: string;
   principalAmount: number;
+  interestRate?: number;
   description?: string | null;
   installments: LoanInstallmentInput[];
 }
@@ -314,6 +315,8 @@ export interface Loan {
   principalAmount: string | number;
   paidAmount: string | number;
   extraReceived: string | number;
+  interestAmount: string | number;
+  interestReceived: string | number;
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   installments: Array<{
     id: string;
