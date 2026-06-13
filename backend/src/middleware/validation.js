@@ -458,6 +458,33 @@ const loanPaymentSchema = Joi.object({
   return value;
 }, 'principal+extra > 0');
 
+// ── Debt Schemas (créditos/financiaciones del negocio) ──
+const debtInstallmentSchema = Joi.object({
+  sequence: Joi.number().integer().positive().required(),
+  dueDate: Joi.date().required(),
+  plannedAmount: Joi.number().integer().positive().required(),
+});
+
+const debtCreateSchema = Joi.object({
+  name: Joi.string().max(120).required().messages({ 'any.required': 'Nombre del crédito es requerido' }),
+  lender: Joi.string().max(120).allow('', null),
+  assetDescription: Joi.string().max(200).allow('', null),
+  startDate: Joi.date().allow(null),
+  notes: Joi.string().max(2000).allow('', null),
+  installments: Joi.array().items(debtInstallmentSchema).min(1).required(),
+});
+
+const debtPaymentSchema = Joi.object({
+  accountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
+  amount: Joi.number().integer().positive().required(),
+  date: Joi.date().allow(null),
+  notes: Joi.string().max(500).allow('', null),
+});
+
+const debtReconcileSchema = Joi.object({
+  transactionIds: Joi.array().items(Joi.string()).min(1).required(),
+});
+
 module.exports = {
   validate,
   schemas: {
@@ -495,6 +522,10 @@ module.exports = {
     // Loans
     loanCreate: loanCreateSchema,
     loanPayment: loanPaymentSchema,
+    // Debts
+    debtCreate: debtCreateSchema,
+    debtPayment: debtPaymentSchema,
+    debtReconcile: debtReconcileSchema,
     // Commissions
     commissionConfig: commissionConfigSchema,
   },
