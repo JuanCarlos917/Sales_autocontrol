@@ -13,7 +13,8 @@ export default function LoanPaymentModal({ isOpen, onClose, onPaid, loan }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const remaining = loan ? parseFloat(loan.principalAmount) - parseFloat(loan.paidAmount) : 0;
+  const totalToRepay = loan ? parseFloat(loan.principalAmount) + parseFloat(loan.interestAmount || 0) : 0;
+  const remaining = loan ? totalToRepay - parseFloat(loan.paidAmount) : 0;
   const nextInst = loan?.installments?.find((i) => i.status !== 'PAID');
   const nextOwed = nextInst ? Math.max(0, parseFloat(nextInst.plannedAmount) - parseFloat(nextInst.paidAmount)) : 0;
 
