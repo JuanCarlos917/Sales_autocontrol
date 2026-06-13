@@ -199,6 +199,125 @@ class DebtService {
     return annotateOverdue(result);
   }
 
+  // Egresos históricos candidatos a enlazar: transacciones EXPENSE
+  // que no estén ya enlazadas a una deuda. Filtro opcional por texto.
+  async reconcileCandidates({ search } = {}) {
+    const where = { type: 'EXPENSE', debtId: null };
+    if (search) where.description = { contains: search, mode: 'insensitive' };
+    return prisma.transaction.findMany({
+      where,
+      orderBy: { date: 'desc' },
+      take: 200,
+      select: {
+        id: true, date: true, amount: true, description: true, category: true,
+        accountId: true, vehicleId: true, expenseId: true,
+        account: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  // Enlaza egresos existentes a la deuda SIN crear movimiento de caja nuevo
+  // ni alterar montos. Reclasifica la transacción a DEBT_PAYMENT, la desliga
+  // del vehículo, y soft-deletea el Expense de origen (sin reversa de caja).
+  async reconcile(debtId, { transactionIds }, userId) {
+    const debt = await prisma.debt.findUnique({
+      where: { id: debtId },
+      include: { installments: { orderBy: { sequence: 'asc' } } },
+    });
+    if (!debt) throw new AppError('Crédito no encontrado', 404);
+    if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
+
+    const txs = await prisma.transaction.findMany({ where: { id: { in: transactionIds } } });
+    if (txs.length !== transactionIds.length) {
+      throw new AppError('Alguna transacción no existe', 404);
+    }
+    for (const t of txs) {
+      if (t.type !== 'EXPENSE') throw new AppError(`La transacción ${t.id} no es un egreso`, 400);
+      if (t.debtId) throw new AppError(`La transacción ${t.id} ya está enlazada a una deuda`, 400);
+    }
+
+    const sumLink = txs.reduce((s, t) => s + parseFloat(t.amount), 0);
+    const remaining = parseFloat(debt.totalAmount) - parseFloat(debt.paidAmount);
+    if (sumLink > remaining + 0.001) {
+      throw new AppError(`Lo reconciliado (${sumLink}) excede el saldo pendiente (${remaining})`, 400);
+    }
+
+    // Estado mutable en memoria para imputación FIFO acumulada
+    const instState = debt.installments.map((i) => ({
+      id: i.id, planned: parseFloat(i.plannedAmount), paid: parseFloat(i.paidAmount),
+    }));
+    let runningPaid = parseFloat(debt.paidAmount);
+
+    const result = await prisma.$transaction(async (tx) => {
+      for (const t of txs) {
+        const amt = parseFloat(t.amount);
+
+        const payment = await tx.debtPayment.create({
+          data: {
+            debtId, accountId: t.accountId, amount: amt,
+            date: t.date, notes: 'Reconciliación de egreso histórico', createdBy: userId,
+          },
+        });
+
+        const before = { category: t.category, vehicleId: t.vehicleId, expenseId: t.expenseId, debtId: t.debtId };
+        await tx.transaction.update({
+          where: { id: t.id },
+          data: {
+            category: 'DEBT_PAYMENT',
+            vehicleId: null,
+            expenseId: null,
+            debtId,
+            debtPaymentId: payment.id,
+          },
+        });
+        await writeTreasuryAudit(tx, {
+          entityType: 'TRANSACTION', entityId: t.id, userId, action: 'UPDATE',
+          before,
+          after: { category: 'DEBT_PAYMENT', vehicleId: null, expenseId: null, debtId, debtPaymentId: payment.id },
+          reason: `Reconciliación a crédito ${debtId}`,
+        });
+
+        // Soft-delete del Expense de origen (sin reversa de caja)
+        if (t.expenseId) {
+          await tx.expense.update({
+            where: { id: t.expenseId },
+            data: { deletedAt: new Date(), deletedBy: userId },
+          });
+        }
+
+        // Imputación FIFO acumulada
+        let rest = amt;
+        for (const s of instState) {
+          if (rest <= 0) break;
+          const owed = s.planned - s.paid;
+          if (owed <= 0) continue;
+          const apply = Math.min(owed, rest);
+          s.paid += apply;
+          rest -= apply;
+          await tx.debtInstallment.update({
+            where: { id: s.id },
+            data: { paidAmount: s.paid, status: recomputeInstallmentStatus(s.planned, s.paid) },
+          });
+        }
+        runningPaid += amt;
+
+        await writeTreasuryAudit(tx, {
+          entityType: 'DEBT', entityId: debtId, userId, action: 'PAYMENT',
+          after: { reconciledTransactionId: t.id, amount: String(amt), debtPaymentId: payment.id },
+        });
+      }
+
+      const updatedDebt = await tx.debt.update({
+        where: { id: debtId },
+        data: { paidAmount: runningPaid, status: recomputeDebtStatus(debt.totalAmount, runningPaid) },
+        include: DEBT_INCLUDE,
+      });
+      return updatedDebt;
+    });
+
+    return annotateOverdue(result);
+  }
+
   async cancel(debtId, userId) {
     const debt = await prisma.debt.findUnique({ where: { id: debtId } });
     if (!debt) throw new AppError('Crédito no encontrado', 404);
