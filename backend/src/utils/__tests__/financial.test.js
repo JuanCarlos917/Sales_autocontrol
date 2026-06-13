@@ -336,6 +336,7 @@ const {
   roundCop,
   calcLoanInterest,
   splitLoanPayment,
+  splitFinalPayment,
 } = require('../financial');
 
 // ── roundCop ─────────────────────────────────────────────────
@@ -376,4 +377,29 @@ test('splitLoanPayment: sin interés todo es capital', () => {
 test('splitLoanPayment: capital + interés siempre suman el abono', () => {
   const r = splitLoanPayment(777_777, 1_000_000, 11_000_000);
   assert.equal(r.capitalPortion + r.interestPortion, 777_777);
+});
+
+// ── splitFinalPayment (pago que salda) ───────────────────────
+test('splitFinalPayment: cierra el interés remanente normal', () => {
+  const r = splitFinalPayment(5_500_000, 500_000);
+  assert.equal(r.interestPortion, 500_000);
+  assert.equal(r.capitalPortion, 5_000_000);
+});
+
+test('splitFinalPayment: nunca produce capital negativo (pago < interés remanente)', () => {
+  const r = splitFinalPayment(1, 2);
+  assert.equal(r.interestPortion, 1);
+  assert.equal(r.capitalPortion, 0);
+});
+
+test('splitFinalPayment: interés remanente negativo se trata como 0', () => {
+  const r = splitFinalPayment(1000, -5);
+  assert.equal(r.interestPortion, 0);
+  assert.equal(r.capitalPortion, 1000);
+});
+
+test('splitFinalPayment: capital + interés siempre suman el pago', () => {
+  const r = splitFinalPayment(777, 1_000_000);
+  assert.equal(r.capitalPortion + r.interestPortion, 777);
+  assert.ok(r.capitalPortion >= 0 && r.interestPortion >= 0);
 });

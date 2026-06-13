@@ -5,7 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
-const { calcLoanInterest, splitLoanPayment } = require('../utils/financial');
+const { calcLoanInterest, splitLoanPayment, splitFinalPayment } = require('../utils/financial');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -188,17 +188,13 @@ class LoanService {
     const newLoanExtra = parseFloat(loan.extraReceived) + extra;
     const newLoanStatus = recomputeLoanStatus(totalToRepay, newLoanPaid);
 
-    // Reparto capital/interés del abono. Si el préstamo queda saldado,
-    // el interés de este pago absorbe el remanente exacto para que
-    // interestReceived cierre en interestAmount (evita drift de redondeo).
+    // Reparto capital/interés del abono. Si el préstamo queda saldado, el
+    // interés de este pago cubre el remanente acotado al propio abono, de modo
+    // que capitalPortion nunca sea negativo y el split sume exactamente el pago.
     const interestAmount = parseFloat(loan.interestAmount);
-    let split;
-    if (newLoanStatus === 'PAID') {
-      const interestPortion = Math.max(0, interestAmount - parseFloat(loan.interestReceived));
-      split = { interestPortion, capitalPortion: principal - interestPortion };
-    } else {
-      split = splitLoanPayment(principal, interestAmount, totalToRepay);
-    }
+    const split = newLoanStatus === 'PAID'
+      ? splitFinalPayment(principal, interestAmount - parseFloat(loan.interestReceived))
+      : splitLoanPayment(principal, interestAmount, totalToRepay);
     const newInterestReceived = parseFloat(loan.interestReceived) + split.interestPortion;
 
     const result = await prisma.$transaction(async (tx) => {

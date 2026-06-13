@@ -237,4 +237,14 @@ function splitLoanPayment(amount, interestAmount, totalToRepay) {
   return { capitalPortion: a - interestPortion, interestPortion };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment };
+// Reparto del pago que SALDA el préstamo: el interés cubre el remanente
+// pendiente, pero acotado al propio abono. Garantiza interestPortion ∈ [0, pago]
+// y capitalPortion >= 0, y que el split sume EXACTAMENTE el pago (el ledger
+// cuadra con la caja recibida aun en casos límite de redondeo).
+function splitFinalPayment(payment, remainingInterest) {
+  const p = roundCop(payment);
+  const interestPortion = Math.min(p, Math.max(0, roundCop(remainingInterest)));
+  return { capitalPortion: p - interestPortion, interestPortion };
+}
+
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment };
