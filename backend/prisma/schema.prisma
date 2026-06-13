@@ -365,6 +365,7 @@ enum TransactionCategory {
   LOAN_DISBURSEMENT
   LOAN_REPAYMENT
   LOAN_EXTRA_INCOME
+  LOAN_INTEREST_INCOME
   EXPENSE_ADJUSTMENT
   EXPENSE_REVERSAL
 }
@@ -507,6 +508,9 @@ model Loan {
   principalAmount  Decimal    @db.Decimal(15, 2)
   paidAmount       Decimal    @default(0) @db.Decimal(15, 2)
   extraReceived    Decimal    @default(0) @db.Decimal(15, 2)
+  interestRate     Decimal    @default(0) @db.Decimal(5, 2)
+  interestAmount   Decimal    @default(0) @db.Decimal(15, 2)
+  interestReceived Decimal    @default(0) @db.Decimal(15, 2)
   status           LoanStatus @default(PENDING)
   description      String?
   disbursementDate DateTime   @default(now())
@@ -548,6 +552,8 @@ model LoanPayment {
   accountId       String
   principalAmount Decimal  @db.Decimal(15, 2)
   extraAmount     Decimal  @default(0) @db.Decimal(15, 2)
+  capitalPortion  Decimal  @default(0) @db.Decimal(15, 2)
+  interestPortion Decimal  @default(0) @db.Decimal(15, 2)
   date            DateTime @default(now())
   notes           String?
   createdBy       String

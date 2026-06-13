@@ -411,13 +411,14 @@ const payablePaymentSchema = Joi.object({
 const loanInstallmentSchema = Joi.object({
   sequence: Joi.number().integer().positive().required(),
   dueDate: Joi.date().required(),
-  plannedAmount: Joi.number().positive().required(),
+  plannedAmount: Joi.number().integer().positive().required(),
 });
 
 const loanCreateSchema = Joi.object({
   borrowerId: Joi.string().required().messages({ 'any.required': 'Deudor es requerido' }),
   originAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
-  principalAmount: Joi.number().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
+  principalAmount: Joi.number().integer().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
+  interestRate: Joi.number().min(0).max(100).default(0),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(2000).allow('', null),
   disbursementDate: Joi.date().allow(null),
@@ -446,8 +447,8 @@ const commissionConfigSchema = Joi.object({
 
 const loanPaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta destino es requerida' }),
-  principalAmount: Joi.number().min(0).required(),
-  extraAmount: Joi.number().min(0).default(0),
+  principalAmount: Joi.number().integer().min(0).required(),
+  extraAmount: Joi.number().integer().min(0).default(0),
   date: Joi.date().allow(null),
   notes: Joi.string().max(500).allow('', null),
 }).custom((value, helpers) => {

@@ -41,6 +41,7 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
   const [borrowerId, setBorrowerId] = useState('');
   const [originAccountId, setOriginAccountId] = useState('');
   const [principal, setPrincipal] = useState('');
+  const [interestRate, setInterestRate] = useState('');
   const [count, setCount] = useState(1);
   const [frequency, setFrequency] = useState('MONTHLY');
   const [firstDate, setFirstDate] = useState(getLocalDateString());
@@ -54,6 +55,7 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
     if (!isOpen) return;
     setBorrowerId('');
     setPrincipal('');
+    setInterestRate('');
     setCount(1);
     setFrequency('MONTHLY');
     setFirstDate(getLocalDateString());
@@ -73,10 +75,18 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
     [installments],
   );
 
-  const sumOk = installments.length > 0 && Math.abs(totalSchedule - (parseFloat(principal) || 0)) < 0.01;
+  const interestAmount = useMemo(() => {
+    const p = parseFloat(principal) || 0;
+    const r = parseFloat(interestRate) || 0;
+    return Math.round((p * r) / 100);
+  }, [principal, interestRate]);
+
+  const totalToRepay = (parseFloat(principal) || 0) + interestAmount;
+
+  const sumOk = installments.length > 0 && Math.abs(totalSchedule - totalToRepay) < 0.01;
 
   const handleGenerate = () => {
-    setInstallments(generateInstallments(principal, count, frequency, firstDate));
+    setInstallments(generateInstallments(totalToRepay, count, frequency, firstDate));
   };
 
   const updateInstallment = (idx, key, value) => {
@@ -95,6 +105,7 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
         borrowerId,
         originAccountId,
         principalAmount: parseFloat(principal),
+        interestRate: parseFloat(interestRate) || 0,
         description: description || null,
         notes: notes || null,
         installments: installments.map((i) => ({
@@ -141,7 +152,7 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-3">
           <div>
             <label className="block text-sm text-[#8B949E] mb-1">Monto principal *</label>
             <input
@@ -152,6 +163,20 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
               min="1"
               required
               data-testid="loan-form-principal"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-[#8B949E] mb-1">Interés (%)</label>
+            <input
+              type="number"
+              value={interestRate}
+              onChange={(e) => setInterestRate(e.target.value)}
+              className="input w-full"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="0"
+              data-testid="loan-form-interest-rate"
             />
           </div>
           <div>
@@ -203,6 +228,12 @@ export default function NewLoanModal({ isOpen, onClose, onCreated }) {
               <span className="text-[#8B949E]">Suma cuotas:</span>
               <span className={sumOk ? 'text-green-400' : 'text-red-400'}>{formatCurrency(totalSchedule)}</span>
             </div>
+            {interestAmount > 0 && (
+              <div className="flex justify-between text-sm" data-testid="loan-form-interest-summary">
+                <span className="text-[#8B949E]">Capital {formatCurrency(parseFloat(principal) || 0)} + interés {formatCurrency(interestAmount)}:</span>
+                <span className="text-[#E6EDF3] font-semibold">Total {formatCurrency(totalToRepay)}</span>
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead className="text-[#8B949E] text-xs">
                 <tr>
