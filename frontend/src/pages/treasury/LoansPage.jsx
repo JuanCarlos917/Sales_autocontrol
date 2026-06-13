@@ -71,9 +71,10 @@ export default function LoansPage() {
 
   const totals = {
     lent: loans.reduce((s, l) => s + parseFloat(l.principalAmount), 0),
+    toRepay: loans.reduce((s, l) => s + parseFloat(l.principalAmount) + parseFloat(l.interestAmount || 0), 0),
     paid: loans.reduce((s, l) => s + parseFloat(l.paidAmount), 0),
   };
-  totals.pending = totals.lent - totals.paid;
+  totals.pending = totals.toRepay - totals.paid;
 
   return (
     <div className="space-y-6">
@@ -152,7 +153,8 @@ export default function LoansPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((loan) => {
-            const pending = parseFloat(loan.principalAmount) - parseFloat(loan.paidAmount);
+            const totalToRepay = parseFloat(loan.principalAmount) + parseFloat(loan.interestAmount || 0);
+            const pending = totalToRepay - parseFloat(loan.paidAmount);
             const next = loan.installments?.find((i) => i.status !== 'PAID');
             return (
               <div
@@ -175,7 +177,10 @@ export default function LoansPage() {
                     <div className="text-xl font-mono font-bold text-amber-400">{formatCurrency(pending)}</div>
                   </div>
                   <div className="text-right text-xs text-[#6E7681]">
-                    de {formatCurrency(loan.principalAmount)}
+                    de {formatCurrency(totalToRepay)}
+                    {parseFloat(loan.interestAmount || 0) > 0 && (
+                      <div className="text-[#8B949E]">incl. interés {formatCurrency(loan.interestAmount)}</div>
+                    )}
                   </div>
                 </div>
                 {next && (
