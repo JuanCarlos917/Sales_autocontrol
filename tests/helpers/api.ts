@@ -600,3 +600,23 @@ export async function apiUpdateCommissionConfig(
 ): Promise<{ status: number; body: { error?: string; data?: CommissionConfig } }> {
   return apiRequestRaw('PUT', '/settings/commission-config', token, body);
 }
+
+// ── User Management (admin-only) ──
+export interface ManagedUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'ADMIN' | 'SUPERVISOR' | 'VIEWER';
+  isActive: boolean;
+}
+
+export async function apiCreateUser(
+  token: string,
+  data: { email: string; password: string; name?: string | null; role: string; pin?: string | null },
+): Promise<ManagedUser> {
+  return postJson('/users', data, token);
+}
+
+export async function apiMe(token: string): Promise<{ user: { id: string; email: string; role: string } }> {
+  return getJson('/auth/me', token);
+}
