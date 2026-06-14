@@ -3,10 +3,11 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/shared/FormFields';
 import api from '@/lib/api';
+import UsersSection from '@/components/settings/UsersSection';
 
 export default function SettingsPage() {
   const { fetchSettings, updateSettings } = useApp();
-  const { changePassword } = useAuth();
+  const { changePassword, role } = useAuth();
   const [settings, setSettings] = useState({ fixedMonthly: '800000', alertDays: '15' });
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwError, setPwError] = useState('');
@@ -114,6 +115,8 @@ export default function SettingsPage() {
           <button onClick={handleChangePassword} className="btn-primary">Actualizar Contraseña</button>
         </div>
       </div>
+
+      {role === 'ADMIN' && <UsersSection />}
     </div>
   );
 }
