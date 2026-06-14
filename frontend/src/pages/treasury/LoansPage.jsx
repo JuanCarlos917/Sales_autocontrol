@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewLoanModal, LoanPaymentModal } from '@/components/treasury';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = {
   PENDING: 'Pendiente',
@@ -26,6 +27,7 @@ const TABS = [
 ];
 
 export default function LoansPage() {
+  const { isViewer } = useAuth();
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('all');
@@ -97,13 +99,15 @@ export default function LoansPage() {
             <div className="text-[#6E7681]">Pendiente</div>
             <div className="font-mono font-bold text-amber-400">{formatCurrency(totals.pending)}</div>
           </div>
-          <button
-            onClick={() => setShowNew(true)}
-            className="btn-primary"
-            data-testid="loans-create-button"
-          >
-            + Nuevo préstamo
-          </button>
+          {!isViewer && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="btn-primary"
+              data-testid="loans-create-button"
+            >
+              + Nuevo préstamo
+            </button>
+          )}
         </div>
       </div>
 
@@ -194,7 +198,7 @@ export default function LoansPage() {
                   </div>
                 )}
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  {loan.status !== 'PAID' && loan.status !== 'CANCELLED' && (
+                  {loan.status !== 'PAID' && loan.status !== 'CANCELLED' && !isViewer && (
                     <button
                       onClick={() => setPaying(loan)}
                       className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-500/20 text-green-400 hover:bg-green-500/30"

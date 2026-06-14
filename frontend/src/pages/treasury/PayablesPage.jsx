@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { payablesApi } from '@/lib/payablesApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { PaymentModal } from '@/components/treasury';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_CONFIG = {
   PENDING: { label: 'Pendiente', color: 'bg-amber-500/20 text-amber-400' },
@@ -16,6 +17,7 @@ const STATUS_CONFIG = {
 };
 
 export default function PayablesPage() {
+  const { isViewer } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [payables, setPayables] = useState([]);
@@ -304,7 +306,7 @@ export default function PayablesPage() {
                                 </div>
                               )}
                             </div>
-                            {!isPaid && (
+                            {!isPaid && !isViewer && (
                               <button
                                 onClick={(e) => handlePaymentClick(e, p)}
                                 data-testid={`payable-pay-${p.id}`}
@@ -438,7 +440,7 @@ export default function PayablesPage() {
 
                 {/* Actions */}
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  {payable.status !== 'PAID' && payable.status !== 'CANCELLED' && (
+                  {payable.status !== 'PAID' && payable.status !== 'CANCELLED' && !isViewer && (
                     <button
                       onClick={(e) => handlePaymentClick(e, payable)}
                       data-testid={`payable-pay-${payable.id}`}
