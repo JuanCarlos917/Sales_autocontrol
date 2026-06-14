@@ -185,6 +185,18 @@ test('métricas: socio NO asume gastos → recibe % sobre ganancia bruta, yo abs
   assert.equal(m.myProfit, 1_000_000); // 4M - 3M (yo absorbo los gastos)
 });
 
+test('métricas: gastos soft-deleted NO cuentan en el P&L (ej. reclasificados a crédito)', () => {
+  const v = {
+    expenses: [
+      { amount: 1_000_000, category: 'MECANICA', paid: true },
+      { amount: 1_500_000, category: 'OTRO', paid: true, deletedAt: '2026-06-13T00:00:00.000Z' },
+    ],
+  };
+  const m = calculateVehicleMetrics(v);
+  assert.equal(m.totalExpenses, 1_000_000); // el soft-deleted (1.5M) no suma
+  assert.equal(m.expenseCount, 1);
+});
+
 // ── projectProfit ────────────────────────────────────────────
 test('projectProfit: costo, ganancia y ROI con gasto fijo prorrateado', () => {
   const p = projectProfit({

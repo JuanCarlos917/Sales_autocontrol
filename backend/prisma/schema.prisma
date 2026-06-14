@@ -248,6 +248,7 @@ model Account {
   expenses      Expense[]
   loans         Loan[]        @relation("LoanOriginAccount")
   loanPayments  LoanPayment[] @relation("LoanPaymentAccount")
+  debtPayments  DebtPayment[] @relation("DebtPaymentAccount")
 
   @@map("accounts")
 }
@@ -330,6 +331,10 @@ model Transaction {
   loan           Loan?           @relation(fields: [loanId], references: [id])
   loanPaymentId  String?
   loanPayment    LoanPayment?    @relation(fields: [loanPaymentId], references: [id])
+  debtId        String?
+  debt          Debt?        @relation(fields: [debtId], references: [id])
+  debtPaymentId String?
+  debtPayment   DebtPayment? @relation(fields: [debtPaymentId], references: [id])
 
   @@index([accountId])
   @@index([vehicleId])
@@ -340,6 +345,8 @@ model Transaction {
   @@index([loanPaymentId])
   @@index([expenseId])
   @@index([reversesTransactionId])
+  @@index([debtId])
+  @@index([debtPaymentId])
   @@map("transactions")
 }
 
@@ -366,6 +373,7 @@ enum TransactionCategory {
   LOAN_REPAYMENT
   LOAN_EXTRA_INCOME
   LOAN_INTEREST_INCOME
+  DEBT_PAYMENT
   EXPENSE_ADJUSTMENT
   EXPENSE_REVERSAL
 }
@@ -574,6 +582,69 @@ enum LoanStatus {
   CANCELLED
 }
 
+model Debt {
+  id               String     @id @default(cuid())
+  name             String
+  lender           String?
+  assetDescription String?
+  totalAmount      Decimal    @db.Decimal(15, 2)
+  paidAmount       Decimal    @default(0) @db.Decimal(15, 2)
+  status           DebtStatus @default(PENDING)
+  startDate        DateTime   @default(now())
+  notes            String?
+  createdBy        String
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  installments DebtInstallment[]
+  payments     DebtPayment[]
+  transactions Transaction[]
+
+  @@index([status])
+  @@map("debts")
+}
+
+model DebtInstallment {
+  id            String            @id @default(cuid())
+  debtId        String
+  sequence      Int
+  dueDate       DateTime
+  plannedAmount Decimal           @db.Decimal(15, 2)
+  paidAmount    Decimal           @default(0) @db.Decimal(15, 2)
+  status        InstallmentStatus @default(PENDING)
+
+  debt Debt @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  @@unique([debtId, sequence])
+  @@index([dueDate])
+  @@map("debt_installments")
+}
+
+model DebtPayment {
+  id        String   @id @default(cuid())
+  debtId    String
+  accountId String
+  amount    Decimal  @db.Decimal(15, 2)
+  date      DateTime @default(now())
+  notes     String?
+  createdBy String
+  createdAt DateTime @default(now())
+
+  debt         Debt          @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  account      Account       @relation("DebtPaymentAccount", fields: [accountId], references: [id])
+  transactions Transaction[]
+
+  @@index([debtId])
+  @@map("debt_payments")
+}
+
+enum DebtStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
 enum InstallmentStatus {
   PENDING
   PARTIAL
@@ -666,6 +737,7 @@ enum TreasuryAuditEntity {
   ACCOUNT
   PAYABLE
   PAYABLE_PAYMENT
+  DEBT
 }
 
 enum TreasuryAuditAction {

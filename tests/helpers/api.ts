@@ -353,6 +353,52 @@ export async function apiAddLoanPayment(token: string, loanId: string, data: Loa
   return postJson(`/loans/${loanId}/payments`, data, token);
 }
 
+// ── Debts ─────────────────────────────────────────────────
+
+export interface DebtInstallmentInput {
+  sequence: number;
+  dueDate: string;
+  plannedAmount: number;
+}
+
+export interface DebtCreateInput {
+  name: string;
+  lender?: string | null;
+  assetDescription?: string | null;
+  notes?: string | null;
+  installments: DebtInstallmentInput[];
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  totalAmount: string | number;
+  paidAmount: string | number;
+  status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  installments: Array<{ id: string; sequence: number; plannedAmount: string | number; paidAmount: string | number; status: string; dueDate: string }>;
+  isOverdue: boolean;
+}
+
+export async function apiCreateDebt(token: string, data: DebtCreateInput): Promise<Debt> {
+  return postJson('/debts', data, token);
+}
+
+export async function apiGetDebt(token: string, id: string): Promise<Debt> {
+  return getJson(`/debts/${id}`, token);
+}
+
+export async function apiAddDebtPayment(
+  token: string,
+  debtId: string,
+  data: { accountId: string; amount: number; date?: string | null; notes?: string | null },
+): Promise<Debt> {
+  return postJson(`/debts/${debtId}/payments`, data, token);
+}
+
+export async function apiReconcileDebt(token: string, debtId: string, transactionIds: string[]): Promise<Debt> {
+  return postJson(`/debts/${debtId}/reconcile`, { transactionIds }, token);
+}
+
 // ── Expenses ─────────────────────────────────────────────
 
 export interface ExpenseCreateInput {
@@ -453,6 +499,8 @@ export interface TransactionRaw {
   amount: string | number;
   description: string | null;
   expenseId: string | null;
+  vehicleId: string | null;
+  debtId: string | null;
   reversesTransactionId: string | null;
   date: string;
 }
