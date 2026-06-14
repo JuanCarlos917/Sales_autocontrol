@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { EXPENSE_CATEGORIES, formatCurrency, formatDate, getCategory } from '@/lib/constants';
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
 import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
@@ -9,6 +10,7 @@ const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
 export default function ExpensesPage() {
   const { expenses, fetchExpenses, deleteExpense, restoreExpense, showToast } = useApp();
+  const { isViewer } = useAuth();
   const [filter, setFilter] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -55,7 +57,9 @@ export default function ExpensesPage() {
             </button>
           ))}
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary" data-testid="expenses-create-button">+ Gasto</button>
+        {!isViewer && (
+          <button onClick={() => setShowCreate(true)} className="btn-primary" data-testid="expenses-create-button">+ Gasto</button>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -97,7 +101,7 @@ export default function ExpensesPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-mono font-bold text-sm">{formatCurrency(e.amount)}</span>
-                      {!locked && (
+                      {!locked && !isViewer && (
                         <>
                           <button
                             onClick={() => setEditing(e)}
