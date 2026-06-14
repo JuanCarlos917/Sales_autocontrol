@@ -24,7 +24,9 @@ function daysBetween(startDate, endDate = null) {
  *     · partnerAssumesExpenses=false → yo asumo 100% de gastos; socio recibe su % sobre ganancia bruta (salePrice - purchasePrice).
  */
 function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayables = []) {
-  const expenses = vehicle.expenses || [];
+  // Excluir gastos soft-deleted: no deben contar en el P&L del vehículo
+  // (ej. egresos reclasificados a pago de crédito vía reconciliación).
+  const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
@@ -178,7 +180,7 @@ function calculateParticipation(purchasePrice, partnerContribution) {
  * - Si el resultado es ≤ 0, devuelve skip=true.
  */
 function calculateCommissionBase(vehicle) {
-  const expenses = vehicle.expenses || [];
+  const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
   // La categoría COMISION fue eliminada del enum; el filtro queda como guard
   // defensivo por si llega data legacy desde una caller que no pasó por la DB.
   const directExpenses = expenses

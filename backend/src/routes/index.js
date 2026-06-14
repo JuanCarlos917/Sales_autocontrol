@@ -26,5 +26,6 @@ router.use('/treasury', require('./treasury'));
 router.use('/payables', require('./payables'));
 router.use('/alerts', require('./alerts'));
 router.use('/loans', require('./loans'));
+router.use('/debts', require('./debts'));
 
 module.exports = router;

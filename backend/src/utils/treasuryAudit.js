@@ -13,7 +13,7 @@
 //    (DELETE / CANCEL), el caller debe validarlo antes de invocar.
 // ═══════════════════════════════════════════════════════════════
 
-const VALID_ENTITIES = ['TRANSACTION', 'TRANSFER', 'ACCOUNT', 'PAYABLE', 'PAYABLE_PAYMENT'];
+const VALID_ENTITIES = ['TRANSACTION', 'TRANSFER', 'ACCOUNT', 'DEBT', 'PAYABLE', 'PAYABLE_PAYMENT'];
 const VALID_ACTIONS  = ['CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'PAYMENT'];
 
 /**
