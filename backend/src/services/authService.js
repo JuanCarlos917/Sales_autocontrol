@@ -11,25 +11,6 @@ const { AppError } = require('../middleware/errorHandler');
 
 class AuthService {
   /**
-   * Registrar nuevo usuario
-   */
-  async register({ email, password, name, pin }) {
-    const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) throw new AppError('El email ya está registrado', 409);
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const hashedPin = pin ? await bcrypt.hash(pin, 10) : null;
-
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword, name, pin: hashedPin },
-      select: { id: true, email: true, name: true, role: true },
-    });
-
-    const tokens = await this._generateTokens(user.id);
-    return { user, ...tokens };
-  }
-
-  /**
    * Login con email y password
    */
   async login({ email, password }) {
