@@ -44,7 +44,7 @@ export default function LoginPage() {
           {mode === 'email' && (
             <div>
               <label className="label-sm">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="admin@autocontrol.co" className="input-field" />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="tu@email.com" className="input-field" />
             </div>
           )}
 
@@ -67,7 +67,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <p className="text-[10px] text-[#6E7681] mt-6">PIN por defecto: 1234 · Email: admin@autocontrol.co</p>
+
       </div>
     </div>
   );
