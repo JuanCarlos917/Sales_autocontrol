@@ -69,3 +69,14 @@ export const loansApi = {
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
   cancel: (id) => api.post(`/loans/${id}/cancel`),
 };
+
+// ── Créditos / financiaciones del negocio ──
+export const debtsApi = {
+  getAll: (params) => api.get('/debts', { params }),
+  getById: (id) => api.get(`/debts/${id}`),
+  create: (data) => api.post('/debts', data),
+  addPayment: (id, data) => api.post(`/debts/${id}/payments`, data),
+  reconcileCandidates: (params) => api.get('/debts/reconcile-candidates', { params }),
+  reconcile: (id, data) => api.post(`/debts/${id}/reconcile`, data),
+  cancel: (id) => api.post(`/debts/${id}/cancel`),
+};
