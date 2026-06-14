@@ -477,7 +477,6 @@ const debtCreateSchema = Joi.object({
 const debtPaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
   amount: Joi.number().integer().positive().required(),
-  date: Joi.date().allow(null),
   notes: Joi.string().max(500).allow('', null),
 });
 

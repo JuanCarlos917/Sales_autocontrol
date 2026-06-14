@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import Modal from '@/components/shared/Modal';
 import { accountsApi, debtsApi } from '@/lib/treasuryApi';
-import { formatCurrency, getLocalDateString } from '@/lib/constants';
+import { formatCurrency } from '@/lib/constants';
 
 export default function DebtPaymentModal({ isOpen, onClose, onPaid, debt }) {
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(getLocalDateString());
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -18,7 +17,7 @@ export default function DebtPaymentModal({ isOpen, onClose, onPaid, debt }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setError(null); setNotes(''); setDate(getLocalDateString());
+    setError(null); setNotes('');
     setAmount(nextOwed > 0 ? String(nextOwed) : String(remaining));
     accountsApi.getAll().then((res) => {
       const active = res.data.filter((a) => a.isActive);
@@ -32,7 +31,7 @@ export default function DebtPaymentModal({ isOpen, onClose, onPaid, debt }) {
     setError(null);
     setLoading(true);
     try {
-      await debtsApi.addPayment(debt.id, { accountId, amount: parseFloat(amount || 0), date: date || null, notes: notes || null });
+      await debtsApi.addPayment(debt.id, { accountId, amount: parseFloat(amount || 0), notes: notes || null });
       onPaid?.();
       onClose();
     } catch (err) {
@@ -67,9 +66,9 @@ export default function DebtPaymentModal({ isOpen, onClose, onPaid, debt }) {
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="input w-full" min="0" data-testid="debt-payment-amount" />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="block text-sm text-[#8B949E] mb-1">Fecha</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input w-full" /></div>
-          <div><label className="block text-sm text-[#8B949E] mb-1">Notas</label><input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full" placeholder="Opcional" /></div>
+        <div>
+          <label className="block text-sm text-[#8B949E] mb-1">Notas</label>
+          <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full" placeholder="Opcional" />
         </div>
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">{error}</div>}

@@ -17,6 +17,10 @@ const DEBT_INCLUDE = {
 
 const DEBT_SNAPSHOT_FIELDS = ['name', 'lender', 'totalAmount', 'paidAmount', 'status'];
 
+// Categorías de egreso que NO representan un gasto real reconciliable a una deuda
+// (correcciones de ledger, desembolsos de préstamo, o ya enlazados a un crédito).
+const NON_RECONCILABLE_CATEGORIES = ['EXPENSE_REVERSAL', 'EXPENSE_ADJUSTMENT', 'DEBT_PAYMENT', 'LOAN_DISBURSEMENT'];
+
 function recomputeDebtStatus(total, paid) {
   const t = parseFloat(total);
   const q = parseFloat(paid);
@@ -107,7 +111,7 @@ class DebtService {
     return annotateOverdue(debt);
   }
 
-  async addPayment(debtId, { accountId, amount, date, notes }, userId) {
+  async addPayment(debtId, { accountId, amount, notes }, userId) {
     const pay = parseFloat(amount);
     if (pay <= 0) throw new AppError('El pago debe ser mayor a 0', 400);
 
@@ -202,7 +206,7 @@ class DebtService {
   // Egresos históricos candidatos a enlazar: transacciones EXPENSE
   // que no estén ya enlazadas a una deuda. Filtro opcional por texto.
   async reconcileCandidates({ search } = {}) {
-    const where = { type: 'EXPENSE', debtId: null };
+    const where = { type: 'EXPENSE', debtId: null, category: { notIn: NON_RECONCILABLE_CATEGORIES } };
     if (search) where.description = { contains: search, mode: 'insensitive' };
     return prisma.transaction.findMany({
       where,
@@ -234,6 +238,9 @@ class DebtService {
     for (const t of txs) {
       if (t.type !== 'EXPENSE') throw new AppError(`La transacción ${t.id} no es un egreso`, 400);
       if (t.debtId) throw new AppError(`La transacción ${t.id} ya está enlazada a una deuda`, 400);
+      if (NON_RECONCILABLE_CATEGORIES.includes(t.category)) {
+        throw new AppError(`La transacción ${t.id} (${t.category}) no es un egreso reconciliable`, 400);
+      }
     }
 
     const sumLink = txs.reduce((s, t) => s + parseFloat(t.amount), 0);
@@ -277,12 +284,16 @@ class DebtService {
           reason: `Reconciliación a crédito ${debtId}`,
         });
 
-        // Soft-delete del Expense de origen (sin reversa de caja)
+        // Soft-delete del Expense de origen (sin reversa de caja).
+        // Solo si no estaba ya borrado, para no pisar la metadata de borrado original.
         if (t.expenseId) {
-          await tx.expense.update({
-            where: { id: t.expenseId },
-            data: { deletedAt: new Date(), deletedBy: userId },
-          });
+          const exp = await tx.expense.findUnique({ where: { id: t.expenseId }, select: { deletedAt: true } });
+          if (exp && !exp.deletedAt) {
+            await tx.expense.update({
+              where: { id: t.expenseId },
+              data: { deletedAt: new Date(), deletedBy: userId },
+            });
+          }
         }
 
         // Imputación FIFO acumulada
