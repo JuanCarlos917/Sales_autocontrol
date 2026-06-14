@@ -38,13 +38,6 @@ const pinLoginSchema = Joi.object({
   email: Joi.string().email().optional(),
 });
 
-const registerSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
-  name: Joi.string().max(100).optional(),
-  pin: Joi.string().min(4).max(6).optional(),
-});
-
 const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().required(),
   newPassword: Joi.string().min(6).required(),
@@ -484,12 +477,35 @@ const debtReconcileSchema = Joi.object({
   transactionIds: Joi.array().items(Joi.string()).min(1).required(),
 });
 
+// ── User Management Schemas (admin-only) ──
+const USER_ROLES = ['ADMIN', 'SUPERVISOR', 'VIEWER'];
+
+const userCreateSchema = Joi.object({
+  email: Joi.string().email().required().messages({ 'any.required': 'Email es requerido' }),
+  password: Joi.string().min(8).required().messages({ 'string.min': 'La contraseña debe tener al menos 8 caracteres' }),
+  name: Joi.string().max(100).allow('', null),
+  role: Joi.string().valid(...USER_ROLES).required(),
+  pin: Joi.string().pattern(/^\d{4,6}$/).allow(null).messages({ 'string.pattern.base': 'El PIN debe ser 4 a 6 dígitos' }),
+});
+
+const userRoleSchema = Joi.object({
+  role: Joi.string().valid(...USER_ROLES).required(),
+});
+
+const userStatusSchema = Joi.object({
+  isActive: Joi.boolean().required(),
+});
+
+const userPasswordSchema = Joi.object({
+  password: Joi.string().min(8),
+  pin: Joi.string().pattern(/^\d{4,6}$/),
+}).or('password', 'pin').messages({ 'object.missing': 'Debe enviar al menos password o pin' });
+
 module.exports = {
   validate,
   schemas: {
     login: loginSchema,
     pinLogin: pinLoginSchema,
-    register: registerSchema,
     changePassword: changePasswordSchema,
     vehicle: vehicleSchema,
     vehicleUpdate: vehicleUpdateSchema,
@@ -527,5 +543,10 @@ module.exports = {
     debtReconcile: debtReconcileSchema,
     // Commissions
     commissionConfig: commissionConfigSchema,
+    // Users
+    userCreate: userCreateSchema,
+    userRole: userRoleSchema,
+    userStatus: userStatusSchema,
+    userPassword: userPasswordSchema,
   },
 };
