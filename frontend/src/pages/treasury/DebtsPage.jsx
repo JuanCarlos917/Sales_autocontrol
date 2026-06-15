@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { debtsApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewDebtModal, DebtPaymentModal, DebtReconcileModal } from '@/components/treasury';
+import PaymentDetails from '@/components/treasury/PaymentDetails';
 import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
@@ -91,6 +92,16 @@ export default function DebtsPage() {
                     <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}>🔗 Reconciliar</button>
                   )}
                 </div>
+                <PaymentDetails
+                  testidPrefix={`debt-card-${debt.id}`}
+                  payments={(debt.payments || []).map((p) => ({
+                    id: p.id,
+                    date: p.date,
+                    amount: parseFloat(p.amount),
+                    accountName: p.account?.name,
+                    notes: p.notes,
+                  }))}
+                />
               </div>
             );
           })}
