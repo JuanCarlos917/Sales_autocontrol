@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewLoanModal, LoanPaymentModal } from '@/components/treasury';
+import PaymentDetails from '@/components/treasury/PaymentDetails';
 import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = {
@@ -208,6 +209,16 @@ export default function LoansPage() {
                     </button>
                   )}
                 </div>
+                <PaymentDetails
+                  testidPrefix={`loan-card-${loan.id}`}
+                  payments={(loan.payments || []).map((p) => ({
+                    id: p.id,
+                    date: p.date,
+                    amount: parseFloat(p.principalAmount) + parseFloat(p.extraAmount || 0),
+                    accountName: p.account?.name,
+                    notes: p.notes,
+                  }))}
+                />
               </div>
             );
           })}
