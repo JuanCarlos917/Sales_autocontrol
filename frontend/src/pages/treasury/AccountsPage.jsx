@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
+import { useAuth } from '@/contexts/AuthContext';
 
 const ACCOUNT_TYPES = [
   { id: 'CASH', label: 'Efectivo / Caja' },
@@ -13,6 +14,7 @@ const ACCOUNT_TYPES = [
 ];
 
 export default function AccountsPage() {
+  const { isViewer } = useAuth();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -86,7 +88,9 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-[#E6EDF3]">Cuentas</h2>
-        <button onClick={openCreate} className="btn-primary text-sm">+ Nueva Cuenta</button>
+        {!isViewer && (
+          <button onClick={openCreate} className="btn-primary text-sm">+ Nueva Cuenta</button>
+        )}
       </div>
 
       {(() => {
@@ -113,10 +117,12 @@ export default function AccountsPage() {
             <div className="text-2xl font-bold text-[#E6EDF3] mb-3">
               {formatCurrency(account.currentBalance)}
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => openEdit(account)} className="btn-ghost text-xs flex-1">Editar</button>
-              <button onClick={() => handleDelete(account.id)} className="btn-ghost text-xs text-red-400 hover:text-red-300">Eliminar</button>
-            </div>
+            {!isViewer && (
+              <div className="flex gap-2">
+                <button onClick={() => openEdit(account)} className="btn-ghost text-xs flex-1">Editar</button>
+                <button onClick={() => handleDelete(account.id)} className="btn-ghost text-xs text-red-400 hover:text-red-300">Eliminar</button>
+              </div>
+            )}
           </div>
         );
 

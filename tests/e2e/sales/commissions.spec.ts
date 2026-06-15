@@ -461,6 +461,8 @@ test.describe('Comisiones — configuración global', () => {
   test('SettingsPage muestra y guarda comisiones (ADMIN)', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/settings');
+    // Settings ahora es por pestañas: abrir la de Comisiones.
+    await page.getByTestId('settings-tab-comisiones').click();
     await expect(page.getByTestId('settings-commissions-card')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('settings-commission-pct')).toHaveValue('60');
     await page.getByTestId('settings-commission-pct').fill('55');

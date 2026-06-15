@@ -2,8 +2,10 @@
 // Layout — Shell con sidebar, topbar, responsive
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useIdleTimeout } from '@/hooks/useIdleTimeout';
+import IdleWarningModal from '@/components/auth/IdleWarningModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import Toast from '@/components/shared/Toast';
@@ -20,6 +22,9 @@ const NAV_ITEMS = [
 
 export default function AppLayout() {
   const { logout, role } = useAuth();
+  const navigate = useNavigate();
+  const handleIdleLogout = useCallback(async () => { await logout(); navigate('/login'); }, [logout, navigate]);
+  const { warning: idleWarning, stayActive } = useIdleTimeout({ enabled: true, onIdle: handleIdleLogout });
   const isViewer = role === 'VIEWER';
   const { toast, exportCSV, dismissToast } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -139,6 +144,7 @@ export default function AppLayout() {
           onDismiss={toast.action ? dismissToast : undefined}
         />
       )}
+      <IdleWarningModal isOpen={idleWarning} onStay={stayActive} onLogout={handleIdleLogout} />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { debtsApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewDebtModal, DebtPaymentModal, DebtReconcileModal } from '@/components/treasury';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
 const STATUS_COLOR = {
@@ -13,6 +14,7 @@ const STATUS_COLOR = {
 };
 
 export default function DebtsPage() {
+  const { isViewer } = useAuth();
   const [debts, setDebts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -44,7 +46,9 @@ export default function DebtsPage() {
           <div className="text-right"><div className="text-[#6E7681]">Debido</div><div className="font-mono font-bold text-[#E6EDF3]">{formatCurrency(totals.owed)}</div></div>
           <div className="text-right"><div className="text-[#6E7681]">Pagado</div><div className="font-mono font-bold text-green-400">{formatCurrency(totals.paid)}</div></div>
           <div className="text-right"><div className="text-[#6E7681]">Pendiente</div><div className="font-mono font-bold text-amber-400">{formatCurrency(totals.pending)}</div></div>
-          <button onClick={() => setShowNew(true)} className="btn-primary" data-testid="debts-create-button">+ Nuevo crédito</button>
+          {!isViewer && (
+            <button onClick={() => setShowNew(true)} className="btn-primary" data-testid="debts-create-button">+ Nuevo crédito</button>
+          )}
         </div>
       </div>
 
@@ -80,10 +84,12 @@ export default function DebtsPage() {
                   </div>
                 )}
                 <div className="flex gap-2 pt-3 border-t border-border">
-                  {debt.status !== 'PAID' && debt.status !== 'CANCELLED' && (
+                  {debt.status !== 'PAID' && debt.status !== 'CANCELLED' && !isViewer && (
                     <button onClick={() => setPaying(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-500/20 text-green-400 hover:bg-green-500/30" data-testid={`debt-card-${debt.id}-pay-button`}>💸 Pagar cuota</button>
                   )}
-                  <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}>🔗 Reconciliar</button>
+                  {!isViewer && (
+                    <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}>🔗 Reconciliar</button>
+                  )}
                 </div>
               </div>
             );
