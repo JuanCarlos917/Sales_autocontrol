@@ -65,8 +65,9 @@ export default function LoanDetailPage() {
   const totalCount = installments.length;
   const principal = parseFloat(loan.principalAmount);
   const interest = parseFloat(loan.interestAmount || 0);
+  const totalToRepay = principal + interest;
   const paid = parseFloat(loan.paidAmount);
-  const pending = principal + interest - paid;
+  const pending = totalToRepay - paid;
   // Tasa pactada: el valor se guarda como porcentaje entero (ej. 10 = 10%, 100 = 100%).
   // Se muestra sin decimales forzados, agregando los que tenga (ej. 12.5%).
   const rate = parseFloat(loan.interestRate);
@@ -96,11 +97,13 @@ export default function LoanDetailPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4" data-testid="loan-detail-summary">
-        <Kpi label="Valor prestado" value={formatCurrency(principal)} testid="loan-detail-kpi-principal" />
+        <Kpi label="Valor prestado (capital)" value={formatCurrency(principal)} testid="loan-detail-kpi-principal" />
         <Kpi label="Tasa pactada" value={rateLabel} testid="loan-detail-kpi-rate" />
+        <Kpi label="Interés pactado" value={formatCurrency(interest)} testid="loan-detail-kpi-interest-amount" />
+        <Kpi label="Total a devolver" value={formatCurrency(totalToRepay)} testid="loan-detail-kpi-total" />
         <Kpi label="Cuotas pagadas" value={`${paidCount} / ${totalCount}`} testid="loan-detail-kpi-installments" />
         <Kpi label="Valor pagado" value={formatCurrency(paid)} accent="text-green-400" testid="loan-detail-kpi-paid" />
-        <Kpi label="Intereses pagados" value={formatCurrency(loan.interestReceived)} accent="text-green-400" testid="loan-detail-kpi-interest" />
+        <Kpi label="Intereses recibidos" value={formatCurrency(loan.interestReceived)} accent="text-green-400" testid="loan-detail-kpi-interest" />
         <Kpi label="Saldo pendiente" value={formatCurrency(pending)} accent="text-amber-400" testid="loan-detail-kpi-pending" />
       </div>
 

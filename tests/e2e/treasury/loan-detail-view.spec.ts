@@ -32,8 +32,11 @@ test.describe('Tesorería — vista de detalle de préstamos y créditos', () =>
     await expect(page).toHaveURL(new RegExp(`/treasury/loans/${loan.id}$`));
     await expect(page.getByTestId('loan-detail-page')).toBeVisible();
 
-    // Resumen: tasa pactada y cuotas pagadas/pactadas.
+    // Resumen: tasa pactada, interés pactado, total a devolver y cuotas.
     await expect(page.getByTestId('loan-detail-kpi-rate')).toContainText('12');
+    // 2.000.000 al 12% => interés 240.000, total a devolver 2.240.000.
+    await expect(page.getByTestId('loan-detail-kpi-interest-amount')).toContainText('240.000');
+    await expect(page.getByTestId('loan-detail-kpi-total')).toContainText('2.240.000');
     await expect(page.getByTestId('loan-detail-kpi-installments')).toContainText('/ 2');
 
     // Sección de pagos muestra la observación.
