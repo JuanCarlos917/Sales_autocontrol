@@ -65,6 +65,7 @@ export const treasuryReportsApi = {
 export const loansApi = {
   getAll: (params) => api.get('/loans', { params }),
   getOne: (id) => api.get(`/loans/${id}`),
+  getById: (id) => api.get(`/loans/${id}`),
   create: (data) => api.post('/loans', data),
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
   cancel: (id) => api.post(`/loans/${id}/cancel`),

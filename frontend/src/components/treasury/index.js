@@ -22,3 +22,7 @@ export { default as LoansSummaryCards } from './LoansSummaryCards';
 export { default as NewDebtModal } from './NewDebtModal';
 export { default as DebtPaymentModal } from './DebtPaymentModal';
 export { default as DebtReconcileModal } from './DebtReconcileModal';
+
+// Shared (loans + debts)
+export { default as PaymentDetails } from './PaymentDetails';
+export { default as InstallmentSchedule } from './InstallmentSchedule';
