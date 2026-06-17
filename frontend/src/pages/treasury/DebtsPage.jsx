@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { debtsApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewDebtModal, DebtPaymentModal, DebtReconcileModal } from '@/components/treasury';
-import PaymentDetails from '@/components/treasury/PaymentDetails';
 import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
@@ -84,24 +83,21 @@ export default function DebtsPage() {
                     📅 Próxima cuota #{next.sequence}: {formatDate(next.dueDate)} ({formatCurrency(next.plannedAmount)})
                   </div>
                 )}
-                <div className="flex gap-2 pt-3 border-t border-border">
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
                   {debt.status !== 'PAID' && debt.status !== 'CANCELLED' && !isViewer && (
                     <button onClick={() => setPaying(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-500/20 text-green-400 hover:bg-green-500/30" data-testid={`debt-card-${debt.id}-pay-button`}>💸 Pagar cuota</button>
                   )}
                   {!isViewer && (
                     <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}>🔗 Reconciliar</button>
                   )}
+                  <Link
+                    to={`/treasury/debts/${debt.id}`}
+                    className="flex-1 text-center py-2 rounded-lg text-xs font-semibold bg-surface-hover text-[#8B949E] hover:text-[#E6EDF3] transition-colors"
+                    data-testid={`debt-card-${debt.id}-detail-link`}
+                  >
+                    Ver detalle →
+                  </Link>
                 </div>
-                <PaymentDetails
-                  testidPrefix={`debt-card-${debt.id}`}
-                  payments={(debt.payments || []).map((p) => ({
-                    id: p.id,
-                    date: p.date,
-                    amount: parseFloat(p.amount),
-                    accountName: p.account?.name,
-                    notes: p.notes,
-                  }))}
-                />
               </div>
             );
           })}
