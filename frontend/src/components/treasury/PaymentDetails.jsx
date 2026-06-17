@@ -3,23 +3,27 @@ import { formatCurrency, formatDate } from '@/lib/constants';
 
 // Lista colapsable de pagos. `payments`: [{ id, date, amount, accountName, notes }] (ordenada desc).
 // `testidPrefix`: prefijo para los data-testid (ej. `loan-card-<id>` / `debt-card-<id>`).
-export default function PaymentDetails({ payments = [], testidPrefix }) {
+// `alwaysOpen`: cuando es true, renderiza la lista expandida sin el toggle (vista de detalle).
+export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen = false }) {
   const [open, setOpen] = useState(false);
   const count = payments.length;
+  const expanded = alwaysOpen || open;
 
   return (
-    <div className="pt-3 mt-3 border-t border-border">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between text-xs font-semibold text-[#8B949E] hover:text-[#E6EDF3]"
-        data-testid={`${testidPrefix}-details-toggle`}
-      >
-        <span>Detalles ({count})</span>
-        <span>{open ? '▾' : '▸'}</span>
-      </button>
+    <div className={alwaysOpen ? '' : 'pt-3 mt-3 border-t border-border'}>
+      {!alwaysOpen && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="w-full flex items-center justify-between text-xs font-semibold text-[#8B949E] hover:text-[#E6EDF3]"
+          data-testid={`${testidPrefix}-details-toggle`}
+        >
+          <span>Detalles ({count})</span>
+          <span>{open ? '▾' : '▸'}</span>
+        </button>
+      )}
 
-      {open && (
+      {expanded && (
         <div className="mt-2 space-y-2" data-testid={`${testidPrefix}-details`}>
           {count === 0 ? (
             <div className="text-xs text-[#6E7681]">Sin pagos registrados</div>

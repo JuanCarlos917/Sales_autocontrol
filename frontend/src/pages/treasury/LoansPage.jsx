@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewLoanModal, LoanPaymentModal } from '@/components/treasury';
-import PaymentDetails from '@/components/treasury/PaymentDetails';
 import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_LABEL = {
@@ -198,7 +197,7 @@ export default function LoansPage() {
                     + {formatCurrency(loan.extraReceived)} en ingresos extra
                   </div>
                 )}
-                <div className="flex gap-2 pt-3 border-t border-border">
+                <div className="flex items-center gap-2 pt-3 border-t border-border">
                   {loan.status !== 'PAID' && loan.status !== 'CANCELLED' && !isViewer && (
                     <button
                       onClick={() => setPaying(loan)}
@@ -208,17 +207,14 @@ export default function LoansPage() {
                       💸 Registrar pago
                     </button>
                   )}
+                  <Link
+                    to={`/treasury/loans/${loan.id}`}
+                    className="flex-1 text-center py-2 rounded-lg text-xs font-semibold bg-surface-hover text-[#8B949E] hover:text-[#E6EDF3] transition-colors"
+                    data-testid={`loan-card-${loan.id}-detail-link`}
+                  >
+                    Ver detalle →
+                  </Link>
                 </div>
-                <PaymentDetails
-                  testidPrefix={`loan-card-${loan.id}`}
-                  payments={(loan.payments || []).map((p) => ({
-                    id: p.id,
-                    date: p.date,
-                    amount: parseFloat(p.principalAmount) + parseFloat(p.extraAmount || 0),
-                    accountName: p.account?.name,
-                    notes: p.notes,
-                  }))}
-                />
               </div>
             );
           })}
