@@ -135,7 +135,7 @@ export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
 
           <div className="grid grid-cols-2 gap-3">
             <Select label="Categoría" value={f.category} onChange={e => s('category', e.target.value)}
-              options={EXPENSE_CATEGORIES.map(c => ({ value: c.id, label: `${c.icon} ${c.label}` }))} />
+              options={EXPENSE_CATEGORIES.map(c => ({ value: c.id, label: c.label }))} />
             <Input
               label={`Valor *${lockedAmountAndAccount ? ' (bloqueado)' : ''}`}
               type="number"

@@ -99,7 +99,7 @@ export default function DashboardPage() {
                 return (
                   <div key={catId}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-[#8B949E]">{cat?.icon} {cat?.label || catId}</span>
+                      <span className="text-[#8B949E] inline-flex items-center gap-1.5">{cat?.icon && <cat.icon className="w-3.5 h-3.5" style={{ color: cat.color }} />} {cat?.label || catId}</span>
                       <span className="font-mono font-semibold">{formatCurrency(total)}</span>
                     </div>
                     <div className="h-1 bg-[#0F1419] rounded-full">

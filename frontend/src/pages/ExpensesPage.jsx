@@ -5,6 +5,7 @@ import { EXPENSE_CATEGORIES, formatCurrency, formatDate, getCategory } from '@/l
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal';
 import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
 import ExpenseAuditModal from '@/components/expenses/ExpenseAuditModal';
+import { Lock, Clock, StickyNote, History, Trash2, MoreVertical } from 'lucide-react';
 
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
@@ -87,17 +88,17 @@ export default function ExpensesPage() {
                             title="Vehículo vendido: gasto bloqueado"
                             data-testid={`expense-${e.id}-locked-badge`}
                           >
-                            🔒 Vendido
+                            <span className="inline-flex items-center gap-1"><Lock className="w-3 h-3" /> Vendido</span>
                           </span>
                         )}
                       </div>
                       <div className="text-[11px] text-[#6E7681] flex gap-2 flex-wrap mt-0.5">
-                        <span style={{ color: cat?.color }}>{cat?.icon} {cat?.label}</span>
+                        <span className="inline-flex items-center gap-1" style={{ color: cat?.color }}>{cat?.icon && <cat.icon className="w-3.5 h-3.5" />} {cat?.label}</span>
                         {e.vehicle && <span className="font-mono">{e.vehicle.plate}</span>}
                         {e.date && <span>{formatDate(e.date)}</span>}
-                        {!e.paid && <span className="text-[#D29922] font-semibold">⏳ Pendiente</span>}
+                        {!e.paid && <span className="text-[#D29922] font-semibold inline-flex items-center gap-1"><Clock className="w-3 h-3" /> Pendiente</span>}
                       </div>
-                      {e.notes && <div className="text-[11px] text-[#6E7681] italic mt-1">📝 {e.notes}</div>}
+                      {e.notes && <div className="text-[11px] text-[#6E7681] italic mt-1 inline-flex items-center gap-1"><StickyNote className="w-3 h-3 shrink-0" /> {e.notes}</div>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-mono font-bold text-sm">{formatCurrency(e.amount)}</span>
@@ -117,7 +118,7 @@ export default function ExpensesPage() {
                               aria-label="Más acciones"
                               data-testid={`expense-${e.id}-overflow-button`}
                             >
-                              ⋮
+                              <MoreVertical className="w-4 h-4" />
                             </button>
                             {menuOpenId === e.id && (
                               <>
@@ -128,16 +129,16 @@ export default function ExpensesPage() {
                                 <div className="absolute right-0 top-full mt-1 w-40 bg-[#1C2128] border border-border rounded-lg shadow-xl z-20 overflow-hidden">
                                   <button
                                     onClick={() => { setMenuOpenId(null); setAuditing(e); }}
-                                    className="w-full text-left px-3 py-2 text-xs text-[#8B949E] hover:bg-surface-hover transition-colors"
+                                    className="w-full text-left px-3 py-2 text-xs text-[#8B949E] hover:bg-surface-hover transition-colors inline-flex items-center gap-1.5"
                                   >
-                                    📜 Historial
+                                    <History className="w-3.5 h-3.5" /> Historial
                                   </button>
                                   <button
                                     onClick={() => { setMenuOpenId(null); setDeleting(e); }}
                                     className="w-full text-left px-3 py-2 text-xs text-[#F85149] hover:bg-[#F85149]/10 transition-colors border-t border-border"
                                     data-testid={`expense-${e.id}-delete-action`}
                                   >
-                                    🗑 Eliminar
+                                    <span className="inline-flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5" /> Eliminar</span>
                                   </button>
                                 </div>
                               </>
