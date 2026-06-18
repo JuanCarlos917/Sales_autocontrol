@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 export default function Modal({ children, onClose, title, width = 'max-w-lg', isOpen = true }) {
   if (!isOpen) return null;
 
@@ -7,7 +9,7 @@ export default function Modal({ children, onClose, title, width = 'max-w-lg', is
         {title && (
           <div className="flex items-center justify-between px-6 py-4 border-b border-border">
             <h2 className="text-base font-bold">{title}</h2>
-            <button onClick={onClose} className="btn-ghost px-2 py-1 text-lg">✕</button>
+            <button onClick={onClose} className="btn-ghost px-2 py-1" aria-label="Cerrar"><X className="w-4 h-4" /></button>
           </div>
         )}
         <div className="p-6">{children}</div>

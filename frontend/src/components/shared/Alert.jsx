@@ -3,31 +3,32 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { AlertCircle, AlertTriangle, Info, CheckCircle2, X } from 'lucide-react';
 
 const ALERT_TYPES = {
   error: {
     bg: 'bg-red-500/10',
     border: 'border-red-500/40',
     text: 'text-red-400',
-    icon: '🚨',
+    icon: AlertCircle,
   },
   warning: {
     bg: 'bg-amber-500/10',
     border: 'border-amber-500/40',
     text: 'text-amber-400',
-    icon: '⚠️',
+    icon: AlertTriangle,
   },
   info: {
     bg: 'bg-blue-500/10',
     border: 'border-blue-500/40',
     text: 'text-blue-400',
-    icon: 'ℹ️',
+    icon: Info,
   },
   success: {
     bg: 'bg-green-500/10',
     border: 'border-green-500/40',
     text: 'text-green-400',
-    icon: '✅',
+    icon: CheckCircle2,
   },
 };
 
@@ -56,7 +57,7 @@ export default function Alert({
   return (
     <div className={`p-4 rounded-lg border ${style.bg} ${style.border} ${className}`}>
       <div className="flex items-start gap-3">
-        <span className="text-xl shrink-0">{style.icon}</span>
+        <style.icon className={`w-5 h-5 shrink-0 ${style.text}`} />
         <div className="flex-1 min-w-0">
           {title && (
             <div className={`text-sm font-semibold ${style.text} mb-1`}>
@@ -93,7 +94,7 @@ export default function Alert({
             className="text-[#6E7681] hover:text-[#8B949E] transition-colors p-1"
             aria-label="Cerrar alerta"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         )}
       </div>

@@ -1,3 +1,5 @@
+import { AlertCircle } from 'lucide-react';
+
 export function Field({ label, help, error, children, className = '' }) {
   const errorText = typeof error === 'string' ? error : null;
   return (
@@ -8,7 +10,7 @@ export function Field({ label, help, error, children, className = '' }) {
         </label>
       )}
       {children}
-      {errorText && <p className="text-[11px] text-red-400 mt-1 font-medium">⚠ {errorText}</p>}
+      {errorText && <p className="text-[11px] text-red-400 mt-1 font-medium inline-flex items-center gap-1"><AlertCircle className="w-3 h-3 shrink-0" /> {errorText}</p>}
       {help && !errorText && <p className="text-[11px] text-[#6E7681] mt-1">{help}</p>}
     </div>
   );

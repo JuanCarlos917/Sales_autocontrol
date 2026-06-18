@@ -3,6 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { STAGES, EXPENSE_CATEGORIES, formatCurrency, formatPercent } from '@/lib/constants';
 import api from '@/lib/api';
 import AlertsPanel from '@/components/shared/AlertsPanel';
+import { TrendingUp } from 'lucide-react';
 
 export default function DashboardPage() {
   const { fetchDashboard, dashboard } = useApp();
@@ -99,7 +100,7 @@ export default function DashboardPage() {
                 return (
                   <div key={catId}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-[#8B949E]">{cat?.icon} {cat?.label || catId}</span>
+                      <span className="text-[#8B949E] inline-flex items-center gap-1.5">{cat?.icon && <cat.icon className="w-3.5 h-3.5" style={{ color: cat.color }} />} {cat?.label || catId}</span>
                       <span className="font-mono font-semibold">{formatCurrency(total)}</span>
                     </div>
                     <div className="h-1 bg-[#0F1419] rounded-full">
@@ -114,7 +115,7 @@ export default function DashboardPage() {
 
         {/* Projection Calculator */}
         <div className="card md:col-span-2">
-          <div className="card-title">🔮 Proyección de Ganancia</div>
+          <div className="card-title inline-flex items-center gap-2"><TrendingUp className="w-4 h-4" /> Proyección de Ganancia</div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { key: 'purchasePrice', label: 'Precio Compra', ph: '25000000' },

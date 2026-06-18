@@ -4,6 +4,7 @@ import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
 import PaymentDetails from '@/components/treasury/PaymentDetails';
 import InstallmentSchedule from '@/components/treasury/InstallmentSchedule';
+import { SearchX } from 'lucide-react';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
 const STATUS_COLOR = {
@@ -53,7 +54,7 @@ export default function LoanDetailPage() {
   if (notFound || !loan) {
     return (
       <div className="card p-12 text-center" data-testid="loan-detail-not-found">
-        <div className="text-4xl mb-4">🔍</div>
+        <SearchX className="w-11 h-11 mx-auto mb-4 text-[#6E7681]" />
         <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Préstamo no encontrado</h3>
         <Link to="/treasury/loans" className="text-accent hover:underline">← Volver a préstamos</Link>
       </div>

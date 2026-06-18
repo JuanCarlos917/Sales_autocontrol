@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { thirdPartiesApi } from '@/lib/treasuryApi';
+import { X, Search, User } from 'lucide-react';
 
 const TYPE_LABELS = {
   SUPPLIER: 'Proveedor',
@@ -167,8 +168,9 @@ export default function ThirdPartySelector({
               type="button"
               onClick={handleClear}
               className="text-[#6E7681] hover:text-red-400 transition-colors p-1"
+              aria-label="Limpiar"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -183,7 +185,7 @@ export default function ThirdPartySelector({
             disabled={disabled}
             className={`input w-full pl-9 ${error ? 'border-red-500 focus:border-red-500' : ''} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
           />
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6E7681]">🔍</span>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6E7681]" />
         </div>
       )}
 
@@ -295,7 +297,7 @@ export default function ThirdPartySelector({
                       onClick={() => handleSelect(t)}
                       className="w-full flex items-center gap-3 p-3 hover:bg-surface-hover transition-colors text-left border-b border-border last:border-0"
                     >
-                      <span className="text-lg">👤</span>
+                      <User className="w-5 h-5 text-[#6E7681]" />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-[#E6EDF3] truncate">{t.name}</div>
                         <div className="text-xs text-[#6E7681] flex items-center gap-2">

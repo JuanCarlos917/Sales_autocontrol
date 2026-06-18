@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DOC_TYPES, formatDate } from '@/lib/constants';
+import { FileText, X } from 'lucide-react';
 
 // Tarjeta de documento: vista previa (imagen) o ícono+nombre (PDF/otros),
 // con acciones Ver / Descargar / Eliminar. El borrado pide confirmación en línea.
@@ -25,7 +26,7 @@ export default function DocumentCard({ doc, onView, onDelete, isViewer }) {
           <img src={doc.url} alt={typeLabel} className="w-full max-h-40 object-cover" />
         ) : (
           <div className="flex flex-col items-center justify-center py-7 text-[#6E7681]">
-            <span className="text-3xl">📄</span>
+            <FileText className="w-8 h-8" />
             <span className="text-[11px] mt-1 px-2 truncate max-w-full">{doc.filename}</span>
           </div>
         )}
@@ -60,7 +61,7 @@ export default function DocumentCard({ doc, onView, onDelete, isViewer }) {
                 title="Eliminar"
                 data-testid="document-delete"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             )
           )}

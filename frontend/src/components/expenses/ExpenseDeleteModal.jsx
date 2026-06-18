@@ -40,7 +40,7 @@ export default function ExpenseDeleteModal({ expense, onClose, onConfirm }) {
           </div>
           <div className="flex justify-between items-baseline">
             <span className="text-[11px] text-[#6E7681]">Categoría</span>
-            <span className="text-xs" style={{ color: cat?.color }}>{cat?.icon} {cat?.label}</span>
+            <span className="text-xs inline-flex items-center gap-1" style={{ color: cat?.color }}>{cat?.icon && <cat.icon className="w-3.5 h-3.5" />} {cat?.label}</span>
           </div>
           {expense?.vehicle && (
             <div className="flex justify-between items-baseline">

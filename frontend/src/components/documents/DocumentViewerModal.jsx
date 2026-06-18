@@ -1,5 +1,6 @@
 import Modal from '@/components/shared/Modal';
 import { DOC_TYPES } from '@/lib/constants';
+import { Download } from 'lucide-react';
 
 // Visor de documentos: imagen a tamaño completo o PDF embebido, con descarga.
 export default function DocumentViewerModal({ doc, onClose }) {
@@ -35,7 +36,7 @@ export default function DocumentViewerModal({ doc, onClose }) {
             className="btn-primary"
             data-testid="document-download"
           >
-            ⬇ Descargar
+            <span className="inline-flex items-center gap-1.5"><Download className="w-4 h-4" /> Descargar</span>
           </a>
         </div>
       </div>

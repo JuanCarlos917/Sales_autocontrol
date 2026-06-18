@@ -5,6 +5,7 @@ import { EXPENSE_CATEGORIES, getLocalDateString, formatCurrency } from '@/lib/co
 import { accountsApi, thirdPartiesApi } from '@/lib/treasuryApi';
 import Modal from '@/components/shared/Modal';
 import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormFields';
+import { AlertTriangle } from 'lucide-react';
 
 export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
   const navigate = useNavigate();
@@ -135,7 +136,7 @@ export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
 
           <div className="grid grid-cols-2 gap-3">
             <Select label="Categoría" value={f.category} onChange={e => s('category', e.target.value)}
-              options={EXPENSE_CATEGORIES.map(c => ({ value: c.id, label: `${c.icon} ${c.label}` }))} />
+              options={EXPENSE_CATEGORIES.map(c => ({ value: c.id, label: c.label }))} />
             <Input
               label={`Valor *${lockedAmountAndAccount ? ' (bloqueado)' : ''}`}
               type="number"
@@ -211,8 +212,8 @@ export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
           )}
 
           {!isEdit && f.isPaid && selectedAccount && f.amount && Number(f.amount) > Number(selectedAccount.currentBalance || 0) && (
-            <div className="text-[11px] text-[#D29922]">
-              ⚠️ La cuenta quedará con saldo negativo después de este gasto.
+            <div className="text-[11px] text-[#D29922] inline-flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta quedará con saldo negativo después de este gasto.
             </div>
           )}
 

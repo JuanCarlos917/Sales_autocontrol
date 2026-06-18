@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { formatCurrency } from '@/lib/constants';
+import { AlertTriangle } from 'lucide-react';
 
 export default function BalanceCard({ accounts = [], totalBalance = 0, loading = false }) {
   const hasNegativeBalance = totalBalance < 0;
@@ -24,8 +25,8 @@ export default function BalanceCard({ accounts = [], totalBalance = 0, loading =
     }`}>
       {/* Alerta visual si hay saldo negativo */}
       {hasNegativeBalance && (
-        <div className="absolute top-0 right-0 px-3 py-1 bg-red-500/20 text-red-400 text-xs font-semibold rounded-bl-lg">
-          ⚠ Saldo Negativo
+        <div className="absolute top-0 right-0 px-3 py-1 bg-red-500/20 text-red-400 text-xs font-semibold rounded-bl-lg inline-flex items-center gap-1">
+          <AlertTriangle className="w-3.5 h-3.5" /> Saldo Negativo
         </div>
       )}
 
@@ -67,8 +68,8 @@ export default function BalanceCard({ accounts = [], totalBalance = 0, loading =
       {/* Advertencia de cuenta negativa */}
       {hasNegativeAccount && !hasNegativeBalance && (
         <div className="mt-4 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-          <div className="text-xs text-amber-400">
-            ⚠ Una o mas cuentas tienen saldo negativo
+          <div className="text-xs text-amber-400 inline-flex items-center gap-1">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Una o mas cuentas tienen saldo negativo
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import { debtsApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { NewDebtModal, DebtPaymentModal, DebtReconcileModal } from '@/components/treasury';
 import { useAuth } from '@/contexts/AuthContext';
+import { Landmark, Calendar, HandCoins, Link2 } from 'lucide-react';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
 const STATUS_COLOR = {
@@ -56,7 +57,7 @@ export default function DebtsPage() {
         <div className="text-center py-8 text-[#6E7681]">Cargando...</div>
       ) : debts.length === 0 ? (
         <div className="card p-12 text-center">
-          <div className="text-4xl mb-4">🏦</div>
+          <Landmark className="w-11 h-11 mx-auto mb-4 text-[#6E7681]" />
           <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Sin créditos</h3>
           <p className="text-sm text-[#6E7681]">Creá uno con el botón de arriba.</p>
         </div>
@@ -79,16 +80,16 @@ export default function DebtsPage() {
                   <div className="text-right text-xs text-[#6E7681]">de {formatCurrency(debt.totalAmount)}</div>
                 </div>
                 {next && (
-                  <div className={`text-xs mb-3 ${debt.isOverdue ? 'text-red-400' : 'text-[#6E7681]'}`}>
-                    📅 Próxima cuota #{next.sequence}: {formatDate(next.dueDate)} ({formatCurrency(next.plannedAmount)})
+                  <div className={`text-xs mb-3 inline-flex items-center gap-1.5 ${debt.isOverdue ? 'text-red-400' : 'text-[#6E7681]'}`}>
+                    <Calendar className="w-3.5 h-3.5 shrink-0" /> Próxima cuota #{next.sequence}: {formatDate(next.dueDate)} ({formatCurrency(next.plannedAmount)})
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border">
                   {debt.status !== 'PAID' && debt.status !== 'CANCELLED' && !isViewer && (
-                    <button onClick={() => setPaying(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-500/20 text-green-400 hover:bg-green-500/30" data-testid={`debt-card-${debt.id}-pay-button`}>💸 Pagar cuota</button>
+                    <button onClick={() => setPaying(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-green-500/20 text-green-400 hover:bg-green-500/30" data-testid={`debt-card-${debt.id}-pay-button`}><span className="inline-flex items-center justify-center gap-1.5"><HandCoins className="w-3.5 h-3.5" /> Pagar cuota</span></button>
                   )}
                   {!isViewer && (
-                    <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}>🔗 Reconciliar</button>
+                    <button onClick={() => setReconciling(debt)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-400 hover:bg-sky-500/30" data-testid={`debt-card-${debt.id}-reconcile-button`}><span className="inline-flex items-center justify-center gap-1.5"><Link2 className="w-3.5 h-3.5" /> Reconciliar</span></button>
                   )}
                   <Link
                     to={`/treasury/debts/${debt.id}`}
