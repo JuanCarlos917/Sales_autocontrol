@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { alertsApi } from '@/lib/alertsApi';
 import Alert from '@/components/shared/Alert';
+import { Check, CheckCircle2, RefreshCw } from 'lucide-react';
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState([]);
@@ -60,8 +61,8 @@ export default function AlertsPage() {
               : `${alerts.length} alerta${alerts.length > 1 ? 's' : ''} activa${alerts.length > 1 ? 's' : ''}`}
           </p>
         </div>
-        <button onClick={loadAlerts} className="btn-ghost text-sm">
-          ↻ Actualizar
+        <button onClick={loadAlerts} className="btn-ghost text-sm inline-flex items-center gap-1.5">
+          <RefreshCw className="w-3.5 h-3.5" /> Actualizar
         </button>
       </div>
 
@@ -96,8 +97,8 @@ export default function AlertsPage() {
             <div className="text-xs text-[#6E7681]">Advertencias</div>
           </div>
           <div className="card p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">
-              {alerts.length === 0 ? '✓' : '—'}
+            <div className="text-2xl font-bold text-green-400 flex justify-center">
+              {alerts.length === 0 ? <Check className="w-6 h-6" /> : '—'}
             </div>
             <div className="text-xs text-[#6E7681]">Estado</div>
           </div>
@@ -131,7 +132,7 @@ export default function AlertsPage() {
       {/* Lista de alertas */}
       {filteredAlerts.length === 0 ? (
         <div className="card p-12 text-center">
-          <div className="text-4xl mb-4">✅</div>
+          <CheckCircle2 className="w-11 h-11 mx-auto mb-4 text-green-400" />
           <div className="text-lg font-semibold text-[#E6EDF3] mb-2">
             {filter === 'all' ? 'Sin alertas' : 'Sin alertas en esta categoria'}
           </div>

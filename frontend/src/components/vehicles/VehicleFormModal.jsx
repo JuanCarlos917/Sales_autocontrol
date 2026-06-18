@@ -7,6 +7,7 @@ import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormField
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
 import { accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi } from '@/lib/payablesApi';
+import { Lock, AlertTriangle, Info, Users, Handshake, CreditCard, Banknote, Landmark, Check } from 'lucide-react';
 
 // Mapa de tipos de issue → campo en el formulario + mensaje rojo sobre el input
 const HIGHLIGHT_MESSAGES = {
@@ -79,7 +80,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   // No aplica en el modo "completar para avanzar": ahí el foco es diligenciar los campos faltantes.
   const adminEditingIdentity = !!vehicle && vehicle.stage !== 'NEGOCIANDO' && !vendidoLocked && role === 'ADMIN' && !completeForStage;
   const identityTitle = identityLocked ? 'Solo un administrador puede modificar estos datos una vez registrada la compra' : undefined;
-  const identityHelp = identityLocked ? '🔒 Datos de identidad bloqueados: requieren rol administrador' : undefined;
+  const identityHelp = identityLocked ? 'Datos de identidad bloqueados: requieren rol administrador' : undefined;
   // Vehículo recibido en cruce: el valor negociado es el valor del cruce, inmutable.
   const tradeInLocked = !!vehicle?.fromTradeIn;
 
@@ -337,20 +338,20 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     <Modal onClose={onClose} title={completeForStage ? `Completar para pasar a ${STAGES.find(st => st.id === completeForStage)?.label || completeForStage}` : (vehicle ? 'Editar Vehículo' : 'Nuevo Vehículo')} width="max-w-2xl">
       {vendidoLocked && (
         <div className="mb-4 p-3 rounded-lg border border-border bg-[#0F1419] flex items-center gap-2" data-testid="vehicle-form-vendido-banner">
-          <span className="text-lg leading-none">🔒</span>
+          <Lock className="w-4 h-4 shrink-0" />
           <span className="text-sm font-semibold text-[#E6EDF3]">Vehículo VENDIDO. Solo lectura.</span>
         </div>
       )}
       {adminEditingIdentity && (
-        <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs text-amber-300" data-testid="vehicle-form-admin-warning">
-          ⚠️ Estás editando datos de un vehículo en {STAGES.find(st => st.id === vehicle.stage)?.label}. Los cambios de identidad quedarán registrados en el audit log.
+        <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-xs text-amber-300 flex items-start gap-1.5" data-testid="vehicle-form-admin-warning">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Estás editando datos de un vehículo en {STAGES.find(st => st.id === vehicle.stage)?.label}. Los cambios de identidad quedarán registrados en el audit log.</span>
         </div>
       )}
       <fieldset disabled={vendidoLocked} className="contents">
       {pendingHighlights.length > 0 && (
         <div className="mb-4 p-3 rounded-lg border-2 border-red-500/60 bg-red-500/10 animate-shake">
           <div className="flex items-start gap-2">
-            <span className="text-red-400 text-lg leading-none">⚠</span>
+            <AlertTriangle className="text-red-400 w-4 h-4 shrink-0" />
             <div>
               <div className="text-sm font-semibold text-red-400">Campos obligatorios por diligenciar</div>
               <div className="text-xs text-[#E6EDF3]/80 mt-0.5">
@@ -401,7 +402,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             autoFocus={!!highlight('negotiatedValue')}
             disabled={tradeInLocked}
             title={tradeInLocked ? 'Valor recibido en cruce — no editable' : ''}
-            help={tradeInLocked ? '🔒 Valor del cruce — no editable' : undefined}
+            help={tradeInLocked ? 'Valor del cruce — no editable' : undefined}
             data-testid="vehicle-form-negotiated-value"
           />
         )}
@@ -466,7 +467,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       {/* Terceros asociados */}
       {f.stage !== 'NEGOCIANDO' && (
       <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-border">
-        <div className="text-sm font-semibold text-[#E6EDF3] mb-3">👥 Terceros asociados</div>
+        <div className="text-sm font-semibold text-[#E6EDF3] mb-3 inline-flex items-center gap-1.5"><Users className="w-4 h-4" /> Terceros asociados</div>
         <div className="grid grid-cols-2 gap-3">
           <ThirdPartySelector
             value={f.supplierId}
@@ -476,7 +477,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="Seleccionar proveedor..."
             required={f.stage !== 'NEGOCIANDO'}
             disabled={supplierLocked || tradeInLocked}
-            help={tradeInLocked ? '🔒 Proveedor auto-asignado: comprador del carro origen del cruce' : undefined}
+            help={tradeInLocked ? 'Proveedor auto-asignado: comprador del carro origen del cruce' : undefined}
             error={highlight('supplier')}
           />
           {!tradeInLocked && (
@@ -492,13 +493,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           )}
         </div>
         {f.stage !== 'NEGOCIANDO' && !f.supplierId && !tradeInLocked && (
-          <div className="text-xs text-amber-400 mt-2">
-            ⚠️ El proveedor es obligatorio para vehículos en estado {STAGES.find(st => st.id === f.stage)?.label}
+          <div className="text-xs text-amber-400 mt-2 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>El proveedor es obligatorio para vehículos en estado {STAGES.find(st => st.id === f.stage)?.label}</span>
           </div>
         )}
         {tradeInLocked && (
-          <div className="text-[11px] text-[#6E7681] mt-2">
-            ℹ️ Vehículo recibido en cruce: es 100% tuyo, no admite socio.
+          <div className="text-[11px] text-[#6E7681] mt-2 flex items-start gap-1.5">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Vehículo recibido en cruce: es 100% tuyo, no admite socio.</span>
           </div>
         )}
       </div>
@@ -507,7 +508,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       {/* Sección de socio — solo cuando hay socio seleccionado y NO es cruce */}
       {f.stage !== 'NEGOCIANDO' && f.partnerId && !tradeInLocked && (
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
-          <div className="text-sm font-semibold text-[#E6EDF3] mb-1">🤝 Aporte del socio</div>
+          <div className="text-sm font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-1.5"><Handshake className="w-4 h-4" /> Aporte del socio</div>
           <p className="text-[11px] text-[#6E7681] mb-3">
             El aporte del socio NO descuenta de tu tesorería — solo se registra como dato.
             Tu participación se calcula automáticamente a partir del aporte.
@@ -546,8 +547,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             </p>
           </div>
           {partnerLocked && (
-            <div className="text-[11px] text-amber-400 mt-3">
-              🔒 Los datos del socio quedaron bloqueados: la compra ya fue registrada.
+            <div className="text-[11px] text-amber-400 mt-3 flex items-start gap-1.5">
+              <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Los datos del socio quedaron bloqueados: la compra ya fue registrada.</span>
             </div>
           )}
         </div>
@@ -562,7 +563,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             <button key={p.id} onClick={() => togglePortal(p.id)} type="button"
               className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${f.publishedPortals.includes(p.id) ? '' : 'border-border text-[#6E7681]'}`}
               style={f.publishedPortals.includes(p.id) ? { background: p.color + '20', borderColor: p.color + '50', color: p.color } : {}}>
-              {f.publishedPortals.includes(p.id) ? '✓ ' : ''}{p.label}
+              <span className="inline-flex items-center gap-1">{f.publishedPortals.includes(p.id) && <Check className="w-3 h-3" />}{p.label}</span>
             </button>
           ))}
         </div>
@@ -576,25 +577,25 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       {/* Sección de pago — solo al crear con compra real */}
       {showPaymentSection && (
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
-          <div className="text-sm font-semibold text-[#E6EDF3] mb-1">💳 Pago de la compra</div>
+          <div className="text-sm font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-1.5"><CreditCard className="w-4 h-4" /> Pago de la compra</div>
           <p className="text-[11px] text-[#6E7681] mb-3">
             Registra cuánto pagas en efectivo y/o por transferencia. Lo que no cubras queda como cuenta por pagar (CxP).
           </p>
           {willPromoteStage && (
-            <div className="mb-3 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5">
-              ⚠️ Al registrar la compra, el vehículo pasará automáticamente de NEGOCIANDO a COMPRADO.
+            <div className="mb-3 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Al registrar la compra, el vehículo pasará automáticamente de NEGOCIANDO a COMPRADO.</span>
             </div>
           )}
           {isConfirmingPurchase && (
-            <div className="mb-3 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1.5">
-              ✓ Estás confirmando la compra: se creará la CxP y, por cada pago, su egreso en tesorería.
+            <div className="mb-3 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1.5 flex items-start gap-1.5">
+              <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Estás confirmando la compra: se creará la CxP y, por cada pago, su egreso en tesorería.</span>
             </div>
           )}
 
           {/* Efectivo (cuentas tipo Caja) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-[#8B949E] mb-1">💵 Efectivo — Cuenta</label>
+              <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Banknote className="w-4 h-4" /> Efectivo — Cuenta</label>
               <select
                 value={cashAccountId}
                 onChange={e => setCashAccountId(e.target.value)}
@@ -621,13 +622,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             </div>
           </div>
           {cashWarning && (
-            <div className="mt-1 text-xs text-amber-400">⚠️ La cuenta de efectivo quedará con saldo negativo.</div>
+            <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de efectivo quedará con saldo negativo.</div>
           )}
 
           {/* Transferencia (cuentas tipo Banco) */}
           <div className="grid grid-cols-2 gap-3 mt-3">
             <div>
-              <label className="block text-sm text-[#8B949E] mb-1">🏦 Transferencia — Cuenta</label>
+              <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Landmark className="w-4 h-4" /> Transferencia — Cuenta</label>
               <select
                 value={transferAccountId}
                 onChange={e => setTransferAccountId(e.target.value)}
@@ -654,7 +655,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             </div>
           </div>
           {transferWarning && (
-            <div className="mt-1 text-xs text-amber-400">⚠️ La cuenta de transferencia quedará con saldo negativo.</div>
+            <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de transferencia quedará con saldo negativo.</div>
           )}
 
           {myOwedAmount > 0 && (
@@ -727,16 +728,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           </div>
 
           {overpay && (
-            <div className="mt-2 text-xs text-red-400">
-              ⚠️ La suma de los pagos supera tu parte a pagar ({formatCurrency(myOwedAmount)}).
+            <div className="mt-2 text-xs text-red-400 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>La suma de los pagos supera tu parte a pagar ({formatCurrency(myOwedAmount)}).</span>
             </div>
           )}
         </div>
       )}
 
       {saveError && (
-        <div className="mt-4 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-sm text-red-400">
-          ⚠️ {saveError}
+        <div className="mt-4 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-sm text-red-400 flex items-start gap-1.5">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> <span>{saveError}</span>
         </div>
       )}
 

@@ -2,27 +2,34 @@
 // Constants — Stages, categories, portals, formatting helpers
 // ═══════════════════════════════════════════════════════════════
 
+import {
+  Handshake, ShoppingCart, Wrench, Megaphone, CircleCheck, BadgeCheck,
+  Sparkles, Landmark, FileText, SquareParking, Fuel, Tag,
+} from 'lucide-react';
+
+// `icon` es un componente de lucide-react (no un string). Renderizar como
+// `const Icon = stage.icon; <Icon className="w-4 h-4" />`.
 export const STAGES = [
-  { id: 'NEGOCIANDO', label: 'Negociando', color: '#E9A23B', bg: 'bg-[#E9A23B15]', text: 'text-[#E9A23B]', desc: 'Acuerdo pendiente' },
-  { id: 'COMPRADO', label: 'Comprado', color: '#5B8DEF', bg: 'bg-[#5B8DEF15]', text: 'text-[#5B8DEF]', desc: 'Capital inmovilizado' },
-  { id: 'ALISTAMIENTO', label: 'Alistamiento', color: '#A78BFA', bg: 'bg-[#A78BFA15]', text: 'text-[#A78BFA]', desc: 'En taller / trámites' },
-  { id: 'PUBLICADO', label: 'Publicado', color: '#F472B6', bg: 'bg-[#F472B615]', text: 'text-[#F472B6]', desc: 'En plataformas' },
-  { id: 'DISPONIBLE', label: 'Disponible', color: '#34D399', bg: 'bg-[#34D39915]', text: 'text-[#34D399]', desc: 'Listo para entregar' },
-  { id: 'VENDIDO', label: 'Vendido', color: '#10B981', bg: 'bg-[#10B98115]', text: 'text-[#10B981]', desc: 'Negocio cerrado' },
+  { id: 'NEGOCIANDO', label: 'Negociando', icon: Handshake, color: '#E9A23B', bg: 'bg-[#E9A23B15]', text: 'text-[#E9A23B]', desc: 'Acuerdo pendiente' },
+  { id: 'COMPRADO', label: 'Comprado', icon: ShoppingCart, color: '#5B8DEF', bg: 'bg-[#5B8DEF15]', text: 'text-[#5B8DEF]', desc: 'Capital inmovilizado' },
+  { id: 'ALISTAMIENTO', label: 'Alistamiento', icon: Wrench, color: '#A78BFA', bg: 'bg-[#A78BFA15]', text: 'text-[#A78BFA]', desc: 'En taller / trámites' },
+  { id: 'PUBLICADO', label: 'Publicado', icon: Megaphone, color: '#F472B6', bg: 'bg-[#F472B615]', text: 'text-[#F472B6]', desc: 'En plataformas' },
+  { id: 'DISPONIBLE', label: 'Disponible', icon: CircleCheck, color: '#34D399', bg: 'bg-[#34D39915]', text: 'text-[#34D399]', desc: 'Listo para entregar' },
+  { id: 'VENDIDO', label: 'Vendido', icon: BadgeCheck, color: '#10B981', bg: 'bg-[#10B98115]', text: 'text-[#10B981]', desc: 'Negocio cerrado' },
 ];
 
 // Nota: la categoría COMISION fue eliminada — las comisiones se modelan vía
 // Payable type=COMMISSION (uno por participante) en el flujo de venta, no como
 // gasto del vehículo. Ver pestaña Financiero del vehículo y /treasury/payables.
 export const EXPENSE_CATEGORIES = [
-  { id: 'MECANICA', label: 'Mecánica', icon: '⚙', color: '#EF4444' },
-  { id: 'ESTETICA', label: 'Estética / Lavado', icon: '✦', color: '#A78BFA' },
-  { id: 'IMPUESTOS', label: 'Impuestos', icon: '§', color: '#E9A23B' },
-  { id: 'TRAMITE', label: 'Trámite / Notaría', icon: '⊞', color: '#5B8DEF' },
-  { id: 'PARQUEADERO', label: 'Parqueadero', icon: '⊟', color: '#6B7280' },
-  { id: 'PUBLICIDAD', label: 'Publicidad', icon: '◈', color: '#14B8A6' },
-  { id: 'COMBUSTIBLE', label: 'Combustible', icon: '◉', color: '#F97316' },
-  { id: 'OTRO', label: 'Otro', icon: '◇', color: '#94A3B8' },
+  { id: 'MECANICA', label: 'Mecánica', icon: Wrench, color: '#EF4444' },
+  { id: 'ESTETICA', label: 'Estética / Lavado', icon: Sparkles, color: '#A78BFA' },
+  { id: 'IMPUESTOS', label: 'Impuestos', icon: Landmark, color: '#E9A23B' },
+  { id: 'TRAMITE', label: 'Trámite / Notaría', icon: FileText, color: '#5B8DEF' },
+  { id: 'PARQUEADERO', label: 'Parqueadero', icon: SquareParking, color: '#6B7280' },
+  { id: 'PUBLICIDAD', label: 'Publicidad', icon: Megaphone, color: '#14B8A6' },
+  { id: 'COMBUSTIBLE', label: 'Combustible', icon: Fuel, color: '#F97316' },
+  { id: 'OTRO', label: 'Otro', icon: Tag, color: '#94A3B8' },
 ];
 
 export const PORTALS = [

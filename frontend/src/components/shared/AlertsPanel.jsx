@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { alertsApi } from '@/lib/alertsApi';
 import Alert, { AlertBadge } from './Alert';
+import { Bell } from 'lucide-react';
 
 export default function AlertsPanel({ className = '', compact = false }) {
   const [alerts, setAlerts] = useState([]);
@@ -49,7 +50,7 @@ export default function AlertsPanel({ className = '', compact = false }) {
     <div className={`card p-4 ${className}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-lg">🔔</span>
+          <Bell className="w-5 h-5 text-[#E6EDF3]" />
           <h3 className="text-sm font-semibold text-[#E6EDF3]">
             Alertas del Sistema
           </h3>
@@ -123,7 +124,7 @@ export function AlertsIndicator({ className = '' }) {
       className={`relative inline-flex items-center justify-center ${className}`}
       title={`${summary.total} alerta${summary.total > 1 ? 's' : ''}`}
     >
-      <span className="text-lg">🔔</span>
+      <Bell className="w-5 h-5" />
       {summary.total > 0 && (
         <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold rounded-full text-white ${
           hasErrors ? 'bg-red-500' : hasWarnings ? 'bg-amber-500' : 'bg-blue-500'

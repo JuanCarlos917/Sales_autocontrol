@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { payablesApi } from '@/lib/payablesApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
+import { ClipboardList, ArrowDownLeft, ArrowUpRight, Briefcase, CheckCircle2, Car, HandCoins, DollarSign, User, Calendar } from 'lucide-react';
 import { PaymentModal } from '@/components/treasury';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -106,10 +107,10 @@ export default function PayablesPage() {
   };
 
   const tabs = [
-    { id: 'all', label: 'Todas', icon: '📋' },
-    { id: 'receivable', label: 'Por Cobrar (CxC)', icon: '📥', color: 'text-green-400' },
-    { id: 'payable', label: 'Por Pagar (CxP)', icon: '📤', color: 'text-red-400' },
-    { id: 'commission', label: 'Comisiones', icon: '💼', color: 'text-[#BC8CFF]' },
+    { id: 'all', label: 'Todas', icon: ClipboardList },
+    { id: 'receivable', label: 'Por Cobrar (CxC)', icon: ArrowDownLeft, color: 'text-green-400' },
+    { id: 'payable', label: 'Por Pagar (CxP)', icon: ArrowUpRight, color: 'text-red-400' },
+    { id: 'commission', label: 'Comisiones', icon: Briefcase, color: 'text-[#BC8CFF]' },
   ];
 
   const pendingDelta = (p) => parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
@@ -184,7 +185,7 @@ export default function PayablesPage() {
                 : 'text-[#6E7681] hover:bg-surface-hover'
             }`}
           >
-            <span>{tab.icon}</span>
+            <tab.icon className="w-4 h-4" />
             <span className={filter === tab.id ? '' : tab.color}>{tab.label}</span>
             {tab.id !== 'all' && (
               <span className={`ml-1 text-xs px-1.5 py-0.5 rounded ${
@@ -215,7 +216,7 @@ export default function PayablesPage() {
         </div>
       ) : visiblePayables.length === 0 ? (
         <div className="card p-12 text-center">
-          <div className="text-4xl mb-4">✅</div>
+          <CheckCircle2 className="w-11 h-11 mx-auto mb-4 text-green-400" />
           <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Sin cuentas pendientes</h3>
           <p className="text-sm text-[#6E7681]">
             {filter === 'receivable' && 'No hay cuentas por cobrar en este momento'}
@@ -251,7 +252,7 @@ export default function PayablesPage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-lg text-[#BC8CFF]">💼</span>
+                      <Briefcase className="w-4 h-4 text-[#BC8CFF]" />
                       <span className="text-xs px-2 py-0.5 rounded font-semibold bg-[#BC8CFF]/20 text-[#BC8CFF]">
                         Comisión venta
                       </span>
@@ -261,7 +262,7 @@ export default function PayablesPage() {
                   {vehicle && (
                     <div className="mb-3">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xl">🚗</span>
+                        <Car className="w-5 h-5 text-[#6E7681]" />
                         <span className="plate-text text-lg">{vehicle.plate}</span>
                       </div>
                       <div className="text-sm text-[#8B949E]">
@@ -312,7 +313,7 @@ export default function PayablesPage() {
                                 data-testid={`payable-pay-${p.id}`}
                                 className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors whitespace-nowrap"
                               >
-                                💸 Pagar
+                                <span className="inline-flex items-center gap-1"><HandCoins className="w-3.5 h-3.5" /> Pagar</span>
                               </button>
                             )}
                           </div>
@@ -361,8 +362,8 @@ export default function PayablesPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-lg ${isReceivable ? 'text-green-400' : isCommission ? 'text-[#BC8CFF]' : 'text-red-400'}`}>
-                      {isReceivable ? '📥' : isCommission ? '💼' : '📤'}
+                    <span className={`${isReceivable ? 'text-green-400' : isCommission ? 'text-[#BC8CFF]' : 'text-red-400'}`}>
+                      {isReceivable ? <ArrowDownLeft className="w-5 h-5" /> : isCommission ? <Briefcase className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
                     </span>
                     <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
                       isReceivable
@@ -388,7 +389,7 @@ export default function PayablesPage() {
                 {hasVehicle && payable.vehicle ? (
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xl">🚗</span>
+                      <Car className="w-5 h-5 text-[#6E7681]" />
                       <span className="plate-text text-lg">{payable.vehicle.plate}</span>
                     </div>
                     <div className="text-sm text-[#8B949E]">
@@ -402,7 +403,7 @@ export default function PayablesPage() {
                     </div>
                     {payable.thirdParty && (
                       <div className="text-xs text-[#6E7681] mt-1">
-                        👤 {payable.thirdParty.name}
+                        <span className="inline-flex items-center gap-1"><User className="w-3.5 h-3.5" /> {payable.thirdParty.name}</span>
                       </div>
                     )}
                   </div>
@@ -433,7 +434,7 @@ export default function PayablesPage() {
                   <div className={`text-xs mb-3 ${
                     daysInfo.isOverdue ? (isReceivable ? 'text-amber-400' : 'text-red-400') : 'text-[#6E7681]'
                   }`}>
-                    📅 {daysInfo.text}
+                    <span className="inline-flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {daysInfo.text}</span>
                     {payable.dueDate && <span className="text-[#6E7681] ml-1">({formatDate(payable.dueDate)})</span>}
                   </div>
                 )}
@@ -450,7 +451,7 @@ export default function PayablesPage() {
                           : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                       }`}
                     >
-                      {isReceivable ? '💰 Cobrar' : '💸 Pagar'}
+                      <span className="inline-flex items-center justify-center gap-1.5">{isReceivable ? <><DollarSign className="w-3.5 h-3.5" /> Cobrar</> : <><HandCoins className="w-3.5 h-3.5" /> Pagar</>}</span>
                     </button>
                   )}
                   {hasVehicle && (

@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatCurrency, formatDate } from '@/lib/constants';
+import { ArrowDownLeft, ArrowUpRight, Car } from 'lucide-react';
 import { payablesApi } from '@/lib/payablesApi';
 
 export function ReceivablesWidget({ summary, overdueList = [], loading = false }) {
@@ -27,7 +28,7 @@ export function ReceivablesWidget({ summary, overdueList = [], loading = false }
     <div className={`card p-5 ${hasOverdue ? 'border-amber-500/40' : ''}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-lg">📥</span>
+          <ArrowDownLeft className="w-5 h-5" />
           <h3 className="text-sm font-semibold text-[#E6EDF3]">Por Cobrar (CxC)</h3>
         </div>
         {hasOverdue && (
@@ -61,7 +62,7 @@ export function ReceivablesWidget({ summary, overdueList = [], loading = false }
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-[#E6EDF3] truncate flex items-center gap-1">
-                    {hasVehicle && <span className="text-amber-400">🚗</span>}
+                    {hasVehicle && <Car className="w-3.5 h-3.5 text-amber-400" />}
                     <span className={hasVehicle ? 'font-mono text-amber-300' : ''}>
                       {item.vehicle?.plate || item.description || 'Sin descripcion'}
                     </span>
@@ -138,7 +139,7 @@ function OldestReceivable({ navigate }) {
       >
         <div className="min-w-0 flex-1">
           <div className="text-[#E6EDF3] truncate flex items-center gap-1">
-            {hasVehicle && <span className="text-green-400">🚗</span>}
+            {hasVehicle && <Car className="w-3.5 h-3.5 text-green-400" />}
             <span className={hasVehicle ? 'font-mono text-green-300' : ''}>
               {oldest.vehicle?.plate || oldest.description || 'Sin descripcion'}
             </span>
@@ -176,7 +177,7 @@ export function PayablesWidgetCxP({ summary, overdueList = [], upcomingList = []
     <div className={`card p-5 ${hasOverdue ? 'border-red-500/40' : ''}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <span className="text-lg">📤</span>
+          <ArrowUpRight className="w-5 h-5" />
           <h3 className="text-sm font-semibold text-[#E6EDF3]">Por Pagar (CxP)</h3>
         </div>
         {hasOverdue && (
@@ -210,7 +211,7 @@ export function PayablesWidgetCxP({ summary, overdueList = [], upcomingList = []
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-[#E6EDF3] truncate flex items-center gap-1">
-                    {hasVehicle && <span className="text-red-400">🚗</span>}
+                    {hasVehicle && <Car className="w-3.5 h-3.5 text-red-400" />}
                     <span className={hasVehicle ? 'font-mono text-red-300' : ''}>
                       {item.vehicle?.plate || item.description || 'Sin descripcion'}
                     </span>
@@ -247,7 +248,7 @@ export function PayablesWidgetCxP({ summary, overdueList = [], upcomingList = []
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-[#E6EDF3] truncate flex items-center gap-1">
-                    {hasVehicle && <span className="text-[#8B949E]">🚗</span>}
+                    {hasVehicle && <Car className="w-3.5 h-3.5 text-[#8B949E]" />}
                     <span className={hasVehicle ? 'font-mono' : ''}>
                       {item.vehicle?.plate || item.description || 'Sin descripcion'}
                     </span>
@@ -330,7 +331,7 @@ function NextToExpirePayable({ navigate }) {
       >
         <div className="min-w-0 flex-1">
           <div className="text-[#E6EDF3] truncate flex items-center gap-1">
-            {hasVehicle && <span className="text-red-400">🚗</span>}
+            {hasVehicle && <Car className="w-3.5 h-3.5 text-red-400" />}
             <span className={hasVehicle ? 'font-mono text-red-300' : ''}>
               {next.vehicle?.plate || next.description || 'Sin descripcion'}
             </span>
