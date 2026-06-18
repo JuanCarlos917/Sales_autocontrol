@@ -503,10 +503,11 @@ export default function VehicleDetailPage() {
                       </div>
                     )}
                   </div>
-                  {paymentStatus.purchase.pendingAmount > 0 && (
+                  {paymentStatus.purchase.pendingAmount > 0 && !isViewer && (
                     <button
                       onClick={() => openPaymentForPayable(paymentStatus.purchase, 'expense')}
                       className="btn-primary w-full mt-3 text-sm bg-red-600 hover:bg-red-700"
+                      data-testid="vehicle-pay-purchase"
                     >
                       Registrar Pago
                     </button>
@@ -548,10 +549,11 @@ export default function VehicleDetailPage() {
                       </div>
                     )}
                   </div>
-                  {paymentStatus.sale.pendingAmount > 0 && (
+                  {paymentStatus.sale.pendingAmount > 0 && !isViewer && (
                     <button
                       onClick={() => openPaymentForPayable(paymentStatus.sale, 'income')}
                       className="btn-primary w-full mt-3 text-sm bg-green-600 hover:bg-green-700"
+                      data-testid="vehicle-pay-sale"
                     >
                       Registrar Cobro
                     </button>
