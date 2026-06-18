@@ -7,6 +7,7 @@ import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
 import { SalePaymentModal } from '@/components/treasury';
 import { vehicleTreasuryApi } from '@/lib/payablesApi';
 import Modal from '@/components/shared/Modal';
+import { Ban, Banknote, User, Handshake, Megaphone, DollarSign, Calendar, ShoppingCart, CreditCard } from 'lucide-react';
 
 // Etapas que requieren valor negociado/precio de compra
 const STAGES_REQUIRING_VALUE = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE', 'VENDIDO'];
@@ -90,7 +91,7 @@ export default function KanbanPage() {
     if (vehicle.stage === 'NEGOCIANDO' && targetStage !== 'NEGOCIANDO' && targetStage !== 'COMPRADO') {
       issues.push({
         type: 'invalidTransition',
-        icon: '🚫',
+        icon: Ban,
         title: 'Transición no permitida',
         description: 'Desde Negociando solo puedes pasar a Comprado. Avanza primero a Comprado para continuar el flujo.'
       });
@@ -103,7 +104,7 @@ export default function KanbanPage() {
     if (STAGES_REQUIRING_VALUE.includes(targetStage) && !hasNegotiated && !hasPurchase) {
       issues.push({
         type: 'negotiatedValue',
-        icon: '💵',
+        icon: Banknote,
         title: 'Valor Negociado requerido',
         description: 'Mientras no definas el Valor Negociado, el vehículo no puede salir de Negociando.'
       });
@@ -115,7 +116,7 @@ export default function KanbanPage() {
       if (!hasPurchase) {
         issues.push({
           type: 'purchasePrice',
-          icon: '💵',
+          icon: Banknote,
           title: 'Precio de Compra requerido',
           description: 'Debes definir el Precio de Compra y tener la CxP pagada antes de avanzar de etapa.'
         });
@@ -126,7 +127,7 @@ export default function KanbanPage() {
     if (STAGES_REQUIRING_SUPPLIER.includes(targetStage) && !vehicle.supplierId) {
       issues.push({
         type: 'supplier',
-        icon: '👤',
+        icon: User,
         title: 'Proveedor requerido',
         description: 'Debes asignar quién te vendió este vehículo'
       });
@@ -137,7 +138,7 @@ export default function KanbanPage() {
     if (STAGES_REQUIRING_SUPPLIER.includes(targetStage) && participation < 1 && !vehicle.partnerId) {
       issues.push({
         type: 'partner',
-        icon: '🤝',
+        icon: Handshake,
         title: 'Socio requerido',
         description: `La participación es ${(participation * 100).toFixed(0)}%, debes asignar un socio`
       });
@@ -147,7 +148,7 @@ export default function KanbanPage() {
     if (targetStage === 'PUBLICADO' && !(vehicle.listedPrice && parseFloat(vehicle.listedPrice) > 0)) {
       issues.push({
         type: 'listedPrice',
-        icon: '📣',
+        icon: Megaphone,
         title: 'Precio Publicado requerido',
         description: 'Debes definir el Precio Publicado para pasar a esta etapa.'
       });
@@ -158,7 +159,7 @@ export default function KanbanPage() {
       if (!(vehicle.salePrice && parseFloat(vehicle.salePrice) > 0)) {
         issues.push({
           type: 'salePrice',
-          icon: '💰',
+          icon: DollarSign,
           title: 'Precio de Venta requerido',
           description: 'Debes definir el Precio de Venta para pasar a esta etapa.'
         });
@@ -166,7 +167,7 @@ export default function KanbanPage() {
       if (!vehicle.saleDate) {
         issues.push({
           type: 'saleDate',
-          icon: '📅',
+          icon: Calendar,
           title: 'Fecha de Venta requerida',
           description: 'Debes definir la Fecha de Venta para pasar a esta etapa.'
         });
@@ -177,7 +178,7 @@ export default function KanbanPage() {
     if (targetStage === 'VENDIDO' && !vehicle.salePrice) {
       issues.push({
         type: 'salePrice',
-        icon: '💰',
+        icon: DollarSign,
         title: 'Precio de venta requerido',
         description: 'Debes definir el precio de venta antes de marcar como vendido'
       });
@@ -187,7 +188,7 @@ export default function KanbanPage() {
     if (targetStage === 'VENDIDO' && !vehicle.buyerId) {
       issues.push({
         type: 'buyer',
-        icon: '🛒',
+        icon: ShoppingCart,
         title: 'Comprador requerido',
         description: 'Debes asignar quién compró este vehículo'
       });
@@ -530,7 +531,7 @@ export default function KanbanPage() {
         >
           <div className="text-center">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 flex items-center justify-center">
-              <span className="text-3xl">💳</span>
+              <CreditCard className="w-8 h-8 text-amber-400" />
             </div>
             <h3 className="text-lg font-semibold text-[#E6EDF3] mb-2">Falta un requisito de tesorería</h3>
             <p className="text-sm text-[#8B949E] mb-6">{treasuryAlert.message}</p>
@@ -598,7 +599,7 @@ export default function KanbanPage() {
             <div className="space-y-2 mb-6">
               {validationAlert.issues.map((issue, idx) => (
                 <div key={idx} className="flex items-start gap-3 p-3 bg-[#161B22] rounded-lg border border-border text-left">
-                  <span className="text-xl">{issue.icon}</span>
+                  <issue.icon className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="text-sm font-semibold text-amber-400">{issue.title}</div>
                     <div className="text-xs text-[#8B949E]">{issue.description}</div>

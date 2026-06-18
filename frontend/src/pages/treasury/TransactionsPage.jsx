@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { transactionsApi, accountsApi, thirdPartiesApi, transfersApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDateTime, getLocalDateString } from '@/lib/constants';
+import { ArrowLeftRight } from 'lucide-react';
 import Modal from '@/components/shared/Modal';
 
 const INCOME_CATEGORIES = [
@@ -206,7 +207,7 @@ export default function TransactionsPage() {
           <div className="flex gap-2">
             <button onClick={() => openModal('income')} className="btn-primary text-sm bg-green-600 hover:bg-green-700">+ Ingreso</button>
             <button onClick={() => openModal('expense')} className="btn-primary text-sm bg-red-600 hover:bg-red-700">+ Egreso</button>
-            <button onClick={() => openModal('transfer')} className="btn-ghost text-sm" data-testid="transactions-transfer-button">↔ Transferencia</button>
+            <button onClick={() => openModal('transfer')} className="btn-ghost text-sm" data-testid="transactions-transfer-button"><span className="inline-flex items-center gap-1.5"><ArrowLeftRight className="w-3.5 h-3.5" /> Transferencia</span></button>
           </div>
         )}
       </div>

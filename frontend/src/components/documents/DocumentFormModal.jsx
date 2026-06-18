@@ -3,6 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { DOC_TYPES } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
 import { Select, Input } from '@/components/shared/FormFields';
+import { FileText, Camera, Sparkles } from 'lucide-react';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -171,10 +172,10 @@ export default function DocumentFormModal({ vehicleId, onClose }) {
             {preview ? (
               <img src={preview} alt="" className="max-w-full max-h-48 rounded-lg mx-auto" />
             ) : file ? (
-              <div className="text-sm text-[#8B949E]">📄 {file.name}</div>
+              <div className="text-sm text-[#8B949E] inline-flex items-center gap-1.5"><FileText className="w-4 h-4" /> {file.name}</div>
             ) : (
               <div className="text-[#6E7681] text-sm">
-                📷 {dragOver ? 'Suelta el archivo aquí' : 'Arrastra un archivo o haz click para seleccionar'}<br />
+                <span className="inline-flex items-center gap-1.5"><Camera className="w-4 h-4" /> {dragOver ? 'Suelta el archivo aquí' : 'Arrastra un archivo o haz click para seleccionar'}</span><br />
                 <span className="text-xs">JPG, PNG, WebP, PDF — Máx 10MB</span>
               </div>
             )}
@@ -188,9 +189,9 @@ export default function DocumentFormModal({ vehicleId, onClose }) {
         <Input label="Notas" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Vence en diciembre 2026..." />
 
         {isTarjeta && (
-          <p className="text-[11px] text-[#8B949E]">
-            ✨ Si la IA está habilitada en el servidor, al subir intentaremos extraer
-            placa, marca, modelo, año y color para sugerirlos al vehículo.
+          <p className="text-[11px] text-[#8B949E] inline-flex items-start gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Si la IA está habilitada en el servidor, al subir intentaremos extraer
+            placa, marca, modelo, año y color para sugerirlos al vehículo.</span>
           </p>
         )}
       </div>

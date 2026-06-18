@@ -9,6 +9,7 @@ import { treasuryReportsApi, transactionsApi, accountsApi } from '@/lib/treasury
 import { payablesApi } from '@/lib/payablesApi';
 import { formatCurrency } from '@/lib/constants';
 import { BalanceCard, ReceivablesWidget, PayablesWidgetCxP, CashFlowChart, LoansSummaryCards } from '@/components/treasury';
+import { AlertTriangle, ClipboardList, Landmark, Users, Calculator, HandCoins, Building2 } from 'lucide-react';
 
 export default function TreasuryPage() {
   const [loading, setLoading] = useState(true);
@@ -201,7 +202,7 @@ export default function TreasuryPage() {
       {(overdueReceivables.length > 0 || overduePayables.length > 0) && (
         <div className="card p-4 border-amber-500/40 bg-amber-500/5">
           <div className="flex items-start gap-3">
-            <span className="text-xl">⚠️</span>
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
             <div className="flex-1">
               <div className="text-sm font-semibold text-amber-400 mb-1">
                 Atencion: Hay cuentas vencidas
@@ -260,32 +261,32 @@ export default function TreasuryPage() {
       {/* Accesos rapidos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Link to="/treasury/transactions" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">📋</div>
+          <ClipboardList className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Movimientos</div>
           <div className="text-xs text-[#6E7681] mt-1">Ver historial</div>
         </Link>
         <Link to="/treasury/accounts" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">🏦</div>
+          <Landmark className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Cuentas</div>
           <div className="text-xs text-[#6E7681] mt-1">{accounts.length} activas</div>
         </Link>
         <Link to="/treasury/third-parties" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">👥</div>
+          <Users className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Terceros</div>
           <div className="text-xs text-[#6E7681] mt-1">Clientes y proveedores</div>
         </Link>
         <Link to="/treasury/cash-count" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">🧮</div>
+          <Calculator className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Arqueo</div>
           <div className="text-xs text-[#6E7681] mt-1">Verificar efectivo</div>
         </Link>
         <Link to="/treasury/loans" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">💸</div>
+          <HandCoins className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Préstamos</div>
           <div className="text-xs text-[#6E7681] mt-1">Internos a terceros</div>
         </Link>
         <Link to="/treasury/debts" className="card p-4 text-center hover:bg-surface-hover transition-colors">
-          <div className="text-2xl mb-2">🏦</div>
+          <Building2 className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Créditos</div>
           <div className="text-xs text-[#6E7681] mt-1">Financiaciones del negocio</div>
         </Link>

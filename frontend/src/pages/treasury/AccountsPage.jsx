@@ -7,6 +7,7 @@ import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
 import { useAuth } from '@/contexts/AuthContext';
+import { Banknote, Landmark, PiggyBank } from 'lucide-react';
 
 const ACCOUNT_TYPES = [
   { id: 'CASH', label: 'Efectivo / Caja' },
@@ -130,7 +131,7 @@ export default function AccountsPage() {
           <div className="space-y-8">
             {cashAccounts.length > 0 && (
               <section>
-                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3">💵 Efectivo</h3>
+                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3 inline-flex items-center gap-2"><Banknote className="w-5 h-5" /> Efectivo</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {cashAccounts.map(renderCard)}
                 </div>
@@ -139,7 +140,7 @@ export default function AccountsPage() {
 
             {bankAccounts.length > 0 && (
               <section>
-                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3">🏦 Bancos</h3>
+                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3 inline-flex items-center gap-2"><Landmark className="w-5 h-5" /> Bancos</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {bankAccounts.map(renderCard)}
                 </div>
@@ -148,7 +149,7 @@ export default function AccountsPage() {
 
             {budgetAccounts.length > 0 && (
               <section>
-                <h3 className="text-lg font-semibold text-[#BC8CFF] mb-1">🎯 Fondos / Reservas</h3>
+                <h3 className="text-lg font-semibold text-[#BC8CFF] mb-1 inline-flex items-center gap-2"><PiggyBank className="w-5 h-5" /> Fondos / Reservas</h3>
                 <p className="text-sm text-[#8B949E] mb-3">
                   Estas cuentas no son operativas: guardan los aportes automáticos de cada venta (reinversión, impuestos).
                 </p>

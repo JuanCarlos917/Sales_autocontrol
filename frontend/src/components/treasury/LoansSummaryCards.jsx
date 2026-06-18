@@ -7,11 +7,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loansApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
+import { Circle, HandCoins, Check } from 'lucide-react';
 
 const STATUS_META = {
-  OVERDUE: { emoji: '🔴', label: 'Vencido', color: 'text-red-400', badge: 'bg-red-500/20 text-red-400' },
-  UPCOMING: { emoji: '🟡', label: 'Próximo', color: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-400' },
-  ON_TRACK: { emoji: '🟢', label: 'Al día', color: 'text-green-400', badge: 'bg-green-500/20 text-green-400' },
+  OVERDUE: { icon: Circle, label: 'Vencido', color: 'text-red-400', badge: 'bg-red-500/20 text-red-400' },
+  UPCOMING: { icon: Circle, label: 'Próximo', color: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-400' },
+  ON_TRACK: { icon: Circle, label: 'Al día', color: 'text-green-400', badge: 'bg-green-500/20 text-green-400' },
 };
 
 const STATUS_ORDER = ['OVERDUE', 'UPCOMING', 'ON_TRACK'];
@@ -124,7 +125,7 @@ export default function LoansSummaryCards() {
       {/* Card 1 — Saldo total */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-[#E6EDF3]">💸 Préstamos activos</h3>
+          <h3 className="text-sm font-semibold text-[#E6EDF3] inline-flex items-center gap-1.5"><HandCoins className="w-4 h-4" /> Préstamos activos</h3>
           <Link
             to="/treasury/loans"
             className="text-xs text-[#6E7681] hover:text-accent transition-colors"
@@ -160,8 +161,8 @@ export default function LoansSummaryCards() {
                 const meta = STATUS_META[s];
                 return (
                   <div key={s} className="flex justify-between">
-                    <span className="text-[#8B949E]">
-                      {meta.emoji} {meta.label}
+                    <span className="text-[#8B949E] inline-flex items-center gap-1.5">
+                      <meta.icon className={`w-2 h-2 fill-current ${meta.color}`} /> {meta.label}
                     </span>
                     <span className={`font-mono ${meta.color}`}>{formatCurrency(amount)}</span>
                   </div>
@@ -193,7 +194,7 @@ export default function LoansSummaryCards() {
         {loading ? (
           <div className="text-sm text-[#6E7681]">Cargando...</div>
         ) : isEmpty ? (
-          <div className="text-sm text-[#6E7681] py-4 text-center">✓ Nadie debe dinero</div>
+          <div className="text-sm text-[#6E7681] py-4 text-center inline-flex items-center justify-center gap-1.5 w-full"><Check className="w-4 h-4 text-green-400" /> Nadie debe dinero</div>
         ) : (
           <ul className="divide-y divide-border">
             {top.map((b) => {
@@ -207,8 +208,8 @@ export default function LoansSummaryCards() {
                     data-testid={`loans-summary-borrower-${b.borrowerId}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${meta.badge}`}>
-                        {meta.emoji}
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium inline-flex items-center ${meta.badge}`}>
+                        <meta.icon className="w-2.5 h-2.5 fill-current" />
                       </span>
                       <span className="text-sm text-[#E6EDF3] truncate">{b.borrower?.name}</span>
                     </div>

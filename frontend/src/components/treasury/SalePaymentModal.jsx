@@ -8,13 +8,14 @@ import Modal from '@/components/shared/Modal';
 import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency, getLocalDateString } from '@/lib/constants';
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
+import { Banknote, Landmark, RefreshCw, ClipboardList, Plus, AlertTriangle } from 'lucide-react';
 
 const PAYMENT_TYPES = [
-  { id: 'CASH', label: 'Efectivo', icon: '💵' },
-  { id: 'TRANSFER', label: 'Transferencia', icon: '🏦' },
-  { id: 'TRADE_IN', label: 'Cruce de Vehiculo', icon: '🔄' },
-  { id: 'FINANCED', label: 'Financiado', icon: '📋' },
-  { id: 'MIXED', label: 'Mixto', icon: '➕' },
+  { id: 'CASH', label: 'Efectivo', icon: Banknote },
+  { id: 'TRANSFER', label: 'Transferencia', icon: Landmark },
+  { id: 'TRADE_IN', label: 'Cruce de Vehiculo', icon: RefreshCw },
+  { id: 'FINANCED', label: 'Financiado', icon: ClipboardList },
+  { id: 'MIXED', label: 'Mixto', icon: Plus },
 ];
 
 export default function SalePaymentModal({
@@ -278,7 +279,7 @@ export default function SalePaymentModal({
                       : 'border-border bg-surface hover:border-accent hover:bg-surface-hover'
                   }`}
                 >
-                  <span className="text-xl mr-2">{type.icon}</span>
+                  <type.icon className="w-5 h-5 mr-2 inline" />
                   <span className="text-sm text-[#E6EDF3]">{type.label}</span>
                 </button>
               ))}
@@ -377,7 +378,7 @@ export default function SalePaymentModal({
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[#8B949E] mb-1">💵 Efectivo — Cuenta</label>
+                  <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Banknote className="w-4 h-4" /> Efectivo — Cuenta</label>
                   <select
                     value={form.mixedCashAccountId}
                     onChange={(e) => setForm({ ...form, mixedCashAccountId: e.target.value })}
@@ -403,10 +404,10 @@ export default function SalePaymentModal({
                   />
                 </div>
               </div>
-              {errors.mixedCash && <p className="text-[11px] text-red-400">⚠ {errors.mixedCash}</p>}
+              {errors.mixedCash && <p className="text-[11px] text-red-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {errors.mixedCash}</p>}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[#8B949E] mb-1">🏦 Transferencia — Cuenta</label>
+                  <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Landmark className="w-4 h-4" /> Transferencia — Cuenta</label>
                   <select
                     value={form.mixedTransferAccountId}
                     onChange={(e) => setForm({ ...form, mixedTransferAccountId: e.target.value })}
@@ -432,7 +433,7 @@ export default function SalePaymentModal({
                   />
                 </div>
               </div>
-              {errors.mixedTransfer && <p className="text-[11px] text-red-400">⚠ {errors.mixedTransfer}</p>}
+              {errors.mixedTransfer && <p className="text-[11px] text-red-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {errors.mixedTransfer}</p>}
             </div>
           )}
 

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/shared/Modal';
 import { formatCurrency } from '@/lib/constants';
+import { Plus, Pencil, Trash2, Undo2 } from 'lucide-react';
 
 const ACTION_META = {
-  CREATE: { icon: '➕', label: 'Creado', color: 'text-green-400' },
-  UPDATE: { icon: '✏️', label: 'Editado', color: 'text-sky-400' },
-  DELETE: { icon: '🗑', label: 'Eliminado', color: 'text-[#F85149]' },
-  RESTORE: { icon: '↩️', label: 'Restaurado', color: 'text-amber-400' },
+  CREATE: { icon: Plus, label: 'Creado', color: 'text-green-400' },
+  UPDATE: { icon: Pencil, label: 'Editado', color: 'text-sky-400' },
+  DELETE: { icon: Trash2, label: 'Eliminado', color: 'text-[#F85149]' },
+  RESTORE: { icon: Undo2, label: 'Restaurado', color: 'text-amber-400' },
 };
 
 const FIELD_LABELS = {
@@ -83,7 +84,7 @@ export default function ExpenseAuditModal({ expenseId, onClose }) {
               >
                 <div className="flex justify-between items-start gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-base">{meta.icon}</span>
+                    <meta.icon className={`w-4 h-4 ${meta.color}`} />
                     <span className={`text-xs font-semibold ${meta.color}`}>{meta.label}</span>
                     <span className="text-[11px] text-[#6E7681]">
                       por {log.user?.name || log.user?.email || 'usuario'}

@@ -5,6 +5,7 @@ import { EXPENSE_CATEGORIES, getLocalDateString, formatCurrency } from '@/lib/co
 import { accountsApi, thirdPartiesApi } from '@/lib/treasuryApi';
 import Modal from '@/components/shared/Modal';
 import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormFields';
+import { AlertTriangle } from 'lucide-react';
 
 export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
   const navigate = useNavigate();
@@ -211,8 +212,8 @@ export default function ExpenseFormModal({ vehicleId, expense, onClose }) {
           )}
 
           {!isEdit && f.isPaid && selectedAccount && f.amount && Number(f.amount) > Number(selectedAccount.currentBalance || 0) && (
-            <div className="text-[11px] text-[#D29922]">
-              ⚠️ La cuenta quedará con saldo negativo después de este gasto.
+            <div className="text-[11px] text-[#D29922] inline-flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta quedará con saldo negativo después de este gasto.
             </div>
           )}
 

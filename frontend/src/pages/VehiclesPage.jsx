@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
+import { Car } from 'lucide-react';
 
 export default function VehiclesPage() {
   const { vehicles, fetchVehicles } = useApp();
@@ -32,7 +33,7 @@ export default function VehiclesPage() {
 
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-[#6E7681]">
-          <div className="text-4xl mb-3">☰</div>
+          <Car className="w-10 h-10 mx-auto mb-3" />
           <p>No hay vehículos en esta categoría</p>
         </div>
       ) : (

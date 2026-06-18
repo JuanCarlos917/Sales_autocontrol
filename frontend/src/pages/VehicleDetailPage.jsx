@@ -13,6 +13,7 @@ import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
 import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi, payablesApi, expenseTreasuryApi } from '@/lib/payablesApi';
 import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/components/treasury';
+import { Pencil, Lock, Clock, StickyNote, Trash2, DollarSign, FileText, Receipt, Wallet } from 'lucide-react';
 
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
 
@@ -289,7 +290,7 @@ export default function VehicleDetailPage() {
           </div>
           <div className="flex gap-2">
             {!isViewer && (
-              <button onClick={() => setShowEditForm(true)} className="btn-ghost">✏ Editar</button>
+              <button onClick={() => setShowEditForm(true)} className="btn-ghost inline-flex items-center gap-1.5"><Pencil className="w-3.5 h-3.5" /> Editar</button>
             )}
             <button onClick={() => navigate(-1)} className="btn-ghost">← Volver</button>
           </div>
@@ -399,7 +400,7 @@ export default function VehicleDetailPage() {
         <div>
           {vehicle.stage === 'VENDIDO' && (
             <div className="mb-4 rounded-lg border border-[#6E7681]/40 bg-[#6E7681]/10 p-3 text-[12px] text-[#8B949E] flex items-center gap-2">
-              🔒 Este vehículo está VENDIDO. Los gastos son de solo lectura.
+              <Lock className="w-3.5 h-3.5 shrink-0" /> Este vehículo está VENDIDO. Los gastos son de solo lectura.
             </div>
           )}
           <div className="flex justify-between mb-4">
@@ -431,9 +432,9 @@ export default function VehicleDetailPage() {
                           <div className="text-[11px] text-[#6E7681] flex gap-2 flex-wrap mt-0.5">
                             <span style={{ color: cat?.color }}>{cat?.label}</span>
                             {e.date && <span>{formatDate(e.date)}</span>}
-                            {!e.paid && <span className="text-[#D29922] font-semibold">⏳ Pendiente</span>}
+                            {!e.paid && <span className="text-[#D29922] font-semibold inline-flex items-center gap-1"><Clock className="w-3 h-3" /> Pendiente</span>}
                           </div>
-                          {e.notes && <div className="text-[11px] text-[#6E7681] italic mt-1">📝 {e.notes}</div>}
+                          {e.notes && <div className="text-[11px] text-[#6E7681] italic mt-1 inline-flex items-center gap-1"><StickyNote className="w-3 h-3 shrink-0" /> {e.notes}</div>}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-mono font-bold text-sm">{formatCurrency(e.amount)}</span>
@@ -448,8 +449,9 @@ export default function VehicleDetailPage() {
                               <button
                                 onClick={() => setDeletingExpense({ ...e, vehicle: { id: vehicle.id, plate: vehicle.plate, stage: vehicle.stage } })}
                                 className="btn-ghost text-[#F85149] text-xs px-2.5 py-1"
+                                aria-label="Eliminar gasto"
                               >
-                                🗑
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}
@@ -697,9 +699,9 @@ export default function VehicleDetailPage() {
               onClick={() => vehicle.stage !== 'VENDIDO' && setConfirmDel(true)}
               disabled={vehicle.stage === 'VENDIDO'}
               title={vehicle.stage === 'VENDIDO' ? 'Vehículo vendido: no se puede eliminar' : ''}
-              className="btn-ghost text-[#F85149] border-[#F8514930] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-ghost text-[#F85149] border-[#F8514930] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
             >
-              🗑 Eliminar
+              <Trash2 className="w-4 h-4" /> Eliminar
             </button>
           )}
         </div>
@@ -707,9 +709,9 @@ export default function VehicleDetailPage() {
           {vehicle.stage !== 'VENDIDO' && (
             <button
               onClick={() => setShowSaleModal(true)}
-              className="btn-primary bg-green-600 hover:bg-green-700"
+              className="btn-primary bg-green-600 hover:bg-green-700 inline-flex items-center gap-1.5"
             >
-              💰 Vender
+              <DollarSign className="w-4 h-4" /> Vender
             </button>
           )}
         </div>
@@ -902,9 +904,9 @@ function VehicleTimeline({ events }) {
 }
 
 const TIMELINE_TYPE_META = {
-  VEHICLE_AUDIT: { icon: '📝', color: '#58A6FF', label: 'Vehículo' },
-  EXPENSE_AUDIT: { icon: '🧾', color: '#D29922', label: 'Gasto' },
-  TRANSACTION: { icon: '💸', color: '#3FB950', label: 'Movimiento' },
+  VEHICLE_AUDIT: { icon: FileText, color: '#58A6FF', label: 'Vehículo' },
+  EXPENSE_AUDIT: { icon: Receipt, color: '#D29922', label: 'Gasto' },
+  TRANSACTION: { icon: Wallet, color: '#3FB950', label: 'Movimiento' },
 };
 
 function VehicleTimelineEvent({ event }) {
@@ -978,7 +980,7 @@ function VehicleTimelineEvent({ event }) {
       data-testid={`timeline-${event.type}`}
     >
       <div className="w-1 self-stretch min-h-[36px] rounded-full shrink-0" style={{ background: meta.color }} />
-      <div className="text-base leading-none mt-0.5" aria-hidden>{meta.icon}</div>
+      <meta.icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: meta.color }} aria-hidden />
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center gap-2 flex-wrap">
           <span
@@ -994,7 +996,7 @@ function VehicleTimelineEvent({ event }) {
         <div className="mt-1.5 text-[13px] text-[#E6EDF3] font-medium">{title}</div>
         {detail}
         {reason && (
-          <div className="mt-1.5 text-[11px] text-[#6E7681] italic">📝 {reason}</div>
+          <div className="mt-1.5 text-[11px] text-[#6E7681] italic inline-flex items-center gap-1"><StickyNote className="w-3 h-3 shrink-0" /> {reason}</div>
         )}
       </div>
     </div>
@@ -1049,7 +1051,7 @@ function AuditEntry({ entry }) {
           <div className="mt-1.5 text-[12px] text-[#6E7681]">Sin cambios de campos.</div>
         )}
         {entry.reason && (
-          <div className="mt-1.5 text-[11px] text-[#6E7681] italic">📝 {entry.reason}</div>
+          <div className="mt-1.5 text-[11px] text-[#6E7681] italic inline-flex items-center gap-1"><StickyNote className="w-3 h-3 shrink-0" /> {entry.reason}</div>
         )}
       </div>
     </div>
