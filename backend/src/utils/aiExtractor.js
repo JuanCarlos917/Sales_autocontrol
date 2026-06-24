@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 
-const MODEL = 'claude-opus-4-7';
+const MODEL = 'claude-opus-4-8';
 
 // Tool con schema estricto: forzar tool_choice garantiza JSON validado por el schema.
 const TARJETA_TOOL = {
