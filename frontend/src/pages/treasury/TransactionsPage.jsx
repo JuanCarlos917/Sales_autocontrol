@@ -63,6 +63,10 @@ const ORIGIN_BADGE = {
 
 const shortId = (id) => (id ? `#${id.slice(-6)}` : '');
 
+const LINKED_FIELDS = ['expenseId', 'loanId', 'loanPaymentId', 'debtId', 'transferId'];
+
+const isReversed = (tx) => tx.reversedBy && tx.reversedBy.length > 0;
+
 export default function TransactionsPage() {
   const { role } = useAuth();
   const isViewer = role === 'VIEWER';
@@ -70,7 +74,6 @@ export default function TransactionsPage() {
   const [reverseTarget, setReverseTarget] = useState(null);
   const [reverseReason, setReverseReason] = useState('');
 
-  const LINKED_FIELDS = ['expenseId', 'loanId', 'loanPaymentId', 'debtId', 'transferId'];
   const canReverse = (tx) =>
     isAdmin &&
     (tx.type === 'INCOME' || tx.type === 'EXPENSE') &&
@@ -78,8 +81,6 @@ export default function TransactionsPage() {
     !tx.payablePayment &&
     !LINKED_FIELDS.some((f) => tx[f]) &&
     !(tx.reversedBy && tx.reversedBy.length > 0);
-
-  const isReversed = (tx) => tx.reversedBy && tx.reversedBy.length > 0;
 
   const openReverseModal = (tx) => {
     setReverseTarget(tx);
@@ -499,7 +500,10 @@ export default function TransactionsPage() {
 
       <Modal
         isOpen={Boolean(reverseTarget)}
-        onClose={() => setReverseTarget(null)}
+        onClose={() => {
+          setReverseTarget(null);
+          setReverseReason('');
+        }}
         title="Reversar movimiento"
       >
         {reverseTarget && (
@@ -521,7 +525,10 @@ export default function TransactionsPage() {
               />
             </div>
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setReverseTarget(null)} className="btn-ghost flex-1">Cancelar</button>
+              <button type="button" onClick={() => {
+                setReverseTarget(null);
+                setReverseReason('');
+              }} className="btn-ghost flex-1">Cancelar</button>
               <button
                 type="button"
                 onClick={handleReverse}
