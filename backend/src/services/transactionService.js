@@ -161,18 +161,27 @@ class TransactionService {
 
     const data = buildReversalData(original, userId, reason);
 
-    return prisma.$transaction(async (tx) => {
-      const compensating = await tx.transaction.create({ data, include: TRANSACTION_INCLUDE });
-      await writeTreasuryAudit(tx, {
-        entityType: 'TRANSACTION',
-        entityId: compensating.id,
-        userId,
-        action: 'CREATE',
-        after: snapshotEntity(compensating, ['id', 'accountId', 'type', 'category', 'amount', 'reversesTransactionId']),
-        reason,
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const compensating = await tx.transaction.create({ data, include: TRANSACTION_INCLUDE });
+        await writeTreasuryAudit(tx, {
+          entityType: 'TRANSACTION',
+          entityId: compensating.id,
+          userId,
+          action: 'CREATE',
+          after: snapshotEntity(compensating, ['id', 'accountId', 'type', 'category', 'amount', 'reversesTransactionId']),
+          reason,
+        });
+        return compensating;
       });
-      return compensating;
-    });
+    } catch (err) {
+      // DB-level backstop: partial unique index "manual_reversal_unique" fires when two
+      // concurrent requests both pass the pre-check above and race to insert.
+      if (err.code === 'P2002') {
+        throw new AppError('Este movimiento ya fue reversado.', 409);
+      }
+      throw err;
+    }
   }
 
   async getSummary({ startDate, endDate, accountId } = {}) {

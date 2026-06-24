@@ -73,6 +73,7 @@ export default function TransactionsPage() {
   const isAdmin = role === 'ADMIN';
   const [reverseTarget, setReverseTarget] = useState(null);
   const [reverseReason, setReverseReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const canReverse = (tx) =>
     isAdmin &&
@@ -89,6 +90,8 @@ export default function TransactionsPage() {
 
   const handleReverse = async () => {
     if (!reverseTarget || reverseReason.trim().length < 10) return;
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await transactionsApi.reverse(reverseTarget.id, reverseReason.trim());
       setReverseTarget(null);
@@ -98,6 +101,8 @@ export default function TransactionsPage() {
     } catch (err) {
       console.error('Error reversing transaction:', err);
       alert(err.response?.data?.error || 'No se pudo reversar el movimiento');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -532,7 +537,7 @@ export default function TransactionsPage() {
               <button
                 type="button"
                 onClick={handleReverse}
-                disabled={reverseReason.trim().length < 10}
+                disabled={reverseReason.trim().length < 10 || submitting}
                 className="btn-primary flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
                 data-testid="reverse-confirm"
               >
