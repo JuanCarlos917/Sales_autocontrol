@@ -33,8 +33,9 @@ export const transactionsApi = {
   createIncome: (data) => api.post('/treasury/transactions/income', data),
   createExpense: (data) => api.post('/treasury/transactions/expense', data),
   update: (id, data) => api.put(`/treasury/transactions/${id}`, data),
-  // Movimientos inmutables: no hay delete. Las correcciones se hacen
-  // editando el gasto origen o creando un nuevo movimiento.
+  // Movimientos inmutables: no hay delete. La corrección admin es el reverso,
+  // que crea un movimiento compensatorio (no borra).
+  reverse: (id, reason) => api.post(`/treasury/transactions/${id}/reverse`, { reason }),
 };
 
 // ── Transferencias ──
