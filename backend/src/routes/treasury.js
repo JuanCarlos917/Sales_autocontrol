@@ -4,6 +4,7 @@
 
 const { Router } = require('express');
 const { validate, schemas } = require('../middleware/validation');
+const { authorize } = require('../middleware/auth');
 
 // Controllers
 const accountCtrl = require('../controllers/accountController');
@@ -57,6 +58,7 @@ router.get('/transactions/:id', transactionCtrl.getOne);
 router.post('/transactions/income', validate(schemas.income), transactionCtrl.createIncome);
 router.post('/transactions/expense', validate(schemas.expenseTreasury), transactionCtrl.createExpense);
 router.put('/transactions/:id', validate(schemas.transactionUpdate), transactionCtrl.update);
+router.post('/transactions/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), transactionCtrl.reverse);
 // Movimientos inmutables: ya no hay DELETE. Las correcciones se hacen
 // editando el gasto origen o creando un movimiento de ajuste.
 

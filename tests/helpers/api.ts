@@ -620,3 +620,11 @@ export async function apiCreateUser(
 export async function apiMe(token: string): Promise<{ user: { id: string; email: string; role: string } }> {
   return getJson('/auth/me', token);
 }
+
+export async function apiReverseTransactionRaw(
+  token: string,
+  id: string,
+  body: { reason?: string },
+): Promise<{ status: number; body: { error?: string; id?: string; type?: string; category?: string; reversesTransactionId?: string; amount?: string } | null }> {
+  return apiRequestRaw('POST', `/treasury/transactions/${id}/reverse`, token, body);
+}
