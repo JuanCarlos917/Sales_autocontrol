@@ -70,3 +70,41 @@ test('buildReversalData: invierte EXPENSE a INCOME', () => {
   const data = buildReversalData(original, 'user1', 'motivo suficientemente largo');
   assert.equal(data.type, 'INCOME');
 });
+
+const { flipType, buildReversalDataMany } = require('../transactionReversal');
+
+test('flipType invierte los cuatro tipos', () => {
+  assert.equal(flipType('INCOME'), 'EXPENSE');
+  assert.equal(flipType('EXPENSE'), 'INCOME');
+  assert.equal(flipType('TRANSFER_IN'), 'TRANSFER_OUT');
+  assert.equal(flipType('TRANSFER_OUT'), 'TRANSFER_IN');
+});
+
+test('flipType lanza para tipo no reversable', () => {
+  assert.throws(() => flipType('OTRO'), /no reversable/);
+});
+
+test('buildReversalData usa la categoría dada', () => {
+  const original = { id: 'tx-abc123', accountId: 'acc-1', type: 'EXPENSE', amount: '1000', vehicleId: null, thirdPartyId: null };
+  const data = buildReversalData(original, 'u-1', 'motivo suficiente', 'LOAN_REVERSAL');
+  assert.equal(data.category, 'LOAN_REVERSAL');
+  assert.equal(data.type, 'INCOME');
+  assert.equal(data.reversesTransactionId, 'tx-abc123');
+});
+
+test('buildReversalData por defecto es MANUAL_REVERSAL', () => {
+  const original = { id: 'tx-1', accountId: 'acc-1', type: 'INCOME', amount: '1000', vehicleId: null, thirdPartyId: null };
+  assert.equal(buildReversalData(original, 'u-1', 'motivo suficiente').category, MANUAL_REVERSAL);
+});
+
+test('buildReversalDataMany genera un compensatorio por fuente', () => {
+  const sources = [
+    { id: 'a', accountId: 'acc-1', type: 'EXPENSE', amount: '500', vehicleId: null, thirdPartyId: null },
+    { id: 'b', accountId: 'acc-1', type: 'INCOME', amount: '300', vehicleId: null, thirdPartyId: null },
+  ];
+  const out = buildReversalDataMany(sources, 'u-1', 'anulación completa', 'LOAN_REVERSAL');
+  assert.equal(out.length, 2);
+  assert.equal(out[0].type, 'INCOME');
+  assert.equal(out[1].type, 'EXPENSE');
+  assert.ok(out.every((d) => d.category === 'LOAN_REVERSAL'));
+});

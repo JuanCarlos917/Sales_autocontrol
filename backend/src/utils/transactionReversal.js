@@ -34,19 +34,28 @@ function getReversibilityError(tx) {
   return null;
 }
 
+const FLIP = { INCOME: 'EXPENSE', EXPENSE: 'INCOME', TRANSFER_IN: 'TRANSFER_OUT', TRANSFER_OUT: 'TRANSFER_IN' };
+
+function flipType(type) {
+  const flipped = FLIP[type];
+  if (!flipped) throw new Error(`flipType: tipo no reversable: ${type}`);
+  return flipped;
+}
+
 /**
  * Construye el `data` del movimiento compensatorio.
  * @param {{ id:string, accountId:string, type:string, amount:any, vehicleId?:string, thirdPartyId?:string }} original
  * @param {string} userId
  * @param {string} reason
+ * @param {string} [category=MANUAL_REVERSAL]
  */
-function buildReversalData(original, userId, reason) {
-  const flippedType = original.type === 'INCOME' ? 'EXPENSE' : 'INCOME';
+function buildReversalData(original, userId, reason, category = MANUAL_REVERSAL) {
+  const flippedType = flipType(original.type);
   const ref = `#${String(original.id).slice(-6)}`;
   return {
     accountId: original.accountId,
     type: flippedType,
-    category: MANUAL_REVERSAL,
+    category,
     amount: original.amount,
     description: `Reverso de ${ref} — ${reason}`,
     reversesTransactionId: original.id,
@@ -56,4 +65,8 @@ function buildReversalData(original, userId, reason) {
   };
 }
 
-module.exports = { LINKED_FIELDS, MANUAL_REVERSAL, getReversibilityError, buildReversalData };
+function buildReversalDataMany(sources, userId, reason, category = MANUAL_REVERSAL) {
+  return sources.map((s) => buildReversalData(s, userId, reason, category));
+}
+
+module.exports = { LINKED_FIELDS, MANUAL_REVERSAL, getReversibilityError, buildReversalData, buildReversalDataMany, flipType };
