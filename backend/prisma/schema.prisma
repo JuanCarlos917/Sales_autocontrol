@@ -376,6 +376,7 @@ enum TransactionCategory {
   DEBT_PAYMENT
   EXPENSE_ADJUSTMENT
   EXPENSE_REVERSAL
+  MANUAL_REVERSAL
 }
 
 // ══════════════════════════════════════════════════════════════

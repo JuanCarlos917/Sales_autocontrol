@@ -5,6 +5,8 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
+const { getReversibilityError, buildReversalData } = require('../utils/transactionReversal');
+const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 
 // Cada Transaction se devuelve como fila propia (decisión 2026-06-08).
 // Las EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL ya no se ocultan: enlazan al
@@ -16,6 +18,8 @@ const TRANSACTION_INCLUDE = {
   reversesTransaction: {
     select: { id: true, category: true, amount: true, date: true, accountId: true },
   },
+  reversedBy: { select: { id: true } },
+  payablePayment: { select: { id: true } },
 };
 
 class TransactionService {
@@ -130,6 +134,54 @@ class TransactionService {
       data: updateData,
       include: TRANSACTION_INCLUDE,
     });
+  }
+
+  async reverse(id, reason, userId) {
+    const original = await prisma.transaction.findUnique({
+      where: { id },
+      include: {
+        reversedBy: { select: { id: true }, take: 1 },
+        payablePayment: { select: { id: true } },
+      },
+    });
+    if (!original) throw new AppError('Movimiento no encontrado', 404);
+
+    const error = getReversibilityError({
+      type: original.type,
+      expenseId: original.expenseId,
+      loanId: original.loanId,
+      loanPaymentId: original.loanPaymentId,
+      debtId: original.debtId,
+      transferId: original.transferId,
+      reversesTransactionId: original.reversesTransactionId,
+      hasPayablePayment: Boolean(original.payablePayment),
+      alreadyReversed: original.reversedBy.length > 0,
+    });
+    if (error) throw new AppError(error.message, error.status);
+
+    const data = buildReversalData(original, userId, reason);
+
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const compensating = await tx.transaction.create({ data, include: TRANSACTION_INCLUDE });
+        await writeTreasuryAudit(tx, {
+          entityType: 'TRANSACTION',
+          entityId: compensating.id,
+          userId,
+          action: 'CREATE',
+          after: snapshotEntity(compensating, ['id', 'accountId', 'type', 'category', 'amount', 'reversesTransactionId']),
+          reason,
+        });
+        return compensating;
+      });
+    } catch (err) {
+      // DB-level backstop: partial unique index "manual_reversal_unique" fires when two
+      // concurrent requests both pass the pre-check above and race to insert.
+      if (err.code === 'P2002') {
+        throw new AppError('Este movimiento ya fue reversado.', 409);
+      }
+      throw err;
+    }
   }
 
   async getSummary({ startDate, endDate, accountId } = {}) {
