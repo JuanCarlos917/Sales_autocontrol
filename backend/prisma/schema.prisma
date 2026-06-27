@@ -377,6 +377,8 @@ enum TransactionCategory {
   EXPENSE_ADJUSTMENT
   EXPENSE_REVERSAL
   MANUAL_REVERSAL
+  LOAN_REVERSAL
+  DEBT_REVERSAL
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -415,6 +417,9 @@ model CashCount {
   countedBalance  Decimal  @db.Decimal(15, 2)
   difference      Decimal  @db.Decimal(15, 2)
   notes           String?
+  voidedAt        DateTime?
+  voidedBy        String?
+  voidReason      String?
   date            DateTime @default(now())
   createdBy       String
   createdAt       DateTime @default(now())
@@ -739,6 +744,10 @@ enum TreasuryAuditEntity {
   PAYABLE
   PAYABLE_PAYMENT
   DEBT
+  LOAN
+  LOAN_PAYMENT
+  DEBT_PAYMENT
+  CASH_COUNT
 }
 
 enum TreasuryAuditAction {
@@ -747,4 +756,5 @@ enum TreasuryAuditAction {
   DELETE
   CANCEL
   PAYMENT
+  REVERSE
 }
