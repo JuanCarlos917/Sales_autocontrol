@@ -5,8 +5,8 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
-const { getReversibilityError, buildReversalData } = require('../utils/transactionReversal');
-const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { getReversibilityError } = require('../utils/transactionReversal');
+const { applyReversal } = require('./reversalEngine');
 
 // Cada Transaction se devuelve como fila propia (decisión 2026-06-08).
 // Las EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL ya no se ocultan: enlazan al
@@ -159,29 +159,16 @@ class TransactionService {
     });
     if (error) throw new AppError(error.message, error.status);
 
-    const data = buildReversalData(original, userId, reason);
-
-    try {
-      return await prisma.$transaction(async (tx) => {
-        const compensating = await tx.transaction.create({ data, include: TRANSACTION_INCLUDE });
-        await writeTreasuryAudit(tx, {
-          entityType: 'TRANSACTION',
-          entityId: compensating.id,
-          userId,
-          action: 'CREATE',
-          after: snapshotEntity(compensating, ['id', 'accountId', 'type', 'category', 'amount', 'reversesTransactionId']),
-          reason,
-        });
-        return compensating;
-      });
-    } catch (err) {
-      // DB-level backstop: partial unique index "manual_reversal_unique" fires when two
-      // concurrent requests both pass the pre-check above and race to insert.
-      if (err.code === 'P2002') {
-        throw new AppError('Este movimiento ya fue reversado.', 409);
-      }
-      throw err;
-    }
+    const [compensating] = await applyReversal({
+      sources: [original],
+      reason,
+      userId,
+      category: 'MANUAL_REVERSAL',
+      auditEntityType: 'TRANSACTION',
+      auditEntityId: original.id,
+      include: TRANSACTION_INCLUDE,
+    });
+    return compensating;
   }
 
   async getSummary({ startDate, endDate, accountId } = {}) {
