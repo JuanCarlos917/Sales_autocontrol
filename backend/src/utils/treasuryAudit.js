@@ -2,7 +2,8 @@
 // Treasury Audit Helper — escribe a la tabla treasury_audit_logs
 //
 // Patrón polimórfico (entityType + entityId) para cubrir Transaction,
-// Transfer, Account, Payable, PayablePayment con una sola tabla.
+// Transfer, Account, Debt, Payable, PayablePayment, Loan, LoanPayment,
+// DebtPayment y CashCount con una sola tabla.
 //
 // Diseño:
 //  - Pasar `tx` (cliente Prisma dentro de transacción) cuando la mutación
@@ -21,10 +22,10 @@ const VALID_ACTIONS  = ['CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'PAYMENT', 'REVE
  *
  * @param {PrismaClient|TransactionClient} prismaOrTx
  * @param {Object}  params
- * @param {string}  params.entityType - uno de: TRANSACTION | TRANSFER | ACCOUNT | PAYABLE | PAYABLE_PAYMENT
+ * @param {string}  params.entityType - uno de: TRANSACTION | TRANSFER | ACCOUNT | DEBT | PAYABLE | PAYABLE_PAYMENT | LOAN | LOAN_PAYMENT | DEBT_PAYMENT | CASH_COUNT
  * @param {string}  params.entityId   - id de la entidad afectada
  * @param {string}  params.userId     - id del usuario autor del cambio
- * @param {string}  params.action     - uno de: CREATE | UPDATE | DELETE | CANCEL | PAYMENT
+ * @param {string}  params.action     - uno de: CREATE | UPDATE | DELETE | CANCEL | PAYMENT | REVERSE
  * @param {Object?} params.before     - snapshot pre-mutación (omitir en CREATE)
  * @param {Object?} params.after      - snapshot post-mutación (omitir en DELETE/CANCEL)
  * @param {string?} params.reason     - motivo del cambio (texto libre)

@@ -4,6 +4,8 @@ const {
   getReversibilityError,
   buildReversalData,
   MANUAL_REVERSAL,
+  flipType,
+  buildReversalDataMany,
 } = require('../transactionReversal');
 
 const manualIncome = {
@@ -70,8 +72,6 @@ test('buildReversalData: invierte EXPENSE a INCOME', () => {
   const data = buildReversalData(original, 'user1', 'motivo suficientemente largo');
   assert.equal(data.type, 'INCOME');
 });
-
-const { flipType, buildReversalDataMany } = require('../transactionReversal');
 
 test('flipType invierte los cuatro tipos', () => {
   assert.equal(flipType('INCOME'), 'EXPENSE');

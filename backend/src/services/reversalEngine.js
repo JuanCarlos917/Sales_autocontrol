@@ -13,13 +13,29 @@ const { writeTreasuryAudit } = require('../utils/treasuryAudit');
 
 const ALREADY_REVERSED = 'Esta operación ya fue reversada.';
 
-async function applyReversal({ sources, reason, userId, category, auditEntityType, auditEntityId, include }) {
+/**
+ * Orquesta el storno atómico de un conjunto de Transaction fuente.
+ * Crea los compensatorios (tipo invertido) y escribe UN audit REVERSE,
+ * todo dentro de una sola transacción Prisma.
+ *
+ * @param {Object}   params
+ * @param {Object[]} params.sources          - Transactions fuente a reversar
+ * @param {string}   params.reason           - Motivo del reverso (texto libre)
+ * @param {string}   params.userId           - ID del usuario que ejecuta la acción
+ * @param {string}   params.category         - Categoría de los compensatorios (ej. 'MANUAL_REVERSAL')
+ * @param {string}   params.auditEntityType  - Tipo de entidad para el audit log (ej. 'TRANSACTION')
+ * @param {string}   params.auditEntityId    - ID de la entidad principal auditada
+ * @param {Object}   [params.include]        - Cláusula Prisma include para los compensatorios (opcional)
+ * @param {Object}   [params.client]         - Cliente Prisma a usar; por defecto el módulo-level prisma (opcional, útil en tests)
+ * @returns {Promise<Object[]>}              - Array de movimientos compensatorios creados
+ */
+async function applyReversal({ sources, reason, userId, category, auditEntityType, auditEntityId, include, client = prisma }) {
   if (!Array.isArray(sources) || sources.length === 0) {
     throw new AppError('No hay movimientos para reversar.', 400);
   }
   const dataList = buildReversalDataMany(sources, userId, reason, category);
   try {
-    return await prisma.$transaction(async (tx) => {
+    return await client.$transaction(async (tx) => {
       const compensating = [];
       for (const data of dataList) {
         compensating.push(await tx.transaction.create({ data, include }));
