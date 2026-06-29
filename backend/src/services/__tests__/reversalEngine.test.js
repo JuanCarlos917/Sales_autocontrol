@@ -162,3 +162,43 @@ test('applyReversal: error genérico se relanza sin mapear a 409', async () => {
     (err) => { assert.strictEqual(err, boom, 'debe ser el mismo error'); return true; }
   );
 });
+
+// ═════════════════════════════════════════════════════════════
+// applyReversalInTx tests: núcleo sin transacción abierta
+// ═════════════════════════════════════════════════════════════
+
+const { applyReversalInTx } = require('../reversalEngine');
+
+test('applyReversalInTx: crea compensatorios y 1 audit usando el tx dado, sin abrir transacción', async () => {
+  let n = 0;
+  const auditCalls = [];
+  const tx = {
+    transaction: { create: async ({ data }) => ({ id: 'comp-' + (++n), ...data }) },
+    treasuryAuditLog: { create: async ({ data }) => { auditCalls.push(data); return data; } },
+  };
+  const sources = [
+    { id: 's1', accountId: 'a1', type: 'INCOME', amount: '100', vehicleId: null, thirdPartyId: null },
+    { id: 's2', accountId: 'a1', type: 'INCOME', amount: '50',  vehicleId: null, thirdPartyId: null },
+  ];
+  const out = await applyReversalInTx(tx, {
+    sources, reason: 'reverso de prueba xyz', userId: 'u1',
+    category: 'LOAN_REVERSAL', auditEntityType: 'LOAN_PAYMENT', auditEntityId: 'pay-1',
+  });
+  assert.equal(out.length, 2);
+  assert.equal(n, 2);
+  assert.equal(auditCalls.length, 1);
+  assert.equal(auditCalls[0].action, 'REVERSE');
+  assert.equal(auditCalls[0].entityType, 'LOAN_PAYMENT');
+  assert.equal(auditCalls[0].entityId, 'pay-1');
+  assert.ok(out.every((c) => c.category === 'LOAN_REVERSAL'));
+});
+
+test('applyReversalInTx: sources vacío lanza AppError 400 sin crear', async () => {
+  let created = false;
+  const tx = { transaction: { create: async () => { created = true; } }, treasuryAuditLog: { create: async () => {} } };
+  await assert.rejects(
+    () => applyReversalInTx(tx, { sources: [], reason: 'x'.repeat(10), userId: 'u', category: 'LOAN_REVERSAL', auditEntityType: 'LOAN', auditEntityId: 'l1' }),
+    (err) => { assert.equal(err.statusCode, 400); return true; },
+  );
+  assert.equal(created, false);
+});
