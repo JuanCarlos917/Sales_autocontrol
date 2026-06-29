@@ -570,6 +570,9 @@ model LoanPayment {
   interestPortion Decimal  @default(0) @db.Decimal(15, 2)
   date            DateTime @default(now())
   notes           String?
+  reversedAt      DateTime?
+  reversedBy      String?
+  reverseReason   String?
   createdBy       String
   createdAt       DateTime @default(now())
 
