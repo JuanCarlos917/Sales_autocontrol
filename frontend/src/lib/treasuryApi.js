@@ -69,7 +69,6 @@ export const loansApi = {
   getById: (id) => api.get(`/loans/${id}`),
   create: (data) => api.post('/loans', data),
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
-  cancel: (id) => api.post(`/loans/${id}/cancel`),
 };
 
 // ── Créditos / financiaciones del negocio ──

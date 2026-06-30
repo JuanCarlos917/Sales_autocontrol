@@ -14,48 +14,58 @@ const { writeTreasuryAudit } = require('../utils/treasuryAudit');
 const ALREADY_REVERSED = 'Esta operación ya fue reversada.';
 
 /**
- * Orquesta el storno atómico de un conjunto de Transaction fuente.
- * Crea los compensatorios (tipo invertido) y escribe UN audit REVERSE,
- * todo dentro de una sola transacción Prisma.
+ * Núcleo del reverso DENTRO de una transacción ya abierta: crea los
+ * compensatorios + 1 audit REVERSE con el `tx` provisto. No abre transacción
+ * ni mapea P2002 — eso lo hace el caller (applyReversal o un servicio de
+ * dominio que compone más mutaciones en la misma tx).
  *
- * @param {Object}   params
- * @param {Object[]} params.sources          - Transactions fuente a reversar
- * @param {string}   params.reason           - Motivo del reverso (texto libre)
- * @param {string}   params.userId           - ID del usuario que ejecuta la acción
- * @param {string}   params.category         - Categoría de los compensatorios (ej. 'MANUAL_REVERSAL')
- * @param {string}   params.auditEntityType  - Tipo de entidad para el audit log (ej. 'TRANSACTION')
- * @param {string}   params.auditEntityId    - ID de la entidad principal auditada
- * @param {Object}   [params.include]        - Cláusula Prisma include para los compensatorios (opcional)
- * @param {Object}   [params.client]         - Cliente Prisma a usar; por defecto el módulo-level prisma (opcional, útil en tests)
- * @returns {Promise<Object[]>}              - Array de movimientos compensatorios creados
+ * @param {import('@prisma/client').Prisma.TransactionClient} tx
+ * @param {Object}  params
+ * @param {Array}   params.sources          transacciones origen
+ * @param {string}  params.reason
+ * @param {string}  params.userId
+ * @param {string}  params.category          categoría del compensatorio
+ * @param {string}  params.auditEntityType
+ * @param {string}  params.auditEntityId
+ * @param {Object} [params.include]          include Prisma opcional
+ * @returns {Promise<Array>} compensatorios creados
  */
-async function applyReversal({ sources, reason, userId, category, auditEntityType, auditEntityId, include, client = prisma }) {
+async function applyReversalInTx(tx, { sources, reason, userId, category, auditEntityType, auditEntityId, include }) {
   if (!Array.isArray(sources) || sources.length === 0) {
     throw new AppError('No hay movimientos para reversar.', 400);
   }
   const dataList = buildReversalDataMany(sources, userId, reason, category);
+  const compensating = [];
+  for (const data of dataList) {
+    compensating.push(await tx.transaction.create({ data, include }));
+  }
+  await writeTreasuryAudit(tx, {
+    entityType: auditEntityType,
+    entityId: auditEntityId,
+    userId,
+    action: 'REVERSE',
+    after: { compensatingIds: compensating.map((c) => c.id), count: compensating.length },
+    reason,
+  });
+  return compensating;
+}
+
+/**
+ * Reverso atómico autónomo: abre su propia transacción y mapea el índice
+ * único parcial (P2002) → 409. Para dominios que solo crean compensatorios.
+ *
+ * @param {Object}  params  (ver applyReversalInTx)
+ * @param {Object} [params.client]  cliente Prisma; default el módulo (útil en tests)
+ */
+async function applyReversal({ sources, reason, userId, category, auditEntityType, auditEntityId, include, client = prisma }) {
   try {
-    return await client.$transaction(async (tx) => {
-      const compensating = [];
-      for (const data of dataList) {
-        compensating.push(await tx.transaction.create({ data, include }));
-      }
-      await writeTreasuryAudit(tx, {
-        entityType: auditEntityType,
-        entityId: auditEntityId,
-        userId,
-        action: 'REVERSE',
-        after: { compensatingIds: compensating.map((c) => c.id), count: compensating.length },
-        reason,
-      });
-      return compensating;
-    });
+    return await client.$transaction((tx) =>
+      applyReversalInTx(tx, { sources, reason, userId, category, auditEntityType, auditEntityId, include }),
+    );
   } catch (err) {
-    // Backstop a nivel DB: el índice único parcial dispara P2002 si dos
-    // requests concurrentes pasan el pre-check y compiten por insertar.
     if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
     throw err;
   }
 }
 
-module.exports = { applyReversal, ALREADY_REVERSED };
+module.exports = { applyReversal, applyReversalInTx, ALREADY_REVERSED };
