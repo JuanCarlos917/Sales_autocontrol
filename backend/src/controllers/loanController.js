@@ -40,4 +40,11 @@ const cancel = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, list, findById, addPayment, cancel };
+const reversePayment = async (req, res, next) => {
+  try {
+    const result = await loanService.reversePayment(req.params.id, req.body.reason, req.user.id);
+    res.status(201).json(result);
+  } catch (err) { next(err); }
+};
+
+module.exports = { create, list, findById, addPayment, cancel, reversePayment };

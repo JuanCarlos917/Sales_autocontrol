@@ -326,6 +326,12 @@ export interface Loan {
     status: 'PENDING' | 'PARTIAL' | 'PAID';
     dueDate: string;
   }>;
+  payments: Array<{
+    id: string;
+    principalAmount: string | number;
+    extraAmount: string | number;
+    reversedAt: string | null;
+  }>;
   isOverdue: boolean;
 }
 
@@ -351,6 +357,22 @@ export interface LoanPaymentInput {
 
 export async function apiAddLoanPayment(token: string, loanId: string, data: LoanPaymentInput): Promise<Loan> {
   return postJson(`/loans/${loanId}/payments`, data, token);
+}
+
+export async function apiReverseLoanPaymentRaw(
+  token: string,
+  paymentId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/loan-payments/${paymentId}/reverse`, token, { reason });
+}
+
+export async function apiReverseLoanRaw(
+  token: string,
+  loanId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/loans/${loanId}/reverse`, token, { reason });
 }
 
 // ── Debts ─────────────────────────────────────────────────

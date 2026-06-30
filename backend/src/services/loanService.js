@@ -6,6 +6,8 @@ const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { calcLoanInterest, splitLoanPayment, splitFinalPayment } = require('../utils/financial');
+const { applyReversalInTx, ALREADY_REVERSED } = require('./reversalEngine');
+const { recomputeLoanFromPayments } = require('../utils/loanReversal');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -299,6 +301,69 @@ class LoanService {
       include: LOAN_INCLUDE,
     });
     return annotateOverdue(updated);
+  }
+
+  async reversePayment(paymentId, reason, userId) {
+    const payment = await prisma.loanPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        transactions: true,
+        loan: {
+          include: {
+            installments: { orderBy: { sequence: 'asc' } },
+            payments: true,
+          },
+        },
+      },
+    });
+    if (!payment) throw new AppError('Pago de préstamo no encontrado', 404);
+    if (payment.reversedAt) throw new AppError('Este pago ya fue reversado.', 409);
+
+    const loan = payment.loan;
+    if (loan.status === 'CANCELLED') {
+      throw new AppError('El préstamo ya fue reversado por completo.', 400);
+    }
+
+    const sources = payment.transactions;
+    const surviving = loan.payments.filter((p) => p.id !== paymentId && !p.reversedAt);
+    const recompute = recomputeLoanFromPayments(loan, surviving);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'LOAN_REVERSAL',
+          auditEntityType: 'LOAN_PAYMENT',
+          auditEntityId: paymentId,
+        });
+        await tx.loanPayment.update({
+          where: { id: paymentId },
+          data: { reversedAt: new Date(), reversedBy: userId, reverseReason: reason },
+        });
+        for (const u of recompute.installmentUpdates) {
+          await tx.loanInstallment.update({
+            where: { id: u.id },
+            data: { paidAmount: u.paidAmount, status: u.status },
+          });
+        }
+        return tx.loan.update({
+          where: { id: loan.id },
+          data: {
+            paidAmount: recompute.paidAmount,
+            interestReceived: recompute.interestReceived,
+            extraReceived: recompute.extraReceived,
+            status: recompute.status,
+          },
+          include: LOAN_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
   }
 }
 
