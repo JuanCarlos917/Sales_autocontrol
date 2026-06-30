@@ -317,12 +317,12 @@ class LoanService {
       },
     });
     if (!payment) throw new AppError('Pago de préstamo no encontrado', 404);
-    if (payment.reversedAt) throw new AppError('Este pago ya fue reversado.', 409);
 
     const loan = payment.loan;
     if (loan.status === 'CANCELLED') {
       throw new AppError('El préstamo ya fue reversado por completo.', 400);
     }
+    if (payment.reversedAt) throw new AppError('Este pago ya fue reversado.', 409);
 
     const sources = payment.transactions;
 
@@ -358,6 +358,60 @@ class LoanService {
             extraReceived: recompute.extraReceived,
             status: recompute.status,
           },
+          include: LOAN_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
+  }
+
+  async reverseLoan(loanId, reason, userId) {
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: { installments: true },
+    });
+    if (!loan) throw new AppError('Préstamo no encontrado', 404);
+    if (loan.status === 'CANCELLED') throw new AppError('El préstamo ya fue reversado.', 409);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const livePayments = await tx.loanPayment.findMany({
+          where: { loanId, reversedAt: null },
+          include: { transactions: true },
+        });
+        const disbursementTxns = await tx.transaction.findMany({
+          where: { loanId, category: 'LOAN_DISBURSEMENT', reversesTransactionId: null },
+        });
+        const sources = [...disbursementTxns, ...livePayments.flatMap((p) => p.transactions)];
+        if (sources.length === 0) throw new AppError('El préstamo no tiene movimientos para reversar.', 400);
+
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'LOAN_REVERSAL',
+          auditEntityType: 'LOAN',
+          auditEntityId: loanId,
+        });
+        const now = new Date();
+        for (const p of livePayments) {
+          await tx.loanPayment.update({
+            where: { id: p.id },
+            data: { reversedAt: now, reversedBy: userId, reverseReason: reason },
+          });
+        }
+        for (const inst of loan.installments) {
+          await tx.loanInstallment.update({
+            where: { id: inst.id },
+            data: { paidAmount: 0, status: 'PENDING' },
+          });
+        }
+        return tx.loan.update({
+          where: { id: loanId },
+          data: { paidAmount: 0, interestReceived: 0, extraReceived: 0, status: 'CANCELLED' },
           include: LOAN_INCLUDE,
         });
       });

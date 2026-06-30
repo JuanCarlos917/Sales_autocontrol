@@ -6,6 +6,7 @@ import {
   apiGetLoan,
   apiAddLoanPayment,
   apiReverseLoanPaymentRaw,
+  apiReverseLoanRaw,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
@@ -95,5 +96,68 @@ test.describe('Tesorería — reverso de pagos de préstamo (API)', () => {
   test('pago inexistente → 404', async ({ page }) => {
     const token = await loginAsAdmin(page);
     expect((await apiReverseLoanPaymentRaw(token, 'noexiste', 'motivo suficiente largo')).status).toBe(404);
+  });
+});
+
+test.describe('Tesorería — reverso de préstamo completo (cascada, API)', () => {
+  test('anular préstamo con pago compensa desembolso + pago y restaura la caja', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const due = isoDueDates(2);
+    const cashBefore = parseFloat(String((await apiGetAccount(token, TEST_SEED_IDS.accountCash)).currentBalance));
+
+    const loan = await apiCreateLoan(token, {
+      borrowerId: TEST_SEED_IDS.employee,
+      originAccountId: TEST_SEED_IDS.accountCash,
+      principalAmount: 1_000_000,
+      interestRate: 0,
+      installments: [
+        { sequence: 1, dueDate: due[0], plannedAmount: 500_000 },
+        { sequence: 2, dueDate: due[1], plannedAmount: 500_000 },
+      ],
+    });
+    await apiAddLoanPayment(token, loan.id, { accountId: TEST_SEED_IDS.accountCash, principalAmount: 400_000 });
+
+    const res = await apiReverseLoanRaw(token, loan.id, 'préstamo cargado por error');
+    expect(res.status).toBe(201);
+
+    const after = await apiGetLoan(token, loan.id);
+    expect(after.status).toBe('CANCELLED');
+    expect(parseFloat(String(after.paidAmount))).toBe(0);
+    expect(after.payments.every((p) => p.reversedAt !== null)).toBe(true);
+    expect(after.installments.every((i) => i.status === 'PENDING')).toBe(true);
+
+    // Desembolso (-1M) + pago (+400k) revertidos → la caja vuelve a su saldo inicial.
+    const cashAfter = parseFloat(String((await apiGetAccount(token, TEST_SEED_IDS.accountCash)).currentBalance));
+    expect(cashAfter).toBe(cashBefore);
+  });
+
+  test('doble anulación del mismo préstamo → 409', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const due = isoDueDates(1);
+    const loan = await apiCreateLoan(token, {
+      borrowerId: TEST_SEED_IDS.employee,
+      originAccountId: TEST_SEED_IDS.accountCash,
+      principalAmount: 200_000,
+      interestRate: 0,
+      installments: [{ sequence: 1, dueDate: due[0], plannedAmount: 200_000 }],
+    });
+    expect((await apiReverseLoanRaw(token, loan.id, 'cargado por error')).status).toBe(201);
+    expect((await apiReverseLoanRaw(token, loan.id, 'cargado por error')).status).toBe(409);
+  });
+
+  test('reversar un pago de un préstamo ya anulado → 400', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const due = isoDueDates(1);
+    const loan = await apiCreateLoan(token, {
+      borrowerId: TEST_SEED_IDS.employee,
+      originAccountId: TEST_SEED_IDS.accountCash,
+      principalAmount: 200_000,
+      interestRate: 0,
+      installments: [{ sequence: 1, dueDate: due[0], plannedAmount: 200_000 }],
+    });
+    await apiAddLoanPayment(token, loan.id, { accountId: TEST_SEED_IDS.accountCash, principalAmount: 100_000 });
+    const paymentId = (await apiGetLoan(token, loan.id)).payments[0].id;
+    expect((await apiReverseLoanRaw(token, loan.id, 'cargado por error')).status).toBe(201);
+    expect((await apiReverseLoanPaymentRaw(token, paymentId, 'corrección tardía')).status).toBe(400);
   });
 });
