@@ -18,6 +18,9 @@ function recomputeLoanFromPayments(loan, survivingPayments) {
   const totalToRepay = principal + interest;
 
   const paidAmount = survivingPayments.reduce((s, p) => s + parseFloat(p.principalAmount), 0);
+  // interestReceived summed from survivors' stored interestPortion by design: mirrors
+  // the LOAN_INTEREST_INCOME entries that were recorded at payment time (which the
+  // compensating reversal entries undo). Do not re-split from scratch here.
   const interestReceived = survivingPayments.reduce((s, p) => s + parseFloat(p.interestPortion), 0);
   const extraReceived = survivingPayments.reduce((s, p) => s + parseFloat(p.extraAmount), 0);
   const status = tierStatus(totalToRepay, paidAmount);

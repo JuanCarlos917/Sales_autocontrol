@@ -9,7 +9,6 @@ router.get('/', ctrl.list);
 router.get('/:id', ctrl.findById);
 router.post('/', validate(schemas.loanCreate), ctrl.create);
 router.post('/:id/payments', validate(schemas.loanPayment), ctrl.addPayment);
-router.post('/:id/cancel', ctrl.cancel);
 router.post('/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), ctrl.reverseLoan);
 
 module.exports = router;

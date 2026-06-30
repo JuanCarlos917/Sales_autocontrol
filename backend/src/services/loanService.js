@@ -289,29 +289,18 @@ class LoanService {
     return annotateOverdue(result);
   }
 
-  async cancel(loanId) {
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-    if (!loan) throw new AppError('Préstamo no encontrado', 404);
-    if (loan.status !== 'PENDING') {
-      throw new AppError('Solo se pueden cancelar préstamos sin pagos (status PENDING)', 400);
-    }
-    const updated = await prisma.loan.update({
-      where: { id: loanId },
-      data: { status: 'CANCELLED' },
-      include: LOAN_INCLUDE,
-    });
-    return annotateOverdue(updated);
-  }
-
   async reversePayment(paymentId, reason, userId) {
     const payment = await prisma.loanPayment.findUnique({
       where: { id: paymentId },
       include: {
+        // payment.transactions are immutable once created, so reading them outside
+        // the tx is safe; the reversal engine won't race against them.
         transactions: true,
         loan: {
           include: {
             installments: { orderBy: { sequence: 'asc' } },
-            payments: true,
+            // loan.payments intentionally excluded: surviving set is recomputed
+            // inside the tx via a fresh tx.loanPayment.findMany call.
           },
         },
       },

@@ -33,13 +33,6 @@ const addPayment = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-const cancel = async (req, res, next) => {
-  try {
-    const result = await loanService.cancel(req.params.id);
-    res.json(result);
-  } catch (err) { next(err); }
-};
-
 const reversePayment = async (req, res, next) => {
   try {
     const result = await loanService.reversePayment(req.params.id, req.body.reason, req.user.id);
@@ -54,4 +47,4 @@ const reverseLoan = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, list, findById, addPayment, cancel, reversePayment, reverseLoan };
+module.exports = { create, list, findById, addPayment, reversePayment, reverseLoan };
