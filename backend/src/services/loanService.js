@@ -325,11 +325,13 @@ class LoanService {
     }
 
     const sources = payment.transactions;
-    const surviving = loan.payments.filter((p) => p.id !== paymentId && !p.reversedAt);
-    const recompute = recomputeLoanFromPayments(loan, surviving);
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        const freshPayments = await tx.loanPayment.findMany({ where: { loanId: loan.id } });
+        const surviving = freshPayments.filter((p) => p.id !== paymentId && !p.reversedAt);
+        const recompute = recomputeLoanFromPayments(loan, surviving);
+
         await applyReversalInTx(tx, {
           sources,
           reason,
