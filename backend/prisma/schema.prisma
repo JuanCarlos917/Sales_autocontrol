@@ -634,10 +634,14 @@ model DebtPayment {
   debtId    String
   accountId String
   amount    Decimal  @db.Decimal(15, 2)
-  date      DateTime @default(now())
-  notes     String?
-  createdBy String
-  createdAt DateTime @default(now())
+  date          DateTime  @default(now())
+  notes         String?
+  reversedAt    DateTime?
+  reversedBy    String?
+  reverseReason String?
+  reconciled    Boolean   @default(false)
+  createdBy     String
+  createdAt     DateTime  @default(now())
 
   debt         Debt          @relation(fields: [debtId], references: [id], onDelete: Cascade)
   account      Account       @relation("DebtPaymentAccount", fields: [accountId], references: [id])
