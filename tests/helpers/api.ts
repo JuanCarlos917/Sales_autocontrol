@@ -398,6 +398,7 @@ export interface Debt {
   paidAmount: string | number;
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   installments: Array<{ id: string; sequence: number; plannedAmount: string | number; paidAmount: string | number; status: string; dueDate: string }>;
+  payments: Array<{ id: string; amount: string | number; reversedAt: string | null }>;
   isOverdue: boolean;
 }
 
@@ -419,6 +420,22 @@ export async function apiAddDebtPayment(
 
 export async function apiReconcileDebt(token: string, debtId: string, transactionIds: string[]): Promise<Debt> {
   return postJson(`/debts/${debtId}/reconcile`, { transactionIds }, token);
+}
+
+export async function apiReverseDebtPaymentRaw(
+  token: string,
+  paymentId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/debt-payments/${paymentId}/reverse`, token, { reason });
+}
+
+export async function apiReverseDebtRaw(
+  token: string,
+  debtId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/debts/${debtId}/reverse`, token, { reason });
 }
 
 // ── Expenses ─────────────────────────────────────────────

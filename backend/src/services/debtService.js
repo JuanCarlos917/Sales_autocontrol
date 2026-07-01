@@ -6,6 +6,8 @@ const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { applyReversalInTx, ALREADY_REVERSED } = require('./reversalEngine');
+const { recomputeDebtFromPayments } = require('../utils/debtReversal');
 
 const DEBT_INCLUDE = {
   installments: { orderBy: { sequence: 'asc' } },
@@ -263,6 +265,7 @@ class DebtService {
           data: {
             debtId, accountId: t.accountId, amount: amt,
             date: t.date, notes: 'Reconciliación de egreso histórico', createdBy: userId,
+            reconciled: true,
           },
         });
 
@@ -348,6 +351,62 @@ class DebtService {
       return d;
     });
     return annotateOverdue(updated);
+  }
+
+  async reverseDebtPayment(paymentId, reason, userId) {
+    const payment = await prisma.debtPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        transactions: true,
+        debt: { include: { installments: { orderBy: { sequence: 'asc' } } } },
+      },
+    });
+    if (!payment) throw new AppError('Pago de crédito no encontrado', 404);
+    if (payment.reversedAt) throw new AppError('Este pago ya fue reversado.', 409);
+    if (payment.reconciled) {
+      throw new AppError('Este pago proviene de una reconciliación de un egreso histórico; no se puede reversar como storno.', 400);
+    }
+    const debt = payment.debt;
+    if (debt.status === 'CANCELLED') {
+      throw new AppError('El crédito ya fue reversado por completo.', 400);
+    }
+
+    const sources = payment.transactions; // inmutables una vez creadas
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const freshPayments = await tx.debtPayment.findMany({ where: { debtId: debt.id } });
+        const surviving = freshPayments.filter((p) => p.id !== paymentId && !p.reversedAt);
+        const recompute = recomputeDebtFromPayments(debt, surviving);
+
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'DEBT_REVERSAL',
+          auditEntityType: 'DEBT_PAYMENT',
+          auditEntityId: paymentId,
+        });
+        await tx.debtPayment.update({
+          where: { id: paymentId },
+          data: { reversedAt: new Date(), reversedBy: userId, reverseReason: reason },
+        });
+        for (const u of recompute.installmentUpdates) {
+          await tx.debtInstallment.update({
+            where: { id: u.id },
+            data: { paidAmount: u.paidAmount, status: u.status },
+          });
+        }
+        return tx.debt.update({
+          where: { id: debt.id },
+          data: { paidAmount: recompute.paidAmount, status: recompute.status },
+          include: DEBT_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
   }
 }
 
