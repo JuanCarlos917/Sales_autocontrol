@@ -408,6 +408,61 @@ class DebtService {
       throw err;
     }
   }
+  async reverseDebt(debtId, reason, userId) {
+    const debt = await prisma.debt.findUnique({
+      where: { id: debtId },
+      include: { installments: true },
+    });
+    if (!debt) throw new AppError('Crédito no encontrado', 404);
+    if (debt.status === 'CANCELLED') throw new AppError('El crédito ya fue reversado.', 409);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const livePayments = await tx.debtPayment.findMany({
+          where: { debtId, reversedAt: null },
+          include: { transactions: true },
+        });
+        if (livePayments.some((p) => p.reconciled)) {
+          throw new AppError('Este crédito tiene pagos reconciliados; gestiona esos egresos por separado, no se puede anular en cascada.', 400);
+        }
+        const sources = livePayments.flatMap((p) => p.transactions);
+        if (sources.length === 0) {
+          throw new AppError('El crédito no tiene movimientos para reversar.', 400);
+        }
+
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'DEBT_REVERSAL',
+          auditEntityType: 'DEBT',
+          auditEntityId: debtId,
+        });
+        const now = new Date();
+        for (const p of livePayments) {
+          await tx.debtPayment.update({
+            where: { id: p.id },
+            data: { reversedAt: now, reversedBy: userId, reverseReason: reason },
+          });
+        }
+        for (const inst of debt.installments) {
+          await tx.debtInstallment.update({
+            where: { id: inst.id },
+            data: { paidAmount: 0, status: 'PENDING' },
+          });
+        }
+        return tx.debt.update({
+          where: { id: debtId },
+          data: { paidAmount: 0, status: 'CANCELLED' },
+          include: DEBT_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
+  }
 }
 
 module.exports = new DebtService();

@@ -8,6 +8,7 @@ import {
   apiReconcileDebt,
   apiCreateTreasuryExpense,
   apiReverseDebtPaymentRaw,
+  apiReverseDebtRaw,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
@@ -95,6 +96,51 @@ test.describe('Tesorería — reverso de pagos de crédito (API)', () => {
 
     const reconciledPaymentId = (await apiGetDebt(token, debt.id)).payments[0].id;
     const res = await apiReverseDebtPaymentRaw(token, reconciledPaymentId, 'intento de reverso reconciliado');
+    expect(res.status).toBe(400);
+  });
+});
+
+test.describe('Tesorería — reverso de crédito completo (cascada, API)', () => {
+  test('anular crédito con pagos compensa todos los pagos y restaura la caja', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const cashBefore = parseFloat(String((await apiGetAccount(token, TEST_SEED_IDS.accountCash)).currentBalance));
+    const debt = await createDebt2x500(token);
+
+    await apiAddDebtPayment(token, debt.id, { accountId: TEST_SEED_IDS.accountCash, amount: 400_000 });
+    await apiAddDebtPayment(token, debt.id, { accountId: TEST_SEED_IDS.accountCash, amount: 100_000 });
+
+    const res = await apiReverseDebtRaw(token, debt.id, 'crédito cargado por error');
+    expect(res.status).toBe(201);
+
+    const after = await apiGetDebt(token, debt.id);
+    expect(after.status).toBe('CANCELLED');
+    expect(parseFloat(String(after.paidAmount))).toBe(0);
+    expect(after.payments.every((p) => p.reversedAt !== null)).toBe(true);
+    expect(after.installments.every((i) => i.status === 'PENDING')).toBe(true);
+
+    // Crear el crédito no mueve plata; reversar los 2 pagos (egresos) devuelve todo → caja vuelve al inicio.
+    const cashAfter = parseFloat(String((await apiGetAccount(token, TEST_SEED_IDS.accountCash)).currentBalance));
+    expect(cashAfter).toBe(cashBefore);
+  });
+
+  test('doble anulación del mismo crédito → 409', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const debt = await createDebt2x500(token);
+    await apiAddDebtPayment(token, debt.id, { accountId: TEST_SEED_IDS.accountCash, amount: 200_000 });
+    expect((await apiReverseDebtRaw(token, debt.id, 'cargado por error')).status).toBe(201);
+    expect((await apiReverseDebtRaw(token, debt.id, 'cargado por error')).status).toBe(409);
+  });
+
+  test('anular en cascada un crédito con pago reconciliado → 400', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const debt = await createDebt2x500(token);
+    const expenseTx = await apiCreateTreasuryExpense(token, {
+      accountId: TEST_SEED_IDS.accountCash,
+      amount: 200_000,
+      description: 'egreso histórico a reconciliar (cascada)',
+    });
+    await apiReconcileDebt(token, debt.id, [expenseTx.id]);
+    const res = await apiReverseDebtRaw(token, debt.id, 'intento anular con reconciliado');
     expect(res.status).toBe(400);
   });
 });

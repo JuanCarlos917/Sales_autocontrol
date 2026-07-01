@@ -41,4 +41,10 @@ const reverseDebtPayment = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { create, list, findById, addPayment, reconcileCandidates, reconcile, cancel, reverseDebtPayment };
+const reverseDebt = async (req, res, next) => {
+  try {
+    res.status(201).json(await debtService.reverseDebt(req.params.id, req.body.reason, req.user.id));
+  } catch (err) { next(err); }
+};
+
+module.exports = { create, list, findById, addPayment, reconcileCandidates, reconcile, cancel, reverseDebtPayment, reverseDebt };
