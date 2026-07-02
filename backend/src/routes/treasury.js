@@ -78,5 +78,6 @@ router.get('/cash-counts', cashCountCtrl.getAll);
 router.get('/cash-counts/account/:accountId/last', cashCountCtrl.getLastByAccount);
 router.get('/cash-counts/:id', cashCountCtrl.getOne);
 router.post('/cash-counts', validate(schemas.cashCount), cashCountCtrl.create);
+router.post('/cash-counts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), cashCountCtrl.reverse);
 
 module.exports = router;

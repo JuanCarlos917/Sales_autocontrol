@@ -660,6 +660,29 @@ export async function apiMe(token: string): Promise<{ user: { id: string; email:
   return getJson('/auth/me', token);
 }
 
+export interface CashCount {
+  id: string;
+  voidedAt: string | null;
+  difference: string | number;
+  countedBalance: string | number;
+  expectedBalance: string | number;
+}
+
+export async function apiCreateCashCount(
+  token: string,
+  data: { accountId: string; countedBalance: number; notes?: string },
+): Promise<CashCount> {
+  return postJson('/treasury/cash-counts', data, token);
+}
+
+export async function apiReverseCashCountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; voidedAt?: string | null } }> {
+  return apiRequestRaw('POST', `/treasury/cash-counts/${id}/reverse`, token, { reason });
+}
+
 export async function apiReverseTransactionRaw(
   token: string,
   id: string,

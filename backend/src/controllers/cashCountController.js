@@ -39,4 +39,10 @@ const getLastByAccount = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, getOne, create, getLastByAccount };
+const reverse = async (req, res, next) => {
+  try {
+    res.json(await cashCountService.reverse(req.params.id, req.body.reason, req.user.id));
+  } catch (err) { next(err); }
+};
+
+module.exports = { getAll, getOne, create, getLastByAccount, reverse };
