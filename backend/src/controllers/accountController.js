@@ -50,4 +50,10 @@ const getTotalBalance = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, getOne, create, update, remove, getTotalBalance };
+const reverse = async (req, res, next) => {
+  try {
+    res.json(await accountService.reverseAccount(req.params.id, req.body.reason, req.user.id));
+  } catch (err) { next(err); }
+};
+
+module.exports = { getAll, getOne, create, update, remove, getTotalBalance, reverse };

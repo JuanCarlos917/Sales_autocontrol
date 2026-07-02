@@ -37,6 +37,7 @@ router.get('/accounts/:id', accountCtrl.getOne);
 router.post('/accounts', validate(schemas.account), accountCtrl.create);
 router.put('/accounts/:id', validate(schemas.accountUpdate), accountCtrl.update);
 router.delete('/accounts/:id', accountCtrl.remove);
+router.post('/accounts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), accountCtrl.reverse);
 
 // ══════════════════════════════════════════════════════════════
 // TERCEROS
@@ -78,5 +79,6 @@ router.get('/cash-counts', cashCountCtrl.getAll);
 router.get('/cash-counts/account/:accountId/last', cashCountCtrl.getLastByAccount);
 router.get('/cash-counts/:id', cashCountCtrl.getOne);
 router.post('/cash-counts', validate(schemas.cashCount), cashCountCtrl.create);
+router.post('/cash-counts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), cashCountCtrl.reverse);
 
 module.exports = router;

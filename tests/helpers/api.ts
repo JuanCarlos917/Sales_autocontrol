@@ -55,10 +55,26 @@ export interface Account {
   id: string;
   name: string;
   currentBalance: string | number;
+  isActive: boolean;
 }
 
 export async function apiGetAccount(token: string, id: string): Promise<Account> {
   return getJson(`/treasury/accounts/${id}`, token);
+}
+
+export async function apiCreateAccount(
+  token: string,
+  data: { name: string; type: 'CASH' | 'BANK'; initialBalance?: number },
+): Promise<Account> {
+  return postJson('/treasury/accounts', data, token);
+}
+
+export async function apiReverseAccountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; isActive?: boolean } }> {
+  return apiRequestRaw('POST', `/treasury/accounts/${id}/reverse`, token, { reason });
 }
 
 export async function apiPinLogin(): Promise<string> {
@@ -658,6 +674,29 @@ export async function apiCreateUser(
 
 export async function apiMe(token: string): Promise<{ user: { id: string; email: string; role: string } }> {
   return getJson('/auth/me', token);
+}
+
+export interface CashCount {
+  id: string;
+  voidedAt: string | null;
+  difference: string | number;
+  countedBalance: string | number;
+  expectedBalance: string | number;
+}
+
+export async function apiCreateCashCount(
+  token: string,
+  data: { accountId: string; countedBalance: number; notes?: string },
+): Promise<CashCount> {
+  return postJson('/treasury/cash-counts', data, token);
+}
+
+export async function apiReverseCashCountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; voidedAt?: string | null } }> {
+  return apiRequestRaw('POST', `/treasury/cash-counts/${id}/reverse`, token, { reason });
 }
 
 export async function apiReverseTransactionRaw(
