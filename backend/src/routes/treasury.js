@@ -37,6 +37,7 @@ router.get('/accounts/:id', accountCtrl.getOne);
 router.post('/accounts', validate(schemas.account), accountCtrl.create);
 router.put('/accounts/:id', validate(schemas.accountUpdate), accountCtrl.update);
 router.delete('/accounts/:id', accountCtrl.remove);
+router.post('/accounts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), accountCtrl.reverse);
 
 // ══════════════════════════════════════════════════════════════
 // TERCEROS

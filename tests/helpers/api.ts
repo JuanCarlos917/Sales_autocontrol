@@ -55,10 +55,26 @@ export interface Account {
   id: string;
   name: string;
   currentBalance: string | number;
+  isActive: boolean;
 }
 
 export async function apiGetAccount(token: string, id: string): Promise<Account> {
   return getJson(`/treasury/accounts/${id}`, token);
+}
+
+export async function apiCreateAccount(
+  token: string,
+  data: { name: string; type: 'CASH' | 'BANK'; initialBalance?: number },
+): Promise<Account> {
+  return postJson('/treasury/accounts', data, token);
+}
+
+export async function apiReverseAccountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; isActive?: boolean } }> {
+  return apiRequestRaw('POST', `/treasury/accounts/${id}/reverse`, token, { reason });
 }
 
 export async function apiPinLogin(): Promise<string> {

@@ -105,6 +105,35 @@ class AccountService {
     return { deleted: true };
   }
 
+  async reverseAccount(id, reason, userId) {
+    const existing = await prisma.account.findUnique({ where: { id } });
+    if (!existing) throw new AppError('Cuenta no encontrada', 404);
+    if (!existing.isActive) throw new AppError('La cuenta ya está desactivada.', 409);
+
+    const balance = await this.calculateBalance(id);
+    if (Math.abs(balance) > 0.001) {
+      throw new AppError('No se puede desactivar una cuenta con saldo distinto de cero.', 403);
+    }
+    const transactionCount = await prisma.transaction.count({ where: { accountId: id } });
+    if (transactionCount > 0) {
+      throw new AppError('No se puede desactivar una cuenta con movimientos.', 403);
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.account.update({ where: { id }, data: { isActive: false } });
+      await writeTreasuryAudit(tx, {
+        entityType: 'ACCOUNT',
+        entityId: id,
+        userId,
+        action: 'REVERSE',
+        before: snapshotEntity(existing, ACCOUNT_AUDIT_FIELDS),
+        after: snapshotEntity(updated, ACCOUNT_AUDIT_FIELDS),
+        reason,
+      });
+      return { ...updated, currentBalance: 0 };
+    });
+  }
+
   async calculateBalance(accountId) {
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account) return 0;
