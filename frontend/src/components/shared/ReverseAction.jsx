@@ -9,8 +9,8 @@ const BTN_VARIANT = {
 };
 
 const CONFIRM_VARIANT = {
-  amber: 'bg-amber-600 hover:bg-amber-700',
-  red: 'bg-red-600 hover:bg-red-700',
+  amber: '!bg-amber-600 hover:!bg-amber-700',
+  red: '!bg-red-600 hover:!bg-red-700',
 };
 
 // Botón + modal de reverso reutilizable. `onConfirm(reason)` debe lanzar en error.
@@ -25,6 +25,7 @@ export default function ReverseAction({
   onDone,
   buttonClassName = '',
 }) {
+  const reasonId = `${testid}-reverse-reason-input`;
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -66,12 +67,14 @@ export default function ReverseAction({
         <div className="space-y-4" data-testid={`${testid}-reverse-modal`}>
           {description && <div className="text-sm text-[#8B949E]">{description}</div>}
           <div>
-            <label className="block text-sm text-[#8B949E] mb-1">Motivo * (mín 10 caracteres)</label>
+            <label htmlFor={reasonId} className="block text-sm text-[#8B949E] mb-1">Motivo * (mín 10 caracteres)</label>
             <textarea
+              id={reasonId}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               className="input w-full"
               rows={3}
+              autoFocus
               data-testid={`${testid}-reverse-reason`}
             />
           </div>
