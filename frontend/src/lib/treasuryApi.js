@@ -69,6 +69,8 @@ export const loansApi = {
   getById: (id) => api.get(`/loans/${id}`),
   create: (data) => api.post('/loans', data),
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
+  reversePayment: (paymentId, reason) => api.post(`/loan-payments/${paymentId}/reverse`, { reason }),
+  reverseLoan: (id, reason) => api.post(`/loans/${id}/reverse`, { reason }),
 };
 
 // ── Créditos / financiaciones del negocio ──

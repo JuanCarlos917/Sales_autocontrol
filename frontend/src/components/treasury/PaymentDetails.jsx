@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { formatCurrency, formatDate } from '@/lib/constants';
+import ReverseAction from '@/components/shared/ReverseAction';
+import ReversedBadge from '@/components/shared/ReversedBadge';
 
 // Lista colapsable de pagos. `payments`: [{ id, date, amount, accountName, notes }] (ordenada desc).
 // `testidPrefix`: prefijo para los data-testid (ej. `loan-card-<id>` / `debt-card-<id>`).
 // `alwaysOpen`: cuando es true, renderiza la lista expandida sin el toggle (vista de detalle).
-export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen = false }) {
+export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen = false, onReversePayment }) {
   const [open, setOpen] = useState(false);
   const count = payments.length;
   const expanded = alwaysOpen || open;
@@ -34,9 +36,23 @@ export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen
                 className="text-xs border-t border-border/50 pt-2 first:border-0 first:pt-0"
                 data-testid={`${testidPrefix}-details-row-${p.id}`}
               >
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center gap-2">
                   <span className="text-[#6E7681]">{formatDate(p.date)}</span>
-                  <span className="font-mono text-[#E6EDF3]">{formatCurrency(p.amount)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[#E6EDF3]">{formatCurrency(p.amount)}</span>
+                    {p.reversedAt ? (
+                      <ReversedBadge label="Reversado" testid={`${testidPrefix}-row-${p.id}-reversed`} />
+                    ) : onReversePayment ? (
+                      <ReverseAction
+                        label="Reversar"
+                        title="Reversar pago"
+                        description={<>Se creará un movimiento compensatorio que devuelve {formatCurrency(p.amount)} a la cuenta. El pago original no se borra.</>}
+                        variant="amber"
+                        testid={`${testidPrefix}-pay-${p.id}`}
+                        onConfirm={(reason) => onReversePayment(p, reason)}
+                      />
+                    ) : null}
+                  </div>
                 </div>
                 <div className="text-[#6E7681]">{p.accountName || '—'}</div>
                 <div className="text-[#8B949E]">{p.notes || '—'}</div>
