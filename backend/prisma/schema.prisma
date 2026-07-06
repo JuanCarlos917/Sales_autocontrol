@@ -376,6 +376,9 @@ enum TransactionCategory {
   DEBT_PAYMENT
   EXPENSE_ADJUSTMENT
   EXPENSE_REVERSAL
+  MANUAL_REVERSAL
+  LOAN_REVERSAL
+  DEBT_REVERSAL
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -414,6 +417,9 @@ model CashCount {
   countedBalance  Decimal  @db.Decimal(15, 2)
   difference      Decimal  @db.Decimal(15, 2)
   notes           String?
+  voidedAt        DateTime?
+  voidedBy        String?
+  voidReason      String?
   date            DateTime @default(now())
   createdBy       String
   createdAt       DateTime @default(now())
@@ -564,6 +570,9 @@ model LoanPayment {
   interestPortion Decimal  @default(0) @db.Decimal(15, 2)
   date            DateTime @default(now())
   notes           String?
+  reversedAt      DateTime?
+  reversedBy      String?
+  reverseReason   String?
   createdBy       String
   createdAt       DateTime @default(now())
 
@@ -625,10 +634,14 @@ model DebtPayment {
   debtId    String
   accountId String
   amount    Decimal  @db.Decimal(15, 2)
-  date      DateTime @default(now())
-  notes     String?
-  createdBy String
-  createdAt DateTime @default(now())
+  date          DateTime  @default(now())
+  notes         String?
+  reversedAt    DateTime?
+  reversedBy    String?
+  reverseReason String?
+  reconciled    Boolean   @default(false)
+  createdBy     String
+  createdAt     DateTime  @default(now())
 
   debt         Debt          @relation(fields: [debtId], references: [id], onDelete: Cascade)
   account      Account       @relation("DebtPaymentAccount", fields: [accountId], references: [id])
@@ -738,6 +751,10 @@ enum TreasuryAuditEntity {
   PAYABLE
   PAYABLE_PAYMENT
   DEBT
+  LOAN
+  LOAN_PAYMENT
+  DEBT_PAYMENT
+  CASH_COUNT
 }
 
 enum TreasuryAuditAction {
@@ -746,4 +763,5 @@ enum TreasuryAuditAction {
   DELETE
   CANCEL
   PAYMENT
+  REVERSE
 }

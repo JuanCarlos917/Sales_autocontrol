@@ -4,6 +4,7 @@
 
 const { Router } = require('express');
 const { validate, schemas } = require('../middleware/validation');
+const { authorize } = require('../middleware/auth');
 
 // Controllers
 const accountCtrl = require('../controllers/accountController');
@@ -36,6 +37,7 @@ router.get('/accounts/:id', accountCtrl.getOne);
 router.post('/accounts', validate(schemas.account), accountCtrl.create);
 router.put('/accounts/:id', validate(schemas.accountUpdate), accountCtrl.update);
 router.delete('/accounts/:id', accountCtrl.remove);
+router.post('/accounts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), accountCtrl.reverse);
 
 // ══════════════════════════════════════════════════════════════
 // TERCEROS
@@ -57,6 +59,7 @@ router.get('/transactions/:id', transactionCtrl.getOne);
 router.post('/transactions/income', validate(schemas.income), transactionCtrl.createIncome);
 router.post('/transactions/expense', validate(schemas.expenseTreasury), transactionCtrl.createExpense);
 router.put('/transactions/:id', validate(schemas.transactionUpdate), transactionCtrl.update);
+router.post('/transactions/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), transactionCtrl.reverse);
 // Movimientos inmutables: ya no hay DELETE. Las correcciones se hacen
 // editando el gasto origen o creando un movimiento de ajuste.
 
@@ -76,5 +79,6 @@ router.get('/cash-counts', cashCountCtrl.getAll);
 router.get('/cash-counts/account/:accountId/last', cashCountCtrl.getLastByAccount);
 router.get('/cash-counts/:id', cashCountCtrl.getOne);
 router.post('/cash-counts', validate(schemas.cashCount), cashCountCtrl.create);
+router.post('/cash-counts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), cashCountCtrl.reverse);
 
 module.exports = router;

@@ -44,13 +44,13 @@ Stack: React 18 + Vite + TailwindCSS (frontend) | Node.js + Express + Prisma + P
 
 **Política**: este proyecto siempre usa el modelo de Claude **más avanzado disponible** en producción. Cuando Anthropic libere una versión superior (ej. Opus 5.x), actualizar TODOS los lugares listados abajo al mismo tiempo para evitar mezclas de versiones.
 
-**Versión actual:** Claude **Opus 4.7** (ID: `claude-opus-4-7`)
+**Versión actual:** Claude **Opus 4.8** (ID: `claude-opus-4-8`)
 
 **Familia Claude 4.X (referencia):**
 
 | Tier | Modelo | ID | Uso recomendado |
 |---|---|---|---|
-| Top | Opus 4.7 | `claude-opus-4-7` | Razonamiento profundo, código complejo, decisiones arquitectónicas |
+| Top | Opus 4.8 | `claude-opus-4-8` | Razonamiento profundo, código complejo, decisiones arquitectónicas |
 | Estándar | Sonnet 4.6 | `claude-sonnet-4-6` | Coding diario, refactors, features estándar |
 | Económico | Haiku 4.5 | `claude-haiku-4-5-20251001` | Tareas mecánicas frecuentes, batch, embeddings |
 

@@ -37,6 +37,7 @@ const CATEGORY_LABELS = {
   TRANSFER: 'Transferencia',
   EXPENSE_ADJUSTMENT: 'Ajuste de Gasto',
   EXPENSE_REVERSAL: 'Reverso de Gasto',
+  MANUAL_REVERSAL: 'Reverso de Movimiento',
 };
 
 const getCategoryLabel = (category) => CATEGORY_LABELS[category] || category || '—';
@@ -54,13 +55,57 @@ const ORIGIN_BADGE = {
     label: 'Reverso',
     className: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
   },
+  MANUAL_REVERSAL: {
+    label: 'Reverso',
+    className: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+  },
 };
 
 const shortId = (id) => (id ? `#${id.slice(-6)}` : '');
 
+const LINKED_FIELDS = ['expenseId', 'loanId', 'loanPaymentId', 'debtId', 'transferId'];
+
+const isReversed = (tx) => tx.reversedBy && tx.reversedBy.length > 0;
+
 export default function TransactionsPage() {
   const { role } = useAuth();
   const isViewer = role === 'VIEWER';
+  const isAdmin = role === 'ADMIN';
+  const [reverseTarget, setReverseTarget] = useState(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const canReverse = (tx) =>
+    isAdmin &&
+    (tx.type === 'INCOME' || tx.type === 'EXPENSE') &&
+    !tx.reversesTransactionId &&
+    !tx.payablePayment &&
+    !LINKED_FIELDS.some((f) => tx[f]) &&
+    !(tx.reversedBy && tx.reversedBy.length > 0);
+
+  const openReverseModal = (tx) => {
+    setReverseTarget(tx);
+    setReverseReason('');
+  };
+
+  const handleReverse = async () => {
+    if (!reverseTarget || reverseReason.trim().length < 10) return;
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await transactionsApi.reverse(reverseTarget.id, reverseReason.trim());
+      setReverseTarget(null);
+      setReverseReason('');
+      loadTransactions();
+      loadAccounts();
+    } catch (err) {
+      console.error('Error reversing transaction:', err);
+      alert(err.response?.data?.error || 'No se pudo reversar el movimiento');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [thirdParties, setThirdParties] = useState([]);
@@ -261,6 +306,7 @@ export default function TransactionsPage() {
               <th className="text-left p-3">Categoria</th>
               <th className="text-left p-3 hidden lg:table-cell">Descripcion</th>
               <th className="text-right p-3">Monto</th>
+              <th className="text-right p-3"></th>
             </tr>
           </thead>
           <tbody>
@@ -298,6 +344,14 @@ export default function TransactionsPage() {
                         {ORIGIN_BADGE[tx.category].label}
                       </span>
                     )}
+                    {isReversed(tx) && (
+                      <span
+                        className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-zinc-500/15 text-zinc-300 border-zinc-500/30"
+                        data-testid={`reversed-badge-${tx.id}`}
+                      >
+                        Reversado
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="p-3 text-[#E6EDF3] hidden lg:table-cell truncate max-w-[280px]">
@@ -312,11 +366,22 @@ export default function TransactionsPage() {
                   {tx.type === 'INCOME' || tx.type === 'TRANSFER_IN' ? '+' : '-'}
                   {formatCurrency(tx.amount)}
                 </td>
+                <td className="p-3 text-right whitespace-nowrap">
+                  {canReverse(tx) && (
+                    <button
+                      onClick={() => openReverseModal(tx)}
+                      className="btn-ghost text-xs text-amber-400 hover:text-amber-300"
+                      data-testid={`tx-reverse-${tx.id}`}
+                    >
+                      Reversar
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {transactions.length === 0 && (
               <tr>
-                <td colSpan="7" className="p-6 text-center text-[#8B949E]">No hay movimientos</td>
+                <td colSpan="8" className="p-6 text-center text-[#8B949E]">No hay movimientos</td>
               </tr>
             )}
           </tbody>
@@ -436,6 +501,51 @@ export default function TransactionsPage() {
             <button type="submit" className="btn-primary flex-1" data-testid="transactions-modal-submit">Guardar</button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(reverseTarget)}
+        onClose={() => {
+          setReverseTarget(null);
+          setReverseReason('');
+        }}
+        title="Reversar movimiento"
+      >
+        {reverseTarget && (
+          <div className="space-y-4" data-testid="reverse-modal">
+            <p className="text-sm text-[#8B949E]">
+              Se creará un movimiento compensatorio que anula{' '}
+              <span className="font-mono text-[#E6EDF3]">{shortId(reverseTarget.id)}</span>{' '}
+              ({getCategoryLabel(reverseTarget.category)}, {formatCurrency(reverseTarget.amount)}).
+              El movimiento original no se borra.
+            </p>
+            <div>
+              <label className="block text-sm text-[#8B949E] mb-1">Motivo * (mín 10 caracteres)</label>
+              <textarea
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                className="input w-full"
+                rows={3}
+                data-testid="reverse-reason"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => {
+                setReverseTarget(null);
+                setReverseReason('');
+              }} className="btn-ghost flex-1">Cancelar</button>
+              <button
+                type="button"
+                onClick={handleReverse}
+                disabled={reverseReason.trim().length < 10 || submitting}
+                className="btn-primary flex-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+                data-testid="reverse-confirm"
+              >
+                Reversar
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

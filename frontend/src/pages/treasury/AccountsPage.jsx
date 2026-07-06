@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
+import ReverseAction from '@/components/shared/ReverseAction';
+import ReversedBadge from '@/components/shared/ReversedBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { Banknote, Landmark, PiggyBank } from 'lucide-react';
 
@@ -100,27 +102,42 @@ export default function AccountsPage() {
         const budgetAccounts = accounts.filter((a) => a.type === 'BUDGET');
 
         const renderCard = (account) => (
-          <div key={account.id} className="card p-4">
+          <div key={account.id} className={`card p-4 ${account.isActive === false ? 'opacity-60' : ''}`} data-testid={`account-card-${account.id}`}>
             <div className="flex items-center justify-between mb-3">
               <span className="text-lg font-semibold text-[#E6EDF3]">{account.name}</span>
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                account.type === 'CASH'
-                  ? 'bg-green-500/20 text-green-400'
-                  : account.type === 'BANK'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-purple-500/20 text-[#BC8CFF]'
-              }`}>
-                {account.type === 'CASH' ? 'Efectivo' : account.type === 'BANK' ? 'Banco' : 'Fondo'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {account.isActive === false && (
+                  <ReversedBadge label="Inactiva" variant="red" testid={`account-${account.id}-inactive`} />
+                )}
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  account.type === 'CASH'
+                    ? 'bg-green-500/20 text-green-400'
+                    : account.type === 'BANK'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'bg-purple-500/20 text-[#BC8CFF]'
+                }`}>
+                  {account.type === 'CASH' ? 'Efectivo' : account.type === 'BANK' ? 'Banco' : 'Fondo'}
+                </span>
+              </div>
             </div>
             {account.bank && <div className="text-sm text-[#8B949E] mb-1">{account.bank}</div>}
             {account.accountNumber && <div className="text-xs text-[#6E7681] mb-2">No. {account.accountNumber}</div>}
             <div className="text-2xl font-bold text-[#E6EDF3] mb-3">
               {formatCurrency(account.currentBalance)}
             </div>
-            {!isViewer && (
-              <div className="flex gap-2">
+            {!isViewer && account.isActive !== false && (
+              <div className="flex flex-wrap gap-2 items-center">
                 <button onClick={() => openEdit(account)} className="btn-ghost text-xs flex-1">Editar</button>
+                <ReverseAction
+                  label="Desactivar"
+                  title="Desactivar cuenta"
+                  description={<>La cuenta se marcará como inactiva. Solo es posible si su saldo es cero y no tiene movimientos registrados.</>}
+                  confirmLabel="Desactivar"
+                  variant="amber"
+                  testid={`account-${account.id}`}
+                  onConfirm={(reason) => accountsApi.reverseAccount(account.id, reason)}
+                  onDone={loadAccounts}
+                />
                 <button onClick={() => handleDelete(account.id)} className="btn-ghost text-xs text-red-400 hover:text-red-300">Eliminar</button>
               </div>
             )}

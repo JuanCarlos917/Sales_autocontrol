@@ -12,6 +12,8 @@ export const accountsApi = {
   create: (data) => api.post('/treasury/accounts', data),
   update: (id, data) => api.put(`/treasury/accounts/${id}`, data),
   delete: (id) => api.delete(`/treasury/accounts/${id}`),
+  // Desactivar (isActive=false) + audit ACCOUNT.REVERSE. Bloquea si saldo≠0 o tiene movimientos.
+  reverseAccount: (id, reason) => api.post(`/treasury/accounts/${id}/reverse`, { reason }),
 };
 
 // ── Terceros ──
@@ -33,8 +35,9 @@ export const transactionsApi = {
   createIncome: (data) => api.post('/treasury/transactions/income', data),
   createExpense: (data) => api.post('/treasury/transactions/expense', data),
   update: (id, data) => api.put(`/treasury/transactions/${id}`, data),
-  // Movimientos inmutables: no hay delete. Las correcciones se hacen
-  // editando el gasto origen o creando un nuevo movimiento.
+  // Movimientos inmutables: no hay delete. La corrección admin es el reverso,
+  // que crea un movimiento compensatorio (no borra).
+  reverse: (id, reason) => api.post(`/treasury/transactions/${id}/reverse`, { reason }),
 };
 
 // ── Transferencias ──
@@ -51,6 +54,8 @@ export const cashCountsApi = {
   getOne: (id) => api.get(`/treasury/cash-counts/${id}`),
   getLastByAccount: (accountId) => api.get(`/treasury/cash-counts/account/${accountId}/last`),
   create: (data) => api.post('/treasury/cash-counts', data),
+  // Anular arqueo (voidedAt) + audit CASH_COUNT.REVERSE. No mueve plata.
+  reverse: (id, reason) => api.post(`/treasury/cash-counts/${id}/reverse`, { reason }),
 };
 
 // ── Reportes ──
@@ -68,7 +73,8 @@ export const loansApi = {
   getById: (id) => api.get(`/loans/${id}`),
   create: (data) => api.post('/loans', data),
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
-  cancel: (id) => api.post(`/loans/${id}/cancel`),
+  reversePayment: (paymentId, reason) => api.post(`/loan-payments/${paymentId}/reverse`, { reason }),
+  reverseLoan: (id, reason) => api.post(`/loans/${id}/reverse`, { reason }),
 };
 
 // ── Créditos / financiaciones del negocio ──
@@ -80,4 +86,8 @@ export const debtsApi = {
   reconcileCandidates: (params) => api.get('/debts/reconcile-candidates', { params }),
   reconcile: (id, data) => api.post(`/debts/${id}/reconcile`, data),
   cancel: (id) => api.post(`/debts/${id}/cancel`),
+  // Reverso de pago individual (storno INCOME); bloquea 400 si el pago está reconciliado.
+  reversePayment: (paymentId, reason) => api.post(`/debt-payments/${paymentId}/reverse`, { reason }),
+  // Anulación en cascada del crédito (reversa pagos vivos + status CANCELLED).
+  reverseDebt: (id, reason) => api.post(`/debts/${id}/reverse`, { reason }),
 };

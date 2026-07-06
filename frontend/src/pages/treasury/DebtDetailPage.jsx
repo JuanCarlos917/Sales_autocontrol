@@ -4,6 +4,7 @@ import { debtsApi } from '@/lib/treasuryApi';
 import { formatCurrency } from '@/lib/constants';
 import PaymentDetails from '@/components/treasury/PaymentDetails';
 import InstallmentSchedule from '@/components/treasury/InstallmentSchedule';
+import ReverseAction from '@/components/shared/ReverseAction';
 import { SearchX } from 'lucide-react';
 
 const STATUS_LABEL = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', CANCELLED: 'Cancelado' };
@@ -29,21 +30,21 @@ export default function DebtDetailPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setLoading(true);
+  const load = async () => {
+    try {
+      const { data } = await debtsApi.getById(id);
+      setDebt(data);
       setNotFound(false);
-      try {
-        const { data } = await debtsApi.getById(id);
-        if (active) setDebt(data);
-      } catch {
-        if (active) setNotFound(true);
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
+    } catch {
+      setNotFound(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (loading) {
@@ -73,6 +74,8 @@ export default function DebtDetailPage() {
     amount: parseFloat(p.amount),
     accountName: p.account?.name,
     notes: p.notes,
+    reversedAt: p.reversedAt,
+    reconciled: p.reconciled,
   }));
 
   return (
@@ -85,9 +88,23 @@ export default function DebtDetailPage() {
           <h2 className="text-xl font-bold text-[#E6EDF3] mt-2">{debt.name}</h2>
           <p className="text-sm text-[#6E7681] mt-1">{debt.lender || debt.assetDescription || 'Crédito'}</p>
         </div>
-        <span className={`text-xs px-2.5 py-1 rounded font-medium ${STATUS_COLOR[debt.status]}`}>
-          {STATUS_LABEL[debt.status]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2.5 py-1 rounded font-medium ${STATUS_COLOR[debt.status]}`}>
+            {STATUS_LABEL[debt.status]}
+          </span>
+          {debt.status !== 'CANCELLED' && (
+            <ReverseAction
+              label="Anular crédito"
+              title="Anular crédito"
+              description={<>Se reversarán todos los pagos vivos (asientos compensatorios) y el crédito quedará CANCELADO. Si tiene pagos conciliados, la anulación se bloqueará. Esta acción no se puede deshacer.</>}
+              confirmLabel="Anular crédito"
+              variant="red"
+              testid="debt-detail"
+              onConfirm={(reason) => debtsApi.reverseDebt(id, reason)}
+              onDone={load}
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="debt-detail-summary">
@@ -100,7 +117,15 @@ export default function DebtDetailPage() {
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-[#E6EDF3]">Pagos ({payments.length})</h3>
         <div className="card p-4">
-          <PaymentDetails testidPrefix="debt-detail" payments={payments} alwaysOpen />
+          <PaymentDetails
+            testidPrefix="debt-detail"
+            payments={payments}
+            alwaysOpen
+            onReversePayment={async (p, reason) => {
+              await debtsApi.reversePayment(p.id, reason);
+              await load();
+            }}
+          />
         </div>
       </section>
 

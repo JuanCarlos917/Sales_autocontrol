@@ -57,6 +57,13 @@ const update = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const reverse = async (req, res, next) => {
+  try {
+    const transaction = await transactionService.reverse(req.params.id, req.body.reason, req.user.id);
+    res.status(201).json(transaction);
+  } catch (err) { next(err); }
+};
+
 const getSummary = async (req, res, next) => {
   try {
     const { startDate, endDate, accountId } = req.query;
@@ -65,4 +72,4 @@ const getSummary = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getAll, getOne, getByVehicle, createIncome, createExpense, update, getSummary };
+module.exports = { getAll, getOne, getByVehicle, createIncome, createExpense, update, reverse, getSummary };

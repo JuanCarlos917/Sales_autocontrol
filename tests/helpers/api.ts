@@ -55,10 +55,26 @@ export interface Account {
   id: string;
   name: string;
   currentBalance: string | number;
+  isActive: boolean;
 }
 
 export async function apiGetAccount(token: string, id: string): Promise<Account> {
   return getJson(`/treasury/accounts/${id}`, token);
+}
+
+export async function apiCreateAccount(
+  token: string,
+  data: { name: string; type: 'CASH' | 'BANK'; initialBalance?: number },
+): Promise<Account> {
+  return postJson('/treasury/accounts', data, token);
+}
+
+export async function apiReverseAccountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; isActive?: boolean } }> {
+  return apiRequestRaw('POST', `/treasury/accounts/${id}/reverse`, token, { reason });
 }
 
 export async function apiPinLogin(): Promise<string> {
@@ -326,6 +342,12 @@ export interface Loan {
     status: 'PENDING' | 'PARTIAL' | 'PAID';
     dueDate: string;
   }>;
+  payments: Array<{
+    id: string;
+    principalAmount: string | number;
+    extraAmount: string | number;
+    reversedAt: string | null;
+  }>;
   isOverdue: boolean;
 }
 
@@ -353,6 +375,22 @@ export async function apiAddLoanPayment(token: string, loanId: string, data: Loa
   return postJson(`/loans/${loanId}/payments`, data, token);
 }
 
+export async function apiReverseLoanPaymentRaw(
+  token: string,
+  paymentId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/loan-payments/${paymentId}/reverse`, token, { reason });
+}
+
+export async function apiReverseLoanRaw(
+  token: string,
+  loanId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/loans/${loanId}/reverse`, token, { reason });
+}
+
 // ── Debts ─────────────────────────────────────────────────
 
 export interface DebtInstallmentInput {
@@ -376,6 +414,7 @@ export interface Debt {
   paidAmount: string | number;
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   installments: Array<{ id: string; sequence: number; plannedAmount: string | number; paidAmount: string | number; status: string; dueDate: string }>;
+  payments: Array<{ id: string; amount: string | number; reversedAt: string | null }>;
   isOverdue: boolean;
 }
 
@@ -397,6 +436,22 @@ export async function apiAddDebtPayment(
 
 export async function apiReconcileDebt(token: string, debtId: string, transactionIds: string[]): Promise<Debt> {
   return postJson(`/debts/${debtId}/reconcile`, { transactionIds }, token);
+}
+
+export async function apiReverseDebtPaymentRaw(
+  token: string,
+  paymentId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/debt-payments/${paymentId}/reverse`, token, { reason });
+}
+
+export async function apiReverseDebtRaw(
+  token: string,
+  debtId: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string } }> {
+  return apiRequestRaw('POST', `/debts/${debtId}/reverse`, token, { reason });
 }
 
 // ── Expenses ─────────────────────────────────────────────
@@ -619,4 +674,35 @@ export async function apiCreateUser(
 
 export async function apiMe(token: string): Promise<{ user: { id: string; email: string; role: string } }> {
   return getJson('/auth/me', token);
+}
+
+export interface CashCount {
+  id: string;
+  voidedAt: string | null;
+  difference: string | number;
+  countedBalance: string | number;
+  expectedBalance: string | number;
+}
+
+export async function apiCreateCashCount(
+  token: string,
+  data: { accountId: string; countedBalance: number; notes?: string },
+): Promise<CashCount> {
+  return postJson('/treasury/cash-counts', data, token);
+}
+
+export async function apiReverseCashCountRaw(
+  token: string,
+  id: string,
+  reason: string,
+): Promise<{ status: number; body: { error?: string; voidedAt?: string | null } }> {
+  return apiRequestRaw('POST', `/treasury/cash-counts/${id}/reverse`, token, { reason });
+}
+
+export async function apiReverseTransactionRaw(
+  token: string,
+  id: string,
+  body: { reason?: string },
+): Promise<{ status: number; body: { error?: string; id?: string; type?: string; category?: string; reversesTransactionId?: string; amount?: string } | null }> {
+  return apiRequestRaw('POST', `/treasury/transactions/${id}/reverse`, token, body);
 }

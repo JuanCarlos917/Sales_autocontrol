@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
+const { writeTreasuryAudit } = require('../utils/treasuryAudit');
 
 class CashCountService {
   async findAll({ accountId, startDate, endDate, limit = 50, offset = 0 } = {}) {
@@ -72,11 +73,35 @@ class CashCountService {
 
   async getLastByAccount(accountId) {
     return prisma.cashCount.findFirst({
-      where: { accountId },
+      where: { accountId, voidedAt: null },
       orderBy: { date: 'desc' },
       include: {
         account: { select: { id: true, name: true, type: true } },
       },
+    });
+  }
+
+  async reverse(id, reason, userId) {
+    const cashCount = await prisma.cashCount.findUnique({ where: { id } });
+    if (!cashCount) throw new AppError('Arqueo no encontrado', 404);
+    if (cashCount.voidedAt) throw new AppError('Este arqueo ya fue anulado.', 409);
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.cashCount.update({
+        where: { id },
+        data: { voidedAt: new Date(), voidedBy: userId, voidReason: reason },
+        include: { account: { select: { id: true, name: true, type: true } } },
+      });
+      await writeTreasuryAudit(tx, {
+        entityType: 'CASH_COUNT',
+        entityId: id,
+        userId,
+        action: 'REVERSE',
+        before: { voidedAt: null, difference: cashCount.difference.toString() },
+        after: { voidedAt: updated.voidedAt.toISOString(), voidReason: reason },
+        reason,
+      });
+      return updated;
     });
   }
 }

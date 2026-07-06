@@ -1,6 +1,7 @@
 const express = require('express');
 const ctrl = require('../controllers/debtController');
 const { validate, schemas } = require('../middleware/validation');
+const { authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -11,5 +12,6 @@ router.post('/', validate(schemas.debtCreate), ctrl.create);
 router.post('/:id/payments', validate(schemas.debtPayment), ctrl.addPayment);
 router.post('/:id/reconcile', validate(schemas.debtReconcile), ctrl.reconcile);
 router.post('/:id/cancel', ctrl.cancel);
+router.post('/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), ctrl.reverseDebt);
 
 module.exports = router;

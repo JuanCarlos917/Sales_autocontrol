@@ -6,6 +6,8 @@ const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { calcLoanInterest, splitLoanPayment, splitFinalPayment } = require('../utils/financial');
+const { applyReversalInTx, ALREADY_REVERSED } = require('./reversalEngine');
+const { recomputeLoanFromPayments } = require('../utils/loanReversal');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -287,18 +289,126 @@ class LoanService {
     return annotateOverdue(result);
   }
 
-  async cancel(loanId) {
-    const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-    if (!loan) throw new AppError('Préstamo no encontrado', 404);
-    if (loan.status !== 'PENDING') {
-      throw new AppError('Solo se pueden cancelar préstamos sin pagos (status PENDING)', 400);
-    }
-    const updated = await prisma.loan.update({
-      where: { id: loanId },
-      data: { status: 'CANCELLED' },
-      include: LOAN_INCLUDE,
+  async reversePayment(paymentId, reason, userId) {
+    const payment = await prisma.loanPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        // payment.transactions are immutable once created, so reading them outside
+        // the tx is safe; the reversal engine won't race against them.
+        transactions: true,
+        loan: {
+          include: {
+            installments: { orderBy: { sequence: 'asc' } },
+            // loan.payments intentionally excluded: surviving set is recomputed
+            // inside the tx via a fresh tx.loanPayment.findMany call.
+          },
+        },
+      },
     });
-    return annotateOverdue(updated);
+    if (!payment) throw new AppError('Pago de préstamo no encontrado', 404);
+
+    const loan = payment.loan;
+    if (loan.status === 'CANCELLED') {
+      throw new AppError('El préstamo ya fue reversado por completo.', 400);
+    }
+    if (payment.reversedAt) throw new AppError('Este pago ya fue reversado.', 409);
+
+    const sources = payment.transactions;
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const freshPayments = await tx.loanPayment.findMany({ where: { loanId: loan.id } });
+        const surviving = freshPayments.filter((p) => p.id !== paymentId && !p.reversedAt);
+        const recompute = recomputeLoanFromPayments(loan, surviving);
+
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'LOAN_REVERSAL',
+          auditEntityType: 'LOAN_PAYMENT',
+          auditEntityId: paymentId,
+        });
+        await tx.loanPayment.update({
+          where: { id: paymentId },
+          data: { reversedAt: new Date(), reversedBy: userId, reverseReason: reason },
+        });
+        for (const u of recompute.installmentUpdates) {
+          await tx.loanInstallment.update({
+            where: { id: u.id },
+            data: { paidAmount: u.paidAmount, status: u.status },
+          });
+        }
+        return tx.loan.update({
+          where: { id: loan.id },
+          data: {
+            paidAmount: recompute.paidAmount,
+            interestReceived: recompute.interestReceived,
+            extraReceived: recompute.extraReceived,
+            status: recompute.status,
+          },
+          include: LOAN_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
+  }
+
+  async reverseLoan(loanId, reason, userId) {
+    const loan = await prisma.loan.findUnique({
+      where: { id: loanId },
+      include: { installments: true },
+    });
+    if (!loan) throw new AppError('Préstamo no encontrado', 404);
+    if (loan.status === 'CANCELLED') throw new AppError('El préstamo ya fue reversado.', 409);
+
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const livePayments = await tx.loanPayment.findMany({
+          where: { loanId, reversedAt: null },
+          include: { transactions: true },
+        });
+        const disbursementTxns = await tx.transaction.findMany({
+          where: { loanId, category: 'LOAN_DISBURSEMENT', reversesTransactionId: null },
+        });
+        const sources = [...disbursementTxns, ...livePayments.flatMap((p) => p.transactions)];
+        if (sources.length === 0) throw new AppError('El préstamo no tiene movimientos para reversar.', 400);
+
+        await applyReversalInTx(tx, {
+          sources,
+          reason,
+          userId,
+          category: 'LOAN_REVERSAL',
+          auditEntityType: 'LOAN',
+          auditEntityId: loanId,
+        });
+        const now = new Date();
+        for (const p of livePayments) {
+          await tx.loanPayment.update({
+            where: { id: p.id },
+            data: { reversedAt: now, reversedBy: userId, reverseReason: reason },
+          });
+        }
+        for (const inst of loan.installments) {
+          await tx.loanInstallment.update({
+            where: { id: inst.id },
+            data: { paidAmount: 0, status: 'PENDING' },
+          });
+        }
+        return tx.loan.update({
+          where: { id: loanId },
+          data: { paidAmount: 0, interestReceived: 0, extraReceived: 0, status: 'CANCELLED' },
+          include: LOAN_INCLUDE,
+        });
+      });
+      return annotateOverdue(result);
+    } catch (err) {
+      if (err.code === 'P2002') throw new AppError(ALREADY_REVERSED, 409);
+      throw err;
+    }
   }
 }
 

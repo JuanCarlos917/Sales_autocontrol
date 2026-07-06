@@ -5,6 +5,8 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
+const { getReversibilityError } = require('../utils/transactionReversal');
+const { applyReversal } = require('./reversalEngine');
 
 // Cada Transaction se devuelve como fila propia (decisión 2026-06-08).
 // Las EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL ya no se ocultan: enlazan al
@@ -16,6 +18,8 @@ const TRANSACTION_INCLUDE = {
   reversesTransaction: {
     select: { id: true, category: true, amount: true, date: true, accountId: true },
   },
+  reversedBy: { select: { id: true } },
+  payablePayment: { select: { id: true } },
 };
 
 class TransactionService {
@@ -130,6 +134,41 @@ class TransactionService {
       data: updateData,
       include: TRANSACTION_INCLUDE,
     });
+  }
+
+  async reverse(id, reason, userId) {
+    const original = await prisma.transaction.findUnique({
+      where: { id },
+      include: {
+        reversedBy: { select: { id: true }, take: 1 },
+        payablePayment: { select: { id: true } },
+      },
+    });
+    if (!original) throw new AppError('Movimiento no encontrado', 404);
+
+    const error = getReversibilityError({
+      type: original.type,
+      expenseId: original.expenseId,
+      loanId: original.loanId,
+      loanPaymentId: original.loanPaymentId,
+      debtId: original.debtId,
+      transferId: original.transferId,
+      reversesTransactionId: original.reversesTransactionId,
+      hasPayablePayment: Boolean(original.payablePayment),
+      alreadyReversed: original.reversedBy.length > 0,
+    });
+    if (error) throw new AppError(error.message, error.status);
+
+    const [compensating] = await applyReversal({
+      sources: [original],
+      reason,
+      userId,
+      category: 'MANUAL_REVERSAL',
+      auditEntityType: 'TRANSACTION',
+      auditEntityId: original.id,
+      include: TRANSACTION_INCLUDE,
+    });
+    return compensating;
   }
 
   async getSummary({ startDate, endDate, accountId } = {}) {
