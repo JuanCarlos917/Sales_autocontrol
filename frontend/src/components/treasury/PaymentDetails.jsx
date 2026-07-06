@@ -3,7 +3,7 @@ import { formatCurrency, formatDate } from '@/lib/constants';
 import ReverseAction from '@/components/shared/ReverseAction';
 import ReversedBadge from '@/components/shared/ReversedBadge';
 
-// Lista colapsable de pagos. `payments`: [{ id, date, amount, accountName, notes }] (ordenada desc).
+// Lista colapsable de pagos. `payments`: [{ id, date, amount, accountName, notes, reversedAt?, reconciled? }] (ordenada desc).
 // `testidPrefix`: prefijo para los data-testid (ej. `loan-card-<id>` / `debt-card-<id>`).
 // `alwaysOpen`: cuando es true, renderiza la lista expandida sin el toggle (vista de detalle).
 export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen = false, onReversePayment }) {
@@ -42,6 +42,14 @@ export default function PaymentDetails({ payments = [], testidPrefix, alwaysOpen
                     <span className="font-mono text-[#E6EDF3]">{formatCurrency(p.amount)}</span>
                     {p.reversedAt ? (
                       <ReversedBadge label="Reversado" testid={`${testidPrefix}-row-${p.id}-reversed`} />
+                    ) : p.reconciled ? (
+                      <span
+                        className="text-[10px] text-[#6E7681]"
+                        title="Pago conciliado con un egreso real; no reversable desde aquí"
+                        data-testid={`${testidPrefix}-row-${p.id}-reconciled`}
+                      >
+                        Conciliado
+                      </span>
                     ) : onReversePayment ? (
                       <ReverseAction
                         label="Reversar"

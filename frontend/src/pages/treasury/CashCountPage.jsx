@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { cashCountsApi, accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import Modal from '@/components/shared/Modal';
+import ReverseAction from '@/components/shared/ReverseAction';
+import ReversedBadge from '@/components/shared/ReversedBadge';
 
 export default function CashCountPage() {
   const [cashCounts, setCashCounts] = useState([]);
@@ -119,11 +121,16 @@ export default function CashCountPage() {
               <th className="text-right p-3">Contado</th>
               <th className="text-right p-3">Diferencia</th>
               <th className="text-left p-3 hidden md:table-cell">Notas</th>
+              <th className="text-right p-3">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {cashCounts.map((cc) => (
-              <tr key={cc.id} className="border-t border-border hover:bg-surface-hover">
+              <tr
+                key={cc.id}
+                className={`border-t border-border hover:bg-surface-hover ${cc.voidedAt ? 'opacity-50' : ''}`}
+                data-testid={`cashcount-row-${cc.id}`}
+              >
                 <td className="p-3 text-[#8B949E]">{formatDate(cc.date)}</td>
                 <td className="p-3 text-[#E6EDF3]">{cc.account?.name}</td>
                 <td className="p-3 text-right text-[#E6EDF3]">{formatCurrency(cc.expectedBalance)}</td>
@@ -132,11 +139,27 @@ export default function CashCountPage() {
                   {parseFloat(cc.difference) > 0 ? '+' : ''}{formatCurrency(cc.difference)}
                 </td>
                 <td className="p-3 text-[#8B949E] hidden md:table-cell">{cc.notes || '-'}</td>
+                <td className="p-3 text-right">
+                  {cc.voidedAt ? (
+                    <ReversedBadge label="Anulado" variant="red" testid={`cashcount-${cc.id}-voided`} />
+                  ) : (
+                    <ReverseAction
+                      label="Anular"
+                      title="Anular arqueo"
+                      description={<>El arqueo quedará anulado y dejará de contar como el último de la cuenta. No mueve dinero. Esta acción no se puede deshacer.</>}
+                      confirmLabel="Anular arqueo"
+                      variant="amber"
+                      testid={`cashcount-${cc.id}`}
+                      onConfirm={(reason) => cashCountsApi.reverse(cc.id, reason)}
+                      onDone={() => { loadCashCounts(); loadAccounts(); }}
+                    />
+                  )}
+                </td>
               </tr>
             ))}
             {cashCounts.length === 0 && (
               <tr>
-                <td colSpan="6" className="p-6 text-center text-[#8B949E]">No hay arqueos registrados</td>
+                <td colSpan="7" className="p-6 text-center text-[#8B949E]">No hay arqueos registrados</td>
               </tr>
             )}
           </tbody>
