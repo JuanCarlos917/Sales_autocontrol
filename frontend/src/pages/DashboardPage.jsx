@@ -26,8 +26,8 @@ export default function DashboardPage() {
   const kpiCards = [
     { label: 'Capital Inmovilizado', value: formatCurrency(kpis.totalInvested), color: 'text-[#D29922]' },
     { label: 'Ingresos Totales', value: formatCurrency(kpis.totalRevenue), color: 'text-accent' },
-    { label: 'Ganancia Neta', value: formatCurrency(kpis.totalProfit), color: kpis.totalProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
-    { label: 'Mi Ganancia Total', value: formatCurrency(kpis.totalMyProfit), color: 'text-[#BC8CFF]' },
+    { label: 'Ganancia Neta', sub: 'después de fijos y comisiones', value: formatCurrency(kpis.totalProfit), color: kpis.totalProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
+    { label: 'Mi Ganancia Total', sub: 'según participación', value: formatCurrency(kpis.totalMyProfit), color: 'text-[#BC8CFF]' },
     { label: 'Saldo en Caja', value: formatCurrency(kpis.treasuryBalance), color: 'text-[#58A6FF]' },
     { label: 'Vendidos', value: kpis.soldCount, color: 'text-[#3FB950]' },
     { label: 'ROI Promedio', value: formatPercent(kpis.avgROI), color: kpis.avgROI >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]' },
@@ -59,6 +59,7 @@ export default function DashboardPage() {
           <div key={i} className="kpi-card">
             <div className="text-[11px] text-[#6E7681] uppercase tracking-wider">{k.label}</div>
             <div className={`text-xl font-bold font-mono mt-1.5 ${k.color}`}>{k.value}</div>
+            {k.sub && <div className="text-[10px] text-[#6E7681] mt-0.5">{k.sub}</div>}
           </div>
         ))}
       </div>

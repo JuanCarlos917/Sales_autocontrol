@@ -314,6 +314,11 @@ export default function VehicleDetailPage() {
               Recibido en cruce por la venta de <span className="font-mono font-semibold">{vehicle.sourceVehicle.plate}</span>
               <span className="text-[#6E7681] ml-1">→ ver detalle</span>
             </div>
+            {(vehicle.metrics?.deal || vehicle.metrics?.profitDeferredTo?.closed) && (
+              <div className="text-sm font-mono font-bold mt-1 text-[#E6EDF3]" data-testid="vehicle-deal-profit">
+                Ganancia del negocio completo: {formatCurrency(vehicle.metrics?.deal?.directProfit ?? vehicle.metrics.profitDeferredTo.directProfit)}
+              </div>
+            )}
           </button>
         )}
 
@@ -334,6 +339,11 @@ export default function VehicleDetailPage() {
                 </div>
               </button>
             ))}
+            {(vehicle.metrics?.deal || vehicle.metrics?.profitDeferredTo?.closed) && (
+              <div className="text-sm font-mono font-bold px-3 text-[#E6EDF3]" data-testid="vehicle-deal-profit">
+                Ganancia del negocio completo: {formatCurrency(vehicle.metrics?.deal?.directProfit ?? vehicle.metrics.profitDeferredTo.directProfit)}
+              </div>
+            )}
           </div>
         )}
 
