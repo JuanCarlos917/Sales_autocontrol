@@ -272,6 +272,9 @@ function calculateDealMetrics(chain) {
 
   let showcaseVehicleId = null;
   if (closed) {
+    // Asunción: todo VENDIDO tiene saleDate (el negocio la auto-asigna al vender).
+    // Si faltara, `saleDate || 0` la manda al epoch y ese eslabón pierde la
+    // carrera de vitrina en silencio; el empate se resuelve por id.
     const showcase = members.reduce((best, m) => {
       if (!best) return m;
       const a = new Date(m.saleDate || 0).getTime();

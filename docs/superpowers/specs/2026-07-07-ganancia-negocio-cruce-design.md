@@ -47,8 +47,11 @@ dentro del negocio.
 | Es eslabón intermedio (vendido, cadena cerrada) | `↪ Ganancia en cruce <placa>` (permanente) |
 
 **Casos borde:**
-- Cruce **CANCELLED** (anulado por reverso universal): sale de la cadena. Si el
-  origen queda sin cruces vivos ni vendidos, vuelve a mostrar su ganancia propia.
+- **Venta cancelada / cruce eliminado**: `VehicleStage` no tiene estado CANCELLED.
+  Si se cancela la venta origen (`cancelSale` → vuelve a DISPONIBLE), el origen deja
+  de ser VENDIDO y la cadena queda "viva" (sin vitrina). Si el vehículo-cruce se
+  elimina, la relación se rompe (`SetNull`) y la cadena se disuelve sola. Follow-up
+  conocido: `cancelSale` hoy NO desvincula el cruce ya creado (ver Follow-ups).
 - **Multi-cruce** en una venta: la ganancia se muestra en el último eslabón que
   se venda (mayor `saleDate`; empate → mayor `id`). Los demás difieren.
 - **Participación**: v1 muestra el negocio al 100%. El reparto por socio sigue
@@ -103,8 +106,9 @@ reportes.
 ## Testing
 
 - **Unit (node --test), `financial.test.js`:** `calculateDealMetrics` —
-  sin cruces; cadena viva (difiere); cadena cerrada de 2; cadena de 3; cruce
-  CANCELLED excluido; multi-cruce (vitrina = último vendido); cadena rota.
+  sin cruces; cadena viva (difiere); cadena cerrada de 2; cadena de 3;
+  multi-cruce (vitrina = último vendido); cadena rota.
+  Pendiente: cadena rota (relación SetNull) y sibling-deferral en multi-cruce.
 - **E2E (Playwright):** flujo venta con cruce → card origen muestra "↪ en cruce";
   vender el cruce → card del cruce muestra "Ganancia del negocio" con la directa
   y el origen mantiene el diferimiento. Reusar helpers de `tests/helpers/api.ts`.
@@ -116,3 +120,20 @@ reportes.
 - Ponderación de `myProfit`/participación a nivel de negocio.
 - Cambios al dashboard más allá de subtítulos.
 - Vista de "negocios" agrupados como entidad propia.
+
+## Follow-ups (revisión final de rama, 2026-07-07)
+
+- **`cancelSale` no desvincula el cruce creado** (`saleService.js` ~583): tras cancelar
+  la venta origen, el cruce conserva `sourceVehicleId`; si el origen se revende y el
+  cruce fantasma se vende, la cadena renace con un `purchasePrice` de una venta
+  anulada → cifra errónea en pipeline. Requiere decisión de negocio (desvincular o
+  bloquear cancelSale con cruce vivo).
+- **Scope `userId` en `loadDealChainNodes`** (`vehicleService.js` ~136): el `findMany`
+  de eslabones faltantes no filtra por usuario; hoy las cadenas son mono-usuario por
+  construcción, pero conviene defensa en profundidad.
+- **Doble render de "Ganancia del negocio completo"** en el detalle para una vitrina
+  intermedia de cadena ≥3 (dos bloques de cruce simultáneos). Cosmético.
+- **Unit tests pendientes**: cadena rota (SetNull) y sibling-deferral en multi-cruce;
+  el motor `enrichWithDealMetrics` no tiene unit test directo (cubierto solo por e2e).
+- Menores heredados de las tareas: `aria-hidden` en el glyph ↪ de la card; `??` vs `||`
+  en defaults numéricos; guard `newVehicle!` en helpers e2e.
