@@ -249,4 +249,45 @@ function splitFinalPayment(payment, remainingInterest) {
   return { capitalPortion: p - interestPortion, interestPortion };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment };
+/**
+ * Métricas del "negocio" de una cadena de cruces (trade-in).
+ * `chain` viene en orden de linaje (origen primero) con:
+ *   { id, plate, stage, salePrice, purchasePrice, saleDate, expenses: [{ amount, deletedAt }] }
+ * Ganancia DIRECTA: venta − compra − gastos directos (sin fijos prorrateados
+ * ni comisiones — decisión de producto: eso vive en el detalle del vehículo).
+ * La vitrina (showcase) es el eslabón que muestra la ganancia en el pipeline:
+ * el último vendido (mayor saleDate; empate → mayor id) y solo existe con la
+ * cadena cerrada (todos VENDIDO).
+ */
+function calculateDealMetrics(chain) {
+  const members = chain || [];
+  const closed = members.length > 0 && members.every((m) => m.stage === 'VENDIDO');
+
+  const directProfit = members.reduce((sum, m) => {
+    const expenses = (m.expenses || [])
+      .filter((e) => !e.deletedAt)
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+    return sum + Number(m.salePrice || 0) - Number(m.purchasePrice || 0) - expenses;
+  }, 0);
+
+  let showcaseVehicleId = null;
+  if (closed) {
+    const showcase = members.reduce((best, m) => {
+      if (!best) return m;
+      const a = new Date(m.saleDate || 0).getTime();
+      const b = new Date(best.saleDate || 0).getTime();
+      if (a !== b) return a > b ? m : best;
+      return String(m.id) > String(best.id) ? m : best;
+    }, null);
+    showcaseVehicleId = showcase.id;
+  }
+
+  return {
+    directProfit: Math.round(directProfit),
+    chainPlates: members.map((m) => m.plate),
+    closed,
+    showcaseVehicleId,
+  };
+}
+
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics };
