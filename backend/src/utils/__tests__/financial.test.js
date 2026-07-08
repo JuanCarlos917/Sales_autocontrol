@@ -415,3 +415,84 @@ test('splitFinalPayment: capital + interés siempre suman el pago', () => {
   assert.equal(r.capitalPortion + r.interestPortion, 777);
   assert.ok(r.capitalPortion >= 0 && r.interestPortion >= 0);
 });
+
+// ── calculateDealMetrics (ganancia del negocio con cruce) ────
+const { calculateDealMetrics } = require('../financial');
+
+const mkVehicle = (over = {}) => ({
+  id: 'v1', plate: 'AAA111', stage: 'VENDIDO',
+  salePrice: 0, purchasePrice: 0, saleDate: '2026-06-01',
+  expenses: [], ...over,
+});
+
+test('deal: vehículo único vendido — directa propia y vitrina él mismo', () => {
+  const chain = [mkVehicle({ salePrice: 40_000_000, purchasePrice: 30_000_000, expenses: [{ amount: 1_000_000 }] })];
+  const d = calculateDealMetrics(chain);
+  assert.equal(d.directProfit, 9_000_000);
+  assert.equal(d.closed, true);
+  assert.equal(d.showcaseVehicleId, 'v1');
+  assert.deepEqual(d.chainPlates, ['AAA111']);
+});
+
+test('deal: cadena viva (cruce sin vender) — closed false y sin vitrina', () => {
+  const chain = [
+    mkVehicle({ id: 'src', plate: 'FJT326', salePrice: 57_500_000, purchasePrice: 50_000_000 }),
+    mkVehicle({ id: 'ti', plate: 'PZD94H', stage: 'DISPONIBLE', purchasePrice: 17_500_000, saleDate: null }),
+  ];
+  const d = calculateDealMetrics(chain);
+  assert.equal(d.closed, false);
+  assert.equal(d.showcaseVehicleId, null);
+});
+
+test('deal: cadena cerrada de 2 — caso real Vitara + moto = 2.623.500', () => {
+  const chain = [
+    mkVehicle({
+      id: 'src', plate: 'FJT326', salePrice: 57_500_000, purchasePrice: 50_000_000,
+      saleDate: '2026-06-01', expenses: [{ amount: 2_454_000 }],
+    }),
+    mkVehicle({
+      id: 'ti', plate: 'PZD94H', salePrice: 15_390_000, purchasePrice: 17_500_000,
+      saleDate: '2026-06-27', expenses: [{ amount: 262_500 }, { amount: 50_000 }],
+    }),
+  ];
+  const d = calculateDealMetrics(chain);
+  assert.equal(d.directProfit, 2_623_500);
+  assert.equal(d.closed, true);
+  assert.equal(d.showcaseVehicleId, 'ti');
+  assert.deepEqual(d.chainPlates, ['FJT326', 'PZD94H']);
+});
+
+test('deal: cadena de 3 — suma total y vitrina en el último vendido', () => {
+  const chain = [
+    mkVehicle({ id: 'a', plate: 'A', salePrice: 10, purchasePrice: 5, saleDate: '2026-01-01' }),
+    mkVehicle({ id: 'b', plate: 'B', salePrice: 8, purchasePrice: 6, saleDate: '2026-02-01' }),
+    mkVehicle({ id: 'c', plate: 'C', salePrice: 3, purchasePrice: 4, saleDate: '2026-03-01' }),
+  ];
+  const d = calculateDealMetrics(chain);
+  assert.equal(d.directProfit, 6);
+  assert.equal(d.showcaseVehicleId, 'c');
+});
+
+test('deal: empate de saleDate — vitrina por id mayor (string)', () => {
+  const chain = [
+    mkVehicle({ id: 'a', plate: 'A', saleDate: '2026-03-01' }),
+    mkVehicle({ id: 'b', plate: 'B', saleDate: '2026-03-01' }),
+  ];
+  const d = calculateDealMetrics(chain);
+  assert.equal(d.showcaseVehicleId, 'b');
+});
+
+test('deal: gastos soft-deleted no cuentan', () => {
+  const chain = [mkVehicle({
+    salePrice: 10_000_000, purchasePrice: 8_000_000,
+    expenses: [{ amount: 500_000 }, { amount: 999_999, deletedAt: '2026-06-01T00:00:00Z' }],
+  })];
+  assert.equal(calculateDealMetrics(chain).directProfit, 1_500_000);
+});
+
+test('deal: cadena vacía — cerrada false, sin vitrina, directa 0', () => {
+  const d = calculateDealMetrics([]);
+  assert.equal(d.closed, false);
+  assert.equal(d.showcaseVehicleId, null);
+  assert.equal(d.directProfit, 0);
+});
