@@ -449,10 +449,36 @@ export default function KanbanPage() {
                         </div>
                         {v.stage === 'VENDIDO' ? (
                           <div className="text-right">
-                            <div className="text-[#6E7681]">Ganancia</div>
-                            <div className={`font-mono font-bold ${m.netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
-                              {formatCurrency(m.netProfit)}
-                            </div>
+                            {m.profitDeferredTo ? (
+                              <>
+                                <div className="text-[#6E7681]">Ganancia</div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); navigate(`/vehicles/${m.profitDeferredTo.id}`); }}
+                                  className="font-semibold text-[#BC8CFF] hover:underline"
+                                  data-testid={`deal-deferred-${v.plate}`}
+                                >
+                                  ↪ en cruce {m.profitDeferredTo.plate}
+                                </button>
+                              </>
+                            ) : m.deal ? (
+                              <>
+                                <div className="text-[#6E7681]">Ganancia del negocio ({m.deal.chainPlates.join(' + ')})</div>
+                                <div
+                                  className={`font-mono font-bold ${m.deal.directProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'}`}
+                                  data-testid={`deal-profit-${v.plate}`}
+                                >
+                                  {formatCurrency(m.deal.directProfit)}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-[#6E7681]">Ganancia</div>
+                                <div className={`font-mono font-bold ${m.netProfit >= 0 ? 'text-[#3FB950]' : 'text-[#F85149]'}`}>
+                                  {formatCurrency(m.netProfit)}
+                                </div>
+                              </>
+                            )}
                           </div>
                         ) : m.daysInInventory > 0 ? (
                           <div className="text-right">
