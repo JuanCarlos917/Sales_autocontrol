@@ -150,3 +150,21 @@ Respuesta: lista de vehículos VENDIDO **que tengan CxPs COMMISSION**, cada item
 - Reportes de comisiones por período.
 - Guard de saldo en `payableService.addPayment` (pertenece a la auditoría de
   tesorería pausada, hallazgo 🟠 #2).
+
+## Follow-ups (revisión final de rama, 2026-07-09)
+
+- **Divergencia display**: `cascade.grossProfit/base` se recalculan en vivo; si
+  `salePrice/purchasePrice/participation` se editaran post-venta por una vía que
+  esquive el lock VENDIDO, el % mostrado (pool/base) diverge del aplicado. Solo
+  display; el pago usa montos persistidos.
+- **`commissionPool` incluye CxP CANCELLED** (línea "Bolsillo comisión") — KPIs y
+  pendientes sí las excluyen. Decidir si el pool debe netear canceladas.
+- **Buckets informativos** se localizan solo por TRANSFER_IN: un reverso futuro de
+  bolsillos los dejaría stale.
+- **`listByVehicle` sin paginación** y filtro `status` en memoria — lineal con el
+  historial; aceptable hoy, revisar al crecer.
+- **Testid duplicado** si una venta tuviera roles repetidos (>2 participantes).
+- Menores: test del catch de settings (requiere stub Prisma); título del test de
+  identidad (participation=1); enum de `status` en query; `console.error`/`alert`
+  (patrón repo, auditoría ⚪#20); `setLoading(true)` en recargas; key por índice
+  en payments; carrera inofensiva loadData/resetForm del modal.

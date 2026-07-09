@@ -706,3 +706,22 @@ export async function apiReverseTransactionRaw(
 ): Promise<{ status: number; body: { error?: string; id?: string; type?: string; category?: string; reversesTransactionId?: string; amount?: string } | null }> {
   return apiRequestRaw('POST', `/treasury/transactions/${id}/reverse`, token, body);
 }
+
+// ── Commissions ───────────────────────────────────────────
+
+export async function apiListCommissions(token: string): Promise<Array<{
+  vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
+  cascade: {
+    salePrice: number; purchaseCost: number; directExpenses: number;
+    grossProfit: number; participation: number; commissionBase: number; commissionPool: number;
+  };
+  roles: Array<{
+    role: string; sharePct: number; total: number; paid: number; pending: number;
+    status: string; payableId: string; thirdParty: { id: string; name: string };
+    payments: Array<{ date: string | null; amount: number; accountName: string }>;
+  }>;
+  buckets: { reinvest: number; tax: number } | null;
+  hasPending: boolean;
+}>> {
+  return getJson('/commissions', token);
+}

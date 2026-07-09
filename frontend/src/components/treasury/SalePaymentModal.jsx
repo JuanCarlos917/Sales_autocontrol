@@ -8,7 +8,8 @@ import Modal from '@/components/shared/Modal';
 import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency, getLocalDateString } from '@/lib/constants';
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
-import { Banknote, Landmark, RefreshCw, ClipboardList, Plus, AlertTriangle } from 'lucide-react';
+import { Banknote, Landmark, RefreshCw, ClipboardList, Plus, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import api from '@/lib/api';
 
 const PAYMENT_TYPES = [
   { id: 'CASH', label: 'Efectivo', icon: Banknote },
@@ -54,6 +55,14 @@ export default function SalePaymentModal({
     financingNotes: '',
   });
 
+  // Comisión: sección opcional. touched=false → el payload no manda participants.
+  const [commissionOpen, setCommissionOpen] = useState(false);
+  const [commissionTouched, setCommissionTouched] = useState(false);
+  const [commission, setCommission] = useState({
+    captadorId: 'owner-self', captadorPct: 30,
+    cerradorId: 'owner-self', cerradorPct: 70,
+  });
+
   useEffect(() => {
     if (isOpen) {
       loadData();
@@ -74,6 +83,15 @@ export default function SalePaymentModal({
         mixedCashAccountId: prev.mixedCashAccountId || firstCash?.id || '',
         mixedTransferAccountId: prev.mixedTransferAccountId || firstBank?.id || '',
       }));
+
+      const cfgRes = await api.get('/settings/commission-config').catch(() => null);
+      if (cfgRes?.data) {
+        setCommission(c => ({
+          ...c,
+          captadorPct: Number(cfgRes.data.default_captador_pct) || 30,
+          cerradorPct: Number(cfgRes.data.default_cerrador_pct) || 70,
+        }));
+      }
     } catch (err) {
       console.error('Error loading data:', err);
     }
@@ -103,6 +121,9 @@ export default function SalePaymentModal({
       financingDueDate: '',
       financingNotes: '',
     });
+    setCommissionOpen(false);
+    setCommissionTouched(false);
+    setCommission({ captadorId: 'owner-self', captadorPct: 30, cerradorId: 'owner-self', cerradorPct: 70 });
   };
 
   const handleTypeSelect = (type) => {
@@ -160,6 +181,15 @@ export default function SalePaymentModal({
       }
     }
 
+    if (commissionTouched) {
+      const pctSum = Number(commission.captadorPct) + Number(commission.cerradorPct);
+      if (!commission.captadorId || !commission.cerradorId) {
+        newErrors.commission = 'Selecciona captador y cerrador';
+      } else if (Math.abs(pctSum - 100) > 0.001) {
+        newErrors.commission = `Captador + Cerrador deben sumar 100% (va en ${pctSum}%)`;
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -213,6 +243,14 @@ export default function SalePaymentModal({
         dueDate: form.financingDueDate || null,
         notes: form.financingNotes || null,
       };
+    }
+
+    // Participantes de comisión: solo si el usuario tocó la sección.
+    if (commissionTouched) {
+      saleData.participants = [
+        { thirdPartyId: commission.captadorId, role: 'CAPTADOR', sharePct: Number(commission.captadorPct) },
+        { thirdPartyId: commission.cerradorId, role: 'CERRADOR', sharePct: Number(commission.cerradorPct) },
+      ];
     }
 
     await onSubmit(saleData);
@@ -528,6 +566,66 @@ export default function SalePaymentModal({
               </div>
             </div>
           )}
+
+          {/* Comisión: captador/cerrador (opcional, default: tú) */}
+          <div className="border border-border rounded-lg p-3">
+            <button
+              type="button"
+              onClick={() => setCommissionOpen(o => !o)}
+              className="w-full flex items-center gap-2 text-sm font-semibold text-[#8B949E] hover:text-[#E6EDF3]"
+              data-testid="sale-commission-toggle"
+            >
+              {commissionOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              Comisión — Captador/Cerrador (default: tú)
+            </button>
+            {commissionOpen && (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-3 gap-3 items-end">
+                  <div className="col-span-2">
+                    <ThirdPartySelector
+                      value={commission.captadorId}
+                      onChange={(id) => { setCommission(c => ({ ...c, captadorId: id })); setCommissionTouched(true); }}
+                      label="Captador"
+                      placeholder="Seleccionar..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-[#8B949E] mb-1">%</label>
+                    <input
+                      type="number" min="0" max="100"
+                      value={commission.captadorPct}
+                      onChange={(e) => { setCommission(c => ({ ...c, captadorPct: e.target.value })); setCommissionTouched(true); }}
+                      className="input w-full"
+                      data-testid="sale-captador-pct"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 items-end">
+                  <div className="col-span-2">
+                    <ThirdPartySelector
+                      value={commission.cerradorId}
+                      onChange={(id) => { setCommission(c => ({ ...c, cerradorId: id })); setCommissionTouched(true); }}
+                      label="Cerrador"
+                      placeholder="Seleccionar..."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-[#8B949E] mb-1">%</label>
+                    <input
+                      type="number" min="0" max="100"
+                      value={commission.cerradorPct}
+                      onChange={(e) => { setCommission(c => ({ ...c, cerradorPct: e.target.value })); setCommissionTouched(true); }}
+                      className="input w-full"
+                      data-testid="sale-cerrador-pct"
+                    />
+                  </div>
+                </div>
+                {errors.commission && (
+                  <p className="text-[11px] text-red-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {errors.commission}</p>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Botones */}
           <div className="flex gap-2 pt-2">
