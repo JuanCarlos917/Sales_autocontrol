@@ -38,8 +38,13 @@ test.describe('Comisiones — página dedicada', () => {
     await expect(card).toBeVisible();
     // Cascada: ganancia 10M (40M − 30M, sin gastos)
     await expect(card).toContainText('Ganancia');
+    await expect(card).toContainText('10.000.000'); // grossProfit determinista del escenario
     await expect(page.getByTestId(`commission-role-${p}-CAPTADOR`)).toBeVisible();
     await expect(page.getByTestId(`commission-role-${p}-CERRADOR`)).toBeVisible();
+
+    // Estado inicial: ambos roles Pendiente antes de pagar
+    await expect(page.getByTestId(`commission-role-status-${p}-CAPTADOR`)).toContainText('Pendiente');
+    await expect(page.getByTestId(`commission-role-status-${p}-CERRADOR`)).toContainText('Pendiente');
 
     // Pagar captador
     await page.getByTestId(`commission-pay-${p}-CAPTADOR`).click();
@@ -64,6 +69,7 @@ test.describe('Comisiones — página dedicada', () => {
     const items = await apiListCommissions(token);
     const item = items.find((i) => i.vehicle.plate === p);
     expect(item).toBeTruthy();
+    expect(item!.hasPending).toBe(true);
     const captador = item!.roles.find((r) => r.role === 'CAPTADOR');
     expect(captador?.thirdParty.id).toBe(TEST_SEED_IDS.employee);
     expect(captador?.sharePct).toBe(40);
@@ -71,5 +77,6 @@ test.describe('Comisiones — página dedicada', () => {
     // Y la UI lo refleja
     await page.goto('/treasury/commissions');
     await expect(page.getByTestId(`commission-role-${p}-CAPTADOR`)).toContainText('40%');
+    await expect(page.getByTestId(`commission-role-${p}-CAPTADOR`)).toContainText(captador!.thirdParty.name);
   });
 });

@@ -710,9 +710,17 @@ export async function apiReverseTransactionRaw(
 // ── Commissions ───────────────────────────────────────────
 
 export async function apiListCommissions(token: string): Promise<Array<{
-  vehicle: { id: string; plate: string };
-  cascade: { grossProfit: number; commissionPool: number };
-  roles: Array<{ role: string; sharePct: number; total: number; status: string; payableId: string; thirdParty: { id: string; name: string } }>;
+  vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
+  cascade: {
+    salePrice: number; purchaseCost: number; directExpenses: number;
+    grossProfit: number; participation: number; commissionBase: number; commissionPool: number;
+  };
+  roles: Array<{
+    role: string; sharePct: number; total: number; paid: number; pending: number;
+    status: string; payableId: string; thirdParty: { id: string; name: string };
+    payments: Array<{ date: string | null; amount: number; accountName: string }>;
+  }>;
+  buckets: { reinvest: number; tax: number } | null;
   hasPending: boolean;
 }>> {
   return getJson('/commissions', token);
