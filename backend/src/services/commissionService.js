@@ -131,7 +131,11 @@ const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
 function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
   const { grossProfitGlobal, commissionBase } = calculateCommissionBase(vehicle);
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
-  const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  // Excluye COMISION legacy (igual que calculateCommissionBase) para que la
+  // identidad venta − costo − gastos = ganancia cuadre en la cascada.
+  const directExpenses = expenses
+    .filter((e) => e.category !== 'COMISION')
+    .reduce((s, e) => s + Number(e.amount || 0), 0);
   const purchaseCost = vehicle.fromTradeIn
     ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
     : Number(vehicle.purchasePrice || 0);
@@ -233,8 +237,14 @@ async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
         amount: t.amount,
       });
     }
-  } catch {
-    bucketByVehicle = new Map(); // settings faltantes: buckets informativos en null
+  } catch (err) {
+    // Solo el caso "settings de comisiones no configuradas" degrada a buckets null;
+    // cualquier otro error (DB caída, Prisma, red) debe propagarse.
+    if (err instanceof AppError && err.message.startsWith('Settings de comisiones faltantes')) {
+      bucketByVehicle = new Map();
+    } else {
+      throw err;
+    }
   }
 
   const items = [...byVehicle.values()].map(({ vehicle, payables: ps }) =>

@@ -82,3 +82,13 @@ test('item: sharePct derivable aunque falte saleParticipant (dato legacy)', () =
   assert.equal(item.roles[0].sharePct, 30);
   assert.equal(item.roles[0].role, 'OTHER');
 });
+
+test('item: gasto legacy COMISION no rompe la identidad de la cascada', () => {
+  const v = { ...vehicle, expenses: [...vehicle.expenses, { amount: 999_999, category: 'COMISION', deletedAt: null }] };
+  const item = buildCommissionVehicleItem({ vehicle: v, payables: [mkPayable()], bucketTransfers: [] });
+  assert.equal(item.cascade.directExpenses, 2_454_000);
+  assert.equal(
+    item.cascade.salePrice - item.cascade.purchaseCost - item.cascade.directExpenses,
+    item.cascade.grossProfit,
+  );
+});
