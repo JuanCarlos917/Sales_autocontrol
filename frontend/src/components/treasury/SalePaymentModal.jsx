@@ -123,6 +123,7 @@ export default function SalePaymentModal({
     });
     setCommissionOpen(false);
     setCommissionTouched(false);
+    setCommission({ captadorId: 'owner-self', captadorPct: 30, cerradorId: 'owner-self', cerradorPct: 70 });
   };
 
   const handleTypeSelect = (type) => {
@@ -180,12 +181,13 @@ export default function SalePaymentModal({
       }
     }
 
-    const pctSum = Number(commission.captadorPct) + Number(commission.cerradorPct);
-    if (commissionTouched && Math.abs(pctSum - 100) > 0.001) {
-      newErrors.commission = `Captador + Cerrador deben sumar 100% (va en ${pctSum}%)`;
-    }
-    if (commissionTouched && (!commission.captadorId || !commission.cerradorId)) {
-      newErrors.commission = 'Selecciona captador y cerrador';
+    if (commissionTouched) {
+      const pctSum = Number(commission.captadorPct) + Number(commission.cerradorPct);
+      if (!commission.captadorId || !commission.cerradorId) {
+        newErrors.commission = 'Selecciona captador y cerrador';
+      } else if (Math.abs(pctSum - 100) > 0.001) {
+        newErrors.commission = `Captador + Cerrador deben sumar 100% (va en ${pctSum}%)`;
+      }
     }
 
     if (Object.keys(newErrors).length > 0) {
