@@ -75,4 +75,12 @@ export const expenseTreasuryApi = {
   payExpense: (expenseId, paymentData) => api.post(`/expenses/${expenseId}/pay`, paymentData),
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Comisiones por vehículo vendido
+// ═══════════════════════════════════════════════════════════════
+
+export const commissionsApi = {
+  getAll: (params = {}) => api.get('/commissions', { params }),
+};
+
 export default payablesApi;
