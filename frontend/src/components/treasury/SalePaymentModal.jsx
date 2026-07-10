@@ -176,9 +176,12 @@ export default function SalePaymentModal({
       if (parseFloat(form.mixedTransferAmount) > 0 && !form.mixedTransferAccountId) {
         newErrors.mixedTransfer = 'Selecciona la cuenta de transferencia';
       }
-      if (summary.totalReceived > summary.salePrice) {
-        newErrors.salePrice = 'Lo recibido no puede superar el precio de venta';
-      }
+    }
+
+    // Aplica a TODOS los tipos de pago (antes solo MIXED — auditoría 🟠 #7);
+    // el backend también lo rechaza, esto solo adelanta el error al form.
+    if (summary.totalReceived > summary.salePrice) {
+      newErrors.salePrice = 'Lo recibido no puede superar el precio de venta';
     }
 
     if (commissionTouched) {

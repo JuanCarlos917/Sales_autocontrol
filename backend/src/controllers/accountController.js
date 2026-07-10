@@ -38,7 +38,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await accountService.delete(req.params.id);
+    await accountService.delete(req.params.id, req.user.id);
     res.json({ message: 'Cuenta eliminada' });
   } catch (err) { next(err); }
 };

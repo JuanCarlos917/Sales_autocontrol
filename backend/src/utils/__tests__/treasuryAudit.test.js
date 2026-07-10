@@ -97,7 +97,7 @@ test('snapshotEntity: serializa Dates a ISO y omite undefined', () => {
 test('VALID_ENTITIES / VALID_ACTIONS coinciden con el contrato del audit', () => {
   assert.deepEqual(
     VALID_ENTITIES.slice().sort(),
-    ['ACCOUNT', 'CASH_COUNT', 'DEBT', 'DEBT_PAYMENT', 'LOAN', 'LOAN_PAYMENT', 'PAYABLE', 'PAYABLE_PAYMENT', 'TRANSACTION', 'TRANSFER'],
+    ['ACCOUNT', 'CASH_COUNT', 'DEBT', 'DEBT_PAYMENT', 'LOAN', 'LOAN_PAYMENT', 'PAYABLE', 'PAYABLE_PAYMENT', 'THIRD_PARTY', 'TRANSACTION', 'TRANSFER'],
   );
   assert.deepEqual(
     VALID_ACTIONS.slice().sort(),

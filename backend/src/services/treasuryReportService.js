@@ -4,6 +4,7 @@
 
 const prisma = require('../config/database');
 const accountService = require('./accountService');
+const { dayKeyBogota } = require('../utils/dates');
 
 class TreasuryReportService {
   /**
@@ -18,35 +19,19 @@ class TreasuryReportService {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    const monthTransactions = await prisma.transaction.findMany({
+    // Suma en la DB por tipo, solo flujo real (las transferencias internas no
+    // son ingreso ni egreso) — antes traía todas las filas del mes y sumaba
+    // en JS, con un cálculo intermedio que se descartaba (🟡 #9 / ⚪ #17).
+    const sums = await prisma.transaction.groupBy({
+      by: ['type'],
+      _sum: { amount: true },
       where: {
         date: { gte: startOfMonth, lte: endOfMonth },
+        type: { in: ['INCOME', 'EXPENSE'] },
       },
-      select: { type: true, amount: true },
     });
-
-    let monthIncome = 0;
-    let monthExpense = 0;
-    for (const tx of monthTransactions) {
-      const amount = parseFloat(tx.amount);
-      if (tx.type === 'INCOME' || tx.type === 'TRANSFER_IN') {
-        monthIncome += amount;
-      } else if (tx.type === 'EXPENSE' || tx.type === 'TRANSFER_OUT') {
-        monthExpense += amount;
-      }
-    }
-
-    // Excluir transferencias del flujo neto (no son ingresos ni egresos reales)
-    const realTransactions = monthTransactions.filter(tx =>
-      tx.type === 'INCOME' || tx.type === 'EXPENSE'
-    );
-    let realIncome = 0;
-    let realExpense = 0;
-    for (const tx of realTransactions) {
-      const amount = parseFloat(tx.amount);
-      if (tx.type === 'INCOME') realIncome += amount;
-      else realExpense += amount;
-    }
+    const realIncome = parseFloat(sums.find((s) => s.type === 'INCOME')?._sum.amount || 0);
+    const realExpense = parseFloat(sums.find((s) => s.type === 'EXPENSE')?._sum.amount || 0);
 
     return {
       totalBalance,
@@ -115,7 +100,9 @@ class TreasuryReportService {
     for (let i = 0; i < daysDiff; i++) {
       const date = new Date(start);
       date.setDate(date.getDate() + i);
-      const dateKey = date.toISOString().split('T')[0];
+      // Bucket por día en zona Bogotá (🟡 #13): la noche colombiana pertenece
+      // a SU día, no al siguiente UTC.
+      const dateKey = dayKeyBogota(date);
       const dayOfWeek = date.getDay();
 
       daily.push({
@@ -126,9 +113,9 @@ class TreasuryReportService {
       });
     }
 
-    // Poblar con transacciones
+    // Poblar con transacciones (misma clave de día Bogotá que la estructura)
     for (const tx of transactions) {
-      const dateKey = new Date(tx.date).toISOString().split('T')[0];
+      const dateKey = dayKeyBogota(tx.date);
       const dayEntry = daily.find(d => d.date === dateKey);
       if (dayEntry) {
         const amount = parseFloat(tx.amount);
