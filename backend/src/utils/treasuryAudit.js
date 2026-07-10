@@ -14,7 +14,7 @@
 //    (DELETE / CANCEL), el caller debe validarlo antes de invocar.
 // ═══════════════════════════════════════════════════════════════
 
-const VALID_ENTITIES = ['TRANSACTION', 'TRANSFER', 'ACCOUNT', 'DEBT', 'PAYABLE', 'PAYABLE_PAYMENT', 'LOAN', 'LOAN_PAYMENT', 'DEBT_PAYMENT', 'CASH_COUNT'];
+const VALID_ENTITIES = ['TRANSACTION', 'TRANSFER', 'ACCOUNT', 'THIRD_PARTY', 'DEBT', 'PAYABLE', 'PAYABLE_PAYMENT', 'LOAN', 'LOAN_PAYMENT', 'DEBT_PAYMENT', 'CASH_COUNT'];
 const VALID_ACTIONS  = ['CREATE', 'UPDATE', 'DELETE', 'CANCEL', 'PAYMENT', 'REVERSE'];
 
 /**

@@ -3,7 +3,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 const prisma = require('../config/database');
+const { AppError } = require('../middleware/errorHandler');
+const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { lockRow } = require('../utils/txLocks');
 
 const PAYABLE_AUDIT_FIELDS = [
   'id', 'type', 'vehicleId', 'thirdPartyId', 'totalAmount', 'paidAmount',
@@ -94,7 +97,7 @@ const getById = async (id) => {
   });
 
   if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
+    throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
   }
 
   return payable;
@@ -134,51 +137,72 @@ const create = async (data, userId) => {
  */
 const addPayment = async (payableId, paymentData, userId) => {
   const { accountId, amount, date, description } = paymentData;
-
-  // Obtener la CxC/CxP
-  const payable = await prisma.payable.findUnique({
-    where: { id: payableId },
-    include: { vehicle: true, thirdParty: true }
-  });
-
-  if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
-  }
-
-  if (payable.status === 'PAID') {
-    throw new Error('Esta cuenta ya esta completamente pagada');
-  }
-
-  if (payable.status === 'CANCELLED') {
-    throw new Error('Esta cuenta fue cancelada');
-  }
-
   const paymentAmount = parseFloat(amount);
-  const currentPaid = parseFloat(payable.paidAmount);
-  const total = parseFloat(payable.totalAmount);
-  const remaining = total - currentPaid;
 
-  if (paymentAmount > remaining) {
-    throw new Error(`El monto excede el saldo pendiente de ${remaining}`);
+  // Guardas de cuenta (auditoría 🟠 #2): debe existir y estar activa.
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) {
+    throw new AppError('Cuenta no encontrada', 404);
+  }
+  if (!account.isActive) {
+    throw new AppError('La cuenta está desactivada; no admite movimientos', 400);
   }
 
-  const newPaidAmount = currentPaid + paymentAmount;
-  const newStatus = newPaidAmount >= total ? 'PAID' : 'PARTIAL';
-
-  // Determinar tipo y categoria de transaccion
-  const isReceivable = payable.type === 'RECEIVABLE';
-  const isCommission = payable.type === 'COMMISSION';
-  const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-  // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
-  // es un egreso operativo por comisión al vendedor.
-  const transactionCategory = isReceivable
-    ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
-    : isCommission
-      ? 'COMMISSION'
-      : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
-
-  // Transaccion atomica
+  // Transaccion atomica con lectura autoritativa (anti-TOCTOU, auditoría 🟠 #3/#4):
+  // el payable y el saldo se leen DENTRO de la tx con sus filas bloqueadas —
+  // dos pagos concurrentes quedan serializados. Orden de locks: payable → cuenta.
   const result = await prisma.$transaction(async (tx) => {
+    await lockRow(tx, 'payable', payableId);
+    await lockRow(tx, 'account', accountId);
+
+    const payable = await tx.payable.findUnique({
+      where: { id: payableId },
+      include: { vehicle: true, thirdParty: true }
+    });
+
+    if (!payable) {
+      throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
+    }
+
+    if (payable.status === 'PAID') {
+      throw new AppError('Esta cuenta ya esta completamente pagada', 400);
+    }
+
+    if (payable.status === 'CANCELLED') {
+      throw new AppError('Esta cuenta fue cancelada', 400);
+    }
+
+    const currentPaid = parseFloat(payable.paidAmount);
+    const total = parseFloat(payable.totalAmount);
+    const remaining = total - currentPaid;
+
+    if (paymentAmount > remaining) {
+      throw new AppError(`El monto excede el saldo pendiente de ${remaining}`, 400);
+    }
+
+    const newPaidAmount = currentPaid + paymentAmount;
+    const newStatus = newPaidAmount >= total ? 'PAID' : 'PARTIAL';
+
+    // Determinar tipo y categoria de transaccion
+    const isReceivable = payable.type === 'RECEIVABLE';
+
+    // Egresos (CxP/comisiones): saldo suficiente, leído con la cuenta bloqueada.
+    if (!isReceivable) {
+      const balance = await accountService.calculateBalance(accountId, tx);
+      if (balance < paymentAmount) {
+        throw new AppError(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`, 400);
+      }
+    }
+    const isCommission = payable.type === 'COMMISSION';
+    const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
+    // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
+    // es un egreso operativo por comisión al vendedor.
+    const transactionCategory = isReceivable
+      ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
+      : isCommission
+        ? 'COMMISSION'
+        : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+
     // 1. Crear la transaccion de tesoreria
     const transaction = await tx.transaction.create({
       data: {
@@ -249,21 +273,21 @@ const addPayment = async (payableId, paymentData, userId) => {
  */
 const cancel = async (id, userId, { reason } = {}) => {
   if (!reason || reason.trim().length < 10) {
-    throw new Error('Debe indicar un motivo (mín 10 caracteres) para cancelar esta cuenta');
+    throw new AppError('Debe indicar un motivo (mín 10 caracteres) para cancelar esta cuenta', 400);
   }
 
   const payable = await prisma.payable.findUnique({ where: { id } });
 
   if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
+    throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
   }
 
   if (payable.status === 'PAID') {
-    throw new Error('No se puede cancelar una cuenta ya pagada');
+    throw new AppError('No se puede cancelar una cuenta ya pagada', 400);
   }
 
   if (parseFloat(payable.paidAmount) > 0) {
-    throw new Error('No se puede cancelar una cuenta con pagos parciales');
+    throw new AppError('No se puede cancelar una cuenta con pagos parciales', 400);
   }
 
   const updated = await prisma.$transaction(async (tx) => {

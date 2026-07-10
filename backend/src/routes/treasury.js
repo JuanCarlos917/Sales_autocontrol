@@ -36,7 +36,9 @@ router.get('/accounts/total', accountCtrl.getTotalBalance);
 router.get('/accounts/:id', accountCtrl.getOne);
 router.post('/accounts', validate(schemas.account), accountCtrl.create);
 router.put('/accounts/:id', validate(schemas.accountUpdate), accountCtrl.update);
-router.delete('/accounts/:id', accountCtrl.remove);
+// Hard-delete: solo ADMIN y con audit (auditoría 🟠 #6) — la alternativa
+// no destructiva es POST /accounts/:id/reverse (desactivar).
+router.delete('/accounts/:id', authorize('ADMIN'), accountCtrl.remove);
 router.post('/accounts/:id/reverse', authorize('ADMIN'), validate(schemas.treasuryDestructive), accountCtrl.reverse);
 
 // ══════════════════════════════════════════════════════════════
@@ -47,7 +49,7 @@ router.get('/third-parties/:id', thirdPartyCtrl.getOne);
 router.get('/third-parties/:id/statement', thirdPartyCtrl.getStatement);
 router.post('/third-parties', validate(schemas.thirdParty), thirdPartyCtrl.create);
 router.put('/third-parties/:id', validate(schemas.thirdParty), thirdPartyCtrl.update);
-router.delete('/third-parties/:id', thirdPartyCtrl.remove);
+router.delete('/third-parties/:id', authorize('ADMIN'), thirdPartyCtrl.remove);
 
 // ══════════════════════════════════════════════════════════════
 // MOVIMIENTOS

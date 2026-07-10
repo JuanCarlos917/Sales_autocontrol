@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
+const { lockRow } = require('../utils/txLocks');
 
 class TransferService {
   async findAll({ startDate, endDate, limit = 50, offset = 0 } = {}) {
@@ -60,15 +61,20 @@ class TransferService {
 
     if (!fromAccount) throw new AppError('Cuenta de origen no encontrada', 404);
     if (!toAccount) throw new AppError('Cuenta de destino no encontrada', 404);
-
-    // Verificar saldo suficiente
-    const currentBalance = await accountService.calculateBalance(fromAccountId);
-    if (currentBalance < amount) {
-      throw new AppError('Saldo insuficiente en la cuenta de origen', 400);
-    }
+    // Auditoría 🟠 #5: cuentas desactivadas no admiten movimientos.
+    if (!fromAccount.isActive) throw new AppError('La cuenta de origen está desactivada; no admite movimientos', 400);
+    if (!toAccount.isActive) throw new AppError('La cuenta de destino está desactivada; no admite movimientos', 400);
 
     // Crear transferencia y movimientos en una transacción atómica
     const result = await prisma.$transaction(async (tx) => {
+      // Saldo verificado DENTRO de la tx con la cuenta origen bloqueada
+      // (anti-TOCTOU): transferencias concurrentes quedan serializadas.
+      await lockRow(tx, 'account', fromAccountId);
+      const currentBalance = await accountService.calculateBalance(fromAccountId, tx);
+      if (currentBalance < amount) {
+        throw new AppError('Saldo insuficiente en la cuenta de origen', 400);
+      }
+
       // Crear el registro de transferencia
       const transfer = await tx.transfer.create({
         data: {

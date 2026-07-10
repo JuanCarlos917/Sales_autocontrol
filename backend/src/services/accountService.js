@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { lockRow } = require('../utils/txLocks');
 
 const ACCOUNT_AUDIT_FIELDS = [
   'id', 'name', 'type', 'currency', 'initialBalance', 'currentBalance',
@@ -21,11 +22,21 @@ class AccountService {
       orderBy: { name: 'asc' },
     });
 
-    // Calcular saldo actual para cada cuenta
-    return Promise.all(accounts.map(async (account) => {
-      const balance = await this.calculateBalance(account.id);
-      return { ...account, currentBalance: balance };
-    }));
+    // Saldos de TODAS las cuentas con un solo groupBy en la DB
+    // (antes: 1 query por cuenta trayendo todas sus filas — 🟡 #9).
+    const sums = await prisma.transaction.groupBy({
+      by: ['accountId', 'type'],
+      _sum: { amount: true },
+      where: { accountId: { in: accounts.map((a) => a.id) } },
+    });
+    const balanceByAccount = new Map();
+    for (const row of sums) {
+      const sign = (row.type === 'INCOME' || row.type === 'TRANSFER_IN') ? 1 : -1;
+      const prev = balanceByAccount.get(row.accountId) || 0;
+      balanceByAccount.set(row.accountId, prev + sign * parseFloat(row._sum.amount || 0));
+    }
+
+    return accounts.map((a) => ({ ...a, currentBalance: balanceByAccount.get(a.id) || 0 }));
   }
 
   async findById(id) {
@@ -40,29 +51,43 @@ class AccountService {
     const { initialBalance, ...accountData } = data;
     const initialBalanceNum = parseFloat(initialBalance) || 0;
 
-    // Crear cuenta con saldo inicial
-    const account = await prisma.account.create({
-      data: {
-        ...accountData,
-        initialBalance: initialBalanceNum,
-      },
-    });
-
-    // Si hay saldo inicial, crear transacción de ingreso
-    if (initialBalanceNum > 0 && userId) {
-      await prisma.transaction.create({
+    // Atómico (🟡 #15): cuenta + transacción de saldo inicial + audit CREATE
+    // en una sola tx — sin ventana en la que el initialBalance quede huérfano
+    // del ledger, y con traza homogénea con UPDATE/DELETE/REVERSE.
+    return prisma.$transaction(async (tx) => {
+      const account = await tx.account.create({
         data: {
-          accountId: account.id,
-          type: 'INCOME',
-          category: 'OTHER_INCOME',
-          amount: initialBalanceNum,
-          description: 'Saldo inicial de cuenta',
-          createdBy: userId,
+          ...accountData,
+          initialBalance: initialBalanceNum,
         },
       });
-    }
 
-    return { ...account, currentBalance: initialBalanceNum };
+      // Si hay saldo inicial, crear transacción de ingreso
+      if (initialBalanceNum > 0 && userId) {
+        await tx.transaction.create({
+          data: {
+            accountId: account.id,
+            type: 'INCOME',
+            category: 'OTHER_INCOME',
+            amount: initialBalanceNum,
+            description: 'Saldo inicial de cuenta',
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'ACCOUNT',
+          entityId: account.id,
+          userId,
+          action: 'CREATE',
+          after: snapshotEntity(account, ACCOUNT_AUDIT_FIELDS),
+        });
+      }
+
+      return { ...account, currentBalance: initialBalanceNum };
+    });
   }
 
   async update(id, data, userId, { reason } = {}) {
@@ -91,35 +116,52 @@ class AccountService {
     });
   }
 
-  async delete(id) {
-    const existing = await prisma.account.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Cuenta no encontrada', 404);
+  async delete(id, userId) {
+    // Atómico y bajo lock (anti-TOCTOU): el check de movimientos y el delete
+    // no dejan ventana; el audit DELETE deja traza del hard-delete (🟠 #6).
+    return prisma.$transaction(async (tx) => {
+      await lockRow(tx, 'account', id);
+      const existing = await tx.account.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Cuenta no encontrada', 404);
 
-    // Verificar que no tenga movimientos
-    const transactionCount = await prisma.transaction.count({ where: { accountId: id } });
-    if (transactionCount > 0) {
-      throw new AppError('No se puede eliminar una cuenta con movimientos', 400);
-    }
+      const transactionCount = await tx.transaction.count({ where: { accountId: id } });
+      if (transactionCount > 0) {
+        throw new AppError('No se puede eliminar una cuenta con movimientos', 400);
+      }
 
-    await prisma.account.delete({ where: { id } });
-    return { deleted: true };
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'ACCOUNT',
+          entityId: id,
+          userId,
+          action: 'DELETE',
+          before: snapshotEntity(existing, ACCOUNT_AUDIT_FIELDS),
+        });
+      }
+
+      await tx.account.delete({ where: { id } });
+      return { deleted: true };
+    });
   }
 
   async reverseAccount(id, reason, userId) {
-    const existing = await prisma.account.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Cuenta no encontrada', 404);
-    if (!existing.isActive) throw new AppError('La cuenta ya está desactivada.', 409);
-
-    const balance = await this.calculateBalance(id);
-    if (Math.abs(balance) > 0.001) {
-      throw new AppError('No se puede desactivar una cuenta con saldo distinto de cero.', 403);
-    }
-    const transactionCount = await prisma.transaction.count({ where: { accountId: id } });
-    if (transactionCount > 0) {
-      throw new AppError('No se puede desactivar una cuenta con movimientos.', 403);
-    }
-
     return prisma.$transaction(async (tx) => {
+      // Validaciones DENTRO de la tx con la cuenta bloqueada (anti-TOCTOU):
+      // desactivar y mover plata quedan serializados por el mismo lock.
+      await lockRow(tx, 'account', id);
+      const existing = await tx.account.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Cuenta no encontrada', 404);
+      if (!existing.isActive) throw new AppError('La cuenta ya está desactivada.', 409);
+
+      const balance = await this.calculateBalance(id, tx);
+      if (Math.abs(balance) > 0.001) {
+        throw new AppError('No se puede desactivar una cuenta con saldo distinto de cero.', 403);
+      }
+      const transactionCount = await tx.transaction.count({ where: { accountId: id } });
+      if (transactionCount > 0) {
+        throw new AppError('No se puede desactivar una cuenta con movimientos.', 403);
+      }
+
       const updated = await tx.account.update({ where: { id }, data: { isActive: false } });
       await writeTreasuryAudit(tx, {
         entityType: 'ACCOUNT',
@@ -134,20 +176,24 @@ class AccountService {
     });
   }
 
-  async calculateBalance(accountId) {
-    const account = await prisma.account.findUnique({ where: { id: accountId } });
+  // `client` permite calcular DENTRO de una $transaction (anti-TOCTOU): con el
+  // lock de la cuenta tomado, la lectura ve el estado serializado.
+  async calculateBalance(accountId, client = prisma) {
+    const account = await client.account.findUnique({ where: { id: accountId } });
     if (!account) return 0;
 
-    const transactions = await prisma.transaction.findMany({
+    // Suma en la DB por tipo (antes: todas las filas al proceso y suma JS — 🟡 #9).
+    // Saldo se calcula solo de transacciones (initialBalance genera su propia transacción).
+    const sums = await client.transaction.groupBy({
+      by: ['type'],
+      _sum: { amount: true },
       where: { accountId },
-      select: { type: true, amount: true },
     });
 
-    // Saldo se calcula solo de transacciones (initialBalance genera su propia transacción)
     let balance = 0;
-    for (const tx of transactions) {
-      const amount = parseFloat(tx.amount);
-      if (tx.type === 'INCOME' || tx.type === 'TRANSFER_IN') {
+    for (const row of sums) {
+      const amount = parseFloat(row._sum.amount || 0);
+      if (row.type === 'INCOME' || row.type === 'TRANSFER_IN') {
         balance += amount;
       } else {
         balance -= amount;
