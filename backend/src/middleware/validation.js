@@ -321,7 +321,7 @@ const accountUpdateSchema = Joi.object({
 // ── ThirdParty Schemas ──
 const thirdPartySchema = Joi.object({
   name: Joi.string().max(200).required().messages({ 'any.required': 'Nombre es requerido' }),
-  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'PARTNER', 'BOTH').required(),
+  type: Joi.string().valid('SUPPLIER', 'CLIENT', 'PARTNER', 'EMPLOYEE', 'BOTH').required(),
   document: Joi.string().max(20).allow('', null),
   phone: Joi.string().max(20).allow('', null),
   email: Joi.string().email().allow('', null),
