@@ -8,6 +8,7 @@ const accountService = require('./accountService');
 const { calcLoanInterest, splitLoanPayment, splitFinalPayment } = require('../utils/financial');
 const { applyReversalInTx, ALREADY_REVERSED } = require('./reversalEngine');
 const { recomputeLoanFromPayments } = require('../utils/loanReversal');
+const { lockRow } = require('../utils/txLocks');
 
 const LOAN_INCLUDE = {
   borrower: { select: { id: true, name: true, type: true } },
@@ -75,12 +76,14 @@ class LoanService {
       throw new AppError('Cuenta origen no encontrada o inactiva', 404);
     }
 
-    const balance = await accountService.calculateBalance(originAccountId);
-    if (balance < principal) {
-      throw new AppError(`Saldo insuficiente en la cuenta origen (saldo: ${balance}, requerido: ${principal})`, 400);
-    }
-
     const result = await prisma.$transaction(async (tx) => {
+      // Saldo verificado DENTRO de la tx con la cuenta bloqueada (anti-TOCTOU).
+      await lockRow(tx, 'account', originAccountId);
+      const balance = await accountService.calculateBalance(originAccountId, tx);
+      if (balance < principal) {
+        throw new AppError(`Saldo insuficiente en la cuenta origen (saldo: ${balance}, requerido: ${principal})`, 400);
+      }
+
       const loan = await tx.loan.create({
         data: {
           borrowerId,
@@ -153,53 +156,57 @@ class LoanService {
       throw new AppError('El pago debe tener monto > 0 (principal o extra)', 400);
     }
 
-    const loan = await prisma.loan.findUnique({
-      where: { id: loanId },
-      include: { installments: { orderBy: { sequence: 'asc' } }, borrower: true },
-    });
-    if (!loan) throw new AppError('Préstamo no encontrado', 404);
-    if (loan.status === 'CANCELLED') throw new AppError('Préstamo cancelado', 400);
-    if (loan.status === 'PAID') throw new AppError('Préstamo ya está totalmente pagado', 400);
-
-    const totalToRepay = parseFloat(loan.principalAmount) + parseFloat(loan.interestAmount);
-    const remaining = totalToRepay - parseFloat(loan.paidAmount);
-    if (principal > remaining + 0.001) {
-      throw new AppError(`El monto principal (${principal}) excede el saldo pendiente (${remaining}). Usá el campo extra para el sobrante.`, 400);
-    }
-
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account || !account.isActive) throw new AppError('Cuenta destino no encontrada o inactiva', 404);
 
-    let remainingPrincipal = principal;
-    const installmentUpdates = [];
-    for (const inst of loan.installments) {
-      if (remainingPrincipal <= 0) break;
-      const owed = parseFloat(inst.plannedAmount) - parseFloat(inst.paidAmount);
-      if (owed <= 0) continue;
-      const apply = Math.min(owed, remainingPrincipal);
-      const newPaid = parseFloat(inst.paidAmount) + apply;
-      installmentUpdates.push({
-        id: inst.id,
-        newPaid,
-        newStatus: recomputeInstallmentStatus(inst.plannedAmount, newPaid),
-      });
-      remainingPrincipal -= apply;
-    }
-
-    const newLoanPaid = parseFloat(loan.paidAmount) + principal;
-    const newLoanExtra = parseFloat(loan.extraReceived) + extra;
-    const newLoanStatus = recomputeLoanStatus(totalToRepay, newLoanPaid);
-
-    // Reparto capital/interés del abono. Si el préstamo queda saldado, el
-    // interés de este pago cubre el remanente acotado al propio abono, de modo
-    // que capitalPortion nunca sea negativo y el split sume exactamente el pago.
-    const interestAmount = parseFloat(loan.interestAmount);
-    const split = newLoanStatus === 'PAID'
-      ? splitFinalPayment(principal, interestAmount - parseFloat(loan.interestReceived))
-      : splitLoanPayment(principal, interestAmount, totalToRepay);
-    const newInterestReceived = parseFloat(loan.interestReceived) + split.interestPortion;
-
     const result = await prisma.$transaction(async (tx) => {
+      // Lectura autoritativa DENTRO de la tx con el préstamo bloqueado
+      // (anti-TOCTOU): dos pagos concurrentes quedan serializados y los
+      // agregados (paidAmount/cuotas) se calculan sobre el estado real.
+      await lockRow(tx, 'loan', loanId);
+      const loan = await tx.loan.findUnique({
+        where: { id: loanId },
+        include: { installments: { orderBy: { sequence: 'asc' } }, borrower: true },
+      });
+      if (!loan) throw new AppError('Préstamo no encontrado', 404);
+      if (loan.status === 'CANCELLED') throw new AppError('Préstamo cancelado', 400);
+      if (loan.status === 'PAID') throw new AppError('Préstamo ya está totalmente pagado', 400);
+
+      const totalToRepay = parseFloat(loan.principalAmount) + parseFloat(loan.interestAmount);
+      const remaining = totalToRepay - parseFloat(loan.paidAmount);
+      if (principal > remaining + 0.001) {
+        throw new AppError(`El monto principal (${principal}) excede el saldo pendiente (${remaining}). Usá el campo extra para el sobrante.`, 400);
+      }
+
+      let remainingPrincipal = principal;
+      const installmentUpdates = [];
+      for (const inst of loan.installments) {
+        if (remainingPrincipal <= 0) break;
+        const owed = parseFloat(inst.plannedAmount) - parseFloat(inst.paidAmount);
+        if (owed <= 0) continue;
+        const apply = Math.min(owed, remainingPrincipal);
+        const newPaid = parseFloat(inst.paidAmount) + apply;
+        installmentUpdates.push({
+          id: inst.id,
+          newPaid,
+          newStatus: recomputeInstallmentStatus(inst.plannedAmount, newPaid),
+        });
+        remainingPrincipal -= apply;
+      }
+
+      const newLoanPaid = parseFloat(loan.paidAmount) + principal;
+      const newLoanExtra = parseFloat(loan.extraReceived) + extra;
+      const newLoanStatus = recomputeLoanStatus(totalToRepay, newLoanPaid);
+
+      // Reparto capital/interés del abono. Si el préstamo queda saldado, el
+      // interés de este pago cubre el remanente acotado al propio abono, de modo
+      // que capitalPortion nunca sea negativo y el split sume exactamente el pago.
+      const interestAmount = parseFloat(loan.interestAmount);
+      const split = newLoanStatus === 'PAID'
+        ? splitFinalPayment(principal, interestAmount - parseFloat(loan.interestReceived))
+        : splitLoanPayment(principal, interestAmount, totalToRepay);
+      const newInterestReceived = parseFloat(loan.interestReceived) + split.interestPortion;
+
       const payment = await tx.loanPayment.create({
         data: {
           loanId,

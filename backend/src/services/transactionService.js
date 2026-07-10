@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { getReversibilityError } = require('../utils/transactionReversal');
 const { applyReversal } = require('./reversalEngine');
+const { lockRow } = require('../utils/txLocks');
 
 // Cada Transaction se devuelve como fila propia (decisión 2026-06-08).
 // Las EXPENSE_ADJUSTMENT y EXPENSE_REVERSAL ya no se ocultan: enlazan al
@@ -76,23 +77,27 @@ class TransactionService {
   }
 
   async createExpense(data, userId) {
-    // Validar saldo suficiente
-    const currentBalance = await accountService.calculateBalance(data.accountId);
-    if (currentBalance < data.amount) {
-      throw new AppError('Saldo insuficiente en la cuenta', 400);
-    }
-
-    return this.createTransaction({ ...data, type: 'EXPENSE' }, userId);
+    // Validar saldo suficiente DENTRO de la transacción, con la cuenta
+    // bloqueada (anti-TOCTOU): dos egresos concurrentes quedan serializados
+    // y el segundo ve el saldo ya descontado por el primero.
+    return prisma.$transaction(async (tx) => {
+      await lockRow(tx, 'account', data.accountId);
+      const currentBalance = await accountService.calculateBalance(data.accountId, tx);
+      if (currentBalance < data.amount) {
+        throw new AppError('Saldo insuficiente en la cuenta', 400);
+      }
+      return this.createTransaction({ ...data, type: 'EXPENSE' }, userId, tx);
+    });
   }
 
-  async createTransaction(data, userId) {
+  async createTransaction(data, userId, client = prisma) {
     const { accountId, type, category, amount, description, reference, date, vehicleId, thirdPartyId, expenseId } = data;
 
     // Verificar que la cuenta existe
-    const account = await prisma.account.findUnique({ where: { id: accountId } });
+    const account = await client.account.findUnique({ where: { id: accountId } });
     if (!account) throw new AppError('Cuenta no encontrada', 404);
 
-    return prisma.transaction.create({
+    return client.transaction.create({
       data: {
         accountId,
         type,

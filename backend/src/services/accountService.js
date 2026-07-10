@@ -134,11 +134,13 @@ class AccountService {
     });
   }
 
-  async calculateBalance(accountId) {
-    const account = await prisma.account.findUnique({ where: { id: accountId } });
+  // `client` permite calcular DENTRO de una $transaction (anti-TOCTOU): con el
+  // lock de la cuenta tomado, la lectura ve el estado serializado.
+  async calculateBalance(accountId, client = prisma) {
+    const account = await client.account.findUnique({ where: { id: accountId } });
     if (!account) return 0;
 
-    const transactions = await prisma.transaction.findMany({
+    const transactions = await client.transaction.findMany({
       where: { accountId },
       select: { type: true, amount: true },
     });

@@ -8,6 +8,7 @@ const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 const { applyReversalInTx, ALREADY_REVERSED } = require('./reversalEngine');
 const { recomputeDebtFromPayments } = require('../utils/debtReversal');
+const { lockRow } = require('../utils/txLocks');
 
 const DEBT_INCLUDE = {
   installments: { orderBy: { sequence: 'asc' } },
@@ -122,44 +123,49 @@ class DebtService {
     const pay = parseFloat(amount);
     if (pay <= 0) throw new AppError('El pago debe ser mayor a 0', 400);
 
-    const debt = await prisma.debt.findUnique({
-      where: { id: debtId },
-      include: { installments: { orderBy: { sequence: 'asc' } } },
-    });
-    if (!debt) throw new AppError('Crédito no encontrado', 404);
-    if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
-    if (debt.status === 'PAID') throw new AppError('Crédito ya está totalmente pagado', 400);
-
-    const remaining = parseFloat(debt.totalAmount) - parseFloat(debt.paidAmount);
-    if (pay > remaining + 0.001) {
-      throw new AppError(`El monto (${pay}) excede el saldo pendiente (${remaining})`, 400);
-    }
-
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account || !account.isActive) throw new AppError('Cuenta origen no encontrada o inactiva', 404);
 
-    const balance = await accountService.calculateBalance(accountId);
-    if (balance < pay) {
-      throw new AppError(`Saldo insuficiente en la cuenta origen (saldo: ${balance}, requerido: ${pay})`, 400);
-    }
-
-    // Imputación FIFO a cuotas pendientes
-    let rest = pay;
-    const installmentUpdates = [];
-    for (const inst of debt.installments) {
-      if (rest <= 0) break;
-      const owed = parseFloat(inst.plannedAmount) - parseFloat(inst.paidAmount);
-      if (owed <= 0) continue;
-      const apply = Math.min(owed, rest);
-      const newPaid = parseFloat(inst.paidAmount) + apply;
-      installmentUpdates.push({ id: inst.id, newPaid, newStatus: recomputeInstallmentStatus(inst.plannedAmount, newPaid) });
-      rest -= apply;
-    }
-
-    const newPaidAmount = parseFloat(debt.paidAmount) + pay;
-    const newStatus = recomputeDebtStatus(debt.totalAmount, newPaidAmount);
-
     const result = await prisma.$transaction(async (tx) => {
+      // Lectura autoritativa DENTRO de la tx (anti-TOCTOU). Orden de locks:
+      // entidad padre primero, cuenta después (ver utils/txLocks).
+      await lockRow(tx, 'debt', debtId);
+      await lockRow(tx, 'account', accountId);
+
+      const debt = await tx.debt.findUnique({
+        where: { id: debtId },
+        include: { installments: { orderBy: { sequence: 'asc' } } },
+      });
+      if (!debt) throw new AppError('Crédito no encontrado', 404);
+      if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
+      if (debt.status === 'PAID') throw new AppError('Crédito ya está totalmente pagado', 400);
+
+      const remaining = parseFloat(debt.totalAmount) - parseFloat(debt.paidAmount);
+      if (pay > remaining + 0.001) {
+        throw new AppError(`El monto (${pay}) excede el saldo pendiente (${remaining})`, 400);
+      }
+
+      const balance = await accountService.calculateBalance(accountId, tx);
+      if (balance < pay) {
+        throw new AppError(`Saldo insuficiente en la cuenta origen (saldo: ${balance}, requerido: ${pay})`, 400);
+      }
+
+      // Imputación FIFO a cuotas pendientes
+      let rest = pay;
+      const installmentUpdates = [];
+      for (const inst of debt.installments) {
+        if (rest <= 0) break;
+        const owed = parseFloat(inst.plannedAmount) - parseFloat(inst.paidAmount);
+        if (owed <= 0) continue;
+        const apply = Math.min(owed, rest);
+        const newPaid = parseFloat(inst.paidAmount) + apply;
+        installmentUpdates.push({ id: inst.id, newPaid, newStatus: recomputeInstallmentStatus(inst.plannedAmount, newPaid) });
+        rest -= apply;
+      }
+
+      const newPaidAmount = parseFloat(debt.paidAmount) + pay;
+      const newStatus = recomputeDebtStatus(debt.totalAmount, newPaidAmount);
+
       const payment = await tx.debtPayment.create({
         data: {
           debtId,
@@ -239,49 +245,52 @@ class DebtService {
   // ni alterar montos. Reclasifica la transacción a DEBT_PAYMENT, la desliga
   // del vehículo, y soft-deletea el Expense de origen (sin reversa de caja).
   async reconcile(debtId, { transactionIds }, userId) {
-    const debt = await prisma.debt.findUnique({
-      where: { id: debtId },
-      include: { installments: { orderBy: { sequence: 'asc' } } },
-    });
-    if (!debt) throw new AppError('Crédito no encontrado', 404);
-    if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
-
-    const txs = await prisma.transaction.findMany({
-      where: { id: { in: transactionIds } },
-      include: { reversedBy: { select: { id: true }, take: 1 } },
-    });
-    if (txs.length !== transactionIds.length) {
-      throw new AppError('Alguna transacción no existe', 404);
-    }
-    for (const t of txs) {
-      if (t.type !== 'EXPENSE') throw new AppError(`La transacción ${t.id} no es un egreso`, 400);
-      if (t.debtId) throw new AppError(`La transacción ${t.id} ya está enlazada a una deuda`, 400);
-      if (NON_RECONCILABLE_CATEGORIES.includes(t.category)) {
-        throw new AppError(`La transacción ${t.id} (${t.category}) no es un egreso reconciliable`, 400);
-      }
-      // Mismas guardas que reconcileCandidates: el filtro de candidatos no basta
-      // porque reconcile() acepta ids arbitrarios.
-      if (t.reversesTransactionId) {
-        throw new AppError(`La transacción ${t.id} es el compensatorio de un reverso; no representa un pago real`, 400);
-      }
-      if (t.reversedBy.length > 0) {
-        throw new AppError(`La transacción ${t.id} fue reversada; su dinero ya volvió a caja`, 400);
-      }
-    }
-
-    const sumLink = txs.reduce((s, t) => s + parseFloat(t.amount), 0);
-    const remaining = parseFloat(debt.totalAmount) - parseFloat(debt.paidAmount);
-    if (sumLink > remaining + 0.001) {
-      throw new AppError(`Lo reconciliado (${sumLink}) excede el saldo pendiente (${remaining})`, 400);
-    }
-
-    // Estado mutable en memoria para imputación FIFO acumulada
-    const instState = debt.installments.map((i) => ({
-      id: i.id, planned: parseFloat(i.plannedAmount), paid: parseFloat(i.paidAmount),
-    }));
-    let runningPaid = parseFloat(debt.paidAmount);
-
     const result = await prisma.$transaction(async (tx) => {
+      // Lectura autoritativa DENTRO de la tx con el crédito bloqueado
+      // (anti-TOCTOU): agregados y validaciones sobre el estado serializado.
+      await lockRow(tx, 'debt', debtId);
+      const debt = await tx.debt.findUnique({
+        where: { id: debtId },
+        include: { installments: { orderBy: { sequence: 'asc' } } },
+      });
+      if (!debt) throw new AppError('Crédito no encontrado', 404);
+      if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
+
+      const txs = await tx.transaction.findMany({
+        where: { id: { in: transactionIds } },
+        include: { reversedBy: { select: { id: true }, take: 1 } },
+      });
+      if (txs.length !== transactionIds.length) {
+        throw new AppError('Alguna transacción no existe', 404);
+      }
+      for (const t of txs) {
+        if (t.type !== 'EXPENSE') throw new AppError(`La transacción ${t.id} no es un egreso`, 400);
+        if (t.debtId) throw new AppError(`La transacción ${t.id} ya está enlazada a una deuda`, 400);
+        if (NON_RECONCILABLE_CATEGORIES.includes(t.category)) {
+          throw new AppError(`La transacción ${t.id} (${t.category}) no es un egreso reconciliable`, 400);
+        }
+        // Mismas guardas que reconcileCandidates: el filtro de candidatos no basta
+        // porque reconcile() acepta ids arbitrarios.
+        if (t.reversesTransactionId) {
+          throw new AppError(`La transacción ${t.id} es el compensatorio de un reverso; no representa un pago real`, 400);
+        }
+        if (t.reversedBy.length > 0) {
+          throw new AppError(`La transacción ${t.id} fue reversada; su dinero ya volvió a caja`, 400);
+        }
+      }
+
+      const sumLink = txs.reduce((s, t) => s + parseFloat(t.amount), 0);
+      const remaining = parseFloat(debt.totalAmount) - parseFloat(debt.paidAmount);
+      if (sumLink > remaining + 0.001) {
+        throw new AppError(`Lo reconciliado (${sumLink}) excede el saldo pendiente (${remaining})`, 400);
+      }
+
+      // Estado mutable en memoria para imputación FIFO acumulada
+      const instState = debt.installments.map((i) => ({
+        id: i.id, planned: parseFloat(i.plannedAmount), paid: parseFloat(i.paidAmount),
+      }));
+      let runningPaid = parseFloat(debt.paidAmount);
+
       for (const t of txs) {
         const amt = parseFloat(t.amount);
 

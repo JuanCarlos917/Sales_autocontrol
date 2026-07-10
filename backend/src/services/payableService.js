@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { lockRow } = require('../utils/txLocks');
 
 const PAYABLE_AUDIT_FIELDS = [
   'id', 'type', 'vehicleId', 'thirdPartyId', 'totalAmount', 'paidAmount',
@@ -135,43 +136,9 @@ const create = async (data, userId) => {
  */
 const addPayment = async (payableId, paymentData, userId) => {
   const { accountId, amount, date, description } = paymentData;
-
-  // Obtener la CxC/CxP
-  const payable = await prisma.payable.findUnique({
-    where: { id: payableId },
-    include: { vehicle: true, thirdParty: true }
-  });
-
-  if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
-  }
-
-  if (payable.status === 'PAID') {
-    throw new Error('Esta cuenta ya esta completamente pagada');
-  }
-
-  if (payable.status === 'CANCELLED') {
-    throw new Error('Esta cuenta fue cancelada');
-  }
-
   const paymentAmount = parseFloat(amount);
-  const currentPaid = parseFloat(payable.paidAmount);
-  const total = parseFloat(payable.totalAmount);
-  const remaining = total - currentPaid;
 
-  if (paymentAmount > remaining) {
-    throw new Error(`El monto excede el saldo pendiente de ${remaining}`);
-  }
-
-  const newPaidAmount = currentPaid + paymentAmount;
-  const newStatus = newPaidAmount >= total ? 'PAID' : 'PARTIAL';
-
-  // Determinar tipo y categoria de transaccion
-  const isReceivable = payable.type === 'RECEIVABLE';
-
-  // Guardas de cuenta (auditoría 🟠 #2): debe existir, estar activa y, para
-  // egresos (CxP/comisiones), tener saldo suficiente — mismo contrato que
-  // transactionService.createExpense.
+  // Guardas de cuenta (auditoría 🟠 #2): debe existir y estar activa.
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) {
     throw new Error('Cuenta no encontrada');
@@ -179,24 +146,62 @@ const addPayment = async (payableId, paymentData, userId) => {
   if (!account.isActive) {
     throw new Error('La cuenta está desactivada; no admite movimientos');
   }
-  if (!isReceivable) {
-    const balance = await accountService.calculateBalance(accountId);
-    if (balance < paymentAmount) {
-      throw new Error(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`);
-    }
-  }
-  const isCommission = payable.type === 'COMMISSION';
-  const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-  // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
-  // es un egreso operativo por comisión al vendedor.
-  const transactionCategory = isReceivable
-    ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
-    : isCommission
-      ? 'COMMISSION'
-      : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
-  // Transaccion atomica
+  // Transaccion atomica con lectura autoritativa (anti-TOCTOU, auditoría 🟠 #3/#4):
+  // el payable y el saldo se leen DENTRO de la tx con sus filas bloqueadas —
+  // dos pagos concurrentes quedan serializados. Orden de locks: payable → cuenta.
   const result = await prisma.$transaction(async (tx) => {
+    await lockRow(tx, 'payable', payableId);
+    await lockRow(tx, 'account', accountId);
+
+    const payable = await tx.payable.findUnique({
+      where: { id: payableId },
+      include: { vehicle: true, thirdParty: true }
+    });
+
+    if (!payable) {
+      throw new Error('Cuenta por cobrar/pagar no encontrada');
+    }
+
+    if (payable.status === 'PAID') {
+      throw new Error('Esta cuenta ya esta completamente pagada');
+    }
+
+    if (payable.status === 'CANCELLED') {
+      throw new Error('Esta cuenta fue cancelada');
+    }
+
+    const currentPaid = parseFloat(payable.paidAmount);
+    const total = parseFloat(payable.totalAmount);
+    const remaining = total - currentPaid;
+
+    if (paymentAmount > remaining) {
+      throw new Error(`El monto excede el saldo pendiente de ${remaining}`);
+    }
+
+    const newPaidAmount = currentPaid + paymentAmount;
+    const newStatus = newPaidAmount >= total ? 'PAID' : 'PARTIAL';
+
+    // Determinar tipo y categoria de transaccion
+    const isReceivable = payable.type === 'RECEIVABLE';
+
+    // Egresos (CxP/comisiones): saldo suficiente, leído con la cuenta bloqueada.
+    if (!isReceivable) {
+      const balance = await accountService.calculateBalance(accountId, tx);
+      if (balance < paymentAmount) {
+        throw new Error(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`);
+      }
+    }
+    const isCommission = payable.type === 'COMMISSION';
+    const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
+    // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
+    // es un egreso operativo por comisión al vendedor.
+    const transactionCategory = isReceivable
+      ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
+      : isCommission
+        ? 'COMMISSION'
+        : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+
     // 1. Crear la transaccion de tesoreria
     const transaction = await tx.transaction.create({
       data: {
