@@ -300,13 +300,18 @@ const settingsSchema = Joi.object({
 // TESORERÍA SCHEMAS
 // ══════════════════════════════════════════════════════════════
 
+// COP no maneja decimales (regla de negocio) y Decimal(15,2) desborda con
+// >13 dígitos (auditoría 🟡 #8/#19): todo monto de tesorería es entero acotado.
+const MAX_COP_AMOUNT = 9_999_999_999_999;
+const copAmount = () => Joi.number().integer().max(MAX_COP_AMOUNT);
+
 // ── Account Schemas ──
 const accountSchema = Joi.object({
   name: Joi.string().max(100).required().messages({ 'any.required': 'Nombre es requerido' }),
   type: Joi.string().valid('CASH', 'BANK').required(),
   bank: Joi.string().max(100).allow('', null),
   accountNumber: Joi.string().max(50).allow('', null),
-  initialBalance: Joi.number().min(0).default(0),
+  initialBalance: copAmount().min(0).default(0),
   isActive: Joi.boolean().default(true),
 });
 
@@ -333,7 +338,7 @@ const thirdPartySchema = Joi.object({
 const incomeSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
   category: Joi.string().valid('VEHICLE_SALE', 'VEHICLE_SALE_PARTIAL', 'COMMISSION', 'CAPITAL_CONTRIBUTION', 'OTHER_INCOME').required(),
-  amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+  amount: copAmount().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   description: Joi.string().max(500).allow('', null),
   reference: Joi.string().max(100).allow('', null),
   date: Joi.date().allow(null),
@@ -344,7 +349,7 @@ const incomeSchema = Joi.object({
 const expenseTreasurySchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
   category: Joi.string().valid('VEHICLE_PURCHASE', 'VEHICLE_EXPENSE', 'FIXED_EXPENSE', 'OPERATING_EXPENSE', 'OTHER_EXPENSE').required(),
-  amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+  amount: copAmount().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   description: Joi.string().max(500).allow('', null),
   reference: Joi.string().max(100).allow('', null),
   date: Joi.date().allow(null),
@@ -364,7 +369,7 @@ const transactionUpdateSchema = Joi.object({
 const transferSchema = Joi.object({
   fromAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
   toAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta destino es requerida' }),
-  amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+  amount: copAmount().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   description: Joi.string().max(500).allow('', null),
   date: Joi.date().allow(null),
 });
@@ -372,7 +377,7 @@ const transferSchema = Joi.object({
 // ── CashCount Schema ──
 const cashCountSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
-  countedBalance: Joi.number().min(0).required().messages({ 'any.required': 'Saldo contado es requerido' }),
+  countedBalance: copAmount().min(0).required().messages({ 'any.required': 'Saldo contado es requerido' }),
   notes: Joi.string().max(1000).allow('', null),
   date: Joi.date().allow(null),
 });
@@ -384,7 +389,7 @@ const cashCountSchema = Joi.object({
 // ── Payable Schema (CxC/CxP) ──
 const payableSchema = Joi.object({
   type: Joi.string().valid('RECEIVABLE', 'PAYABLE').required().messages({ 'any.required': 'Tipo es requerido' }),
-  totalAmount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+  totalAmount: copAmount().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   dueDate: Joi.date().allow(null),
   description: Joi.string().max(500).allow('', null),
   vehicleId: Joi.string().allow(null),
@@ -395,7 +400,7 @@ const payableSchema = Joi.object({
 // ── PayablePayment Schema ──
 const payablePaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta es requerida' }),
-  amount: Joi.number().positive().required().messages({ 'any.required': 'Monto es requerido' }),
+  amount: copAmount().positive().required().messages({ 'any.required': 'Monto es requerido' }),
   date: Joi.date().allow(null),
   description: Joi.string().max(500).allow('', null),
 });
@@ -404,13 +409,13 @@ const payablePaymentSchema = Joi.object({
 const loanInstallmentSchema = Joi.object({
   sequence: Joi.number().integer().positive().required(),
   dueDate: Joi.date().required(),
-  plannedAmount: Joi.number().integer().positive().required(),
+  plannedAmount: copAmount().positive().required(),
 });
 
 const loanCreateSchema = Joi.object({
   borrowerId: Joi.string().required().messages({ 'any.required': 'Deudor es requerido' }),
   originAccountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
-  principalAmount: Joi.number().integer().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
+  principalAmount: copAmount().positive().required().messages({ 'any.required': 'Monto del préstamo es requerido' }),
   interestRate: Joi.number().min(0).max(100).default(0),
   description: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(2000).allow('', null),
@@ -440,8 +445,8 @@ const commissionConfigSchema = Joi.object({
 
 const loanPaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta destino es requerida' }),
-  principalAmount: Joi.number().integer().min(0).required(),
-  extraAmount: Joi.number().integer().min(0).default(0),
+  principalAmount: copAmount().min(0).required(),
+  extraAmount: copAmount().min(0).default(0),
   date: Joi.date().allow(null),
   notes: Joi.string().max(500).allow('', null),
 }).custom((value, helpers) => {
@@ -455,7 +460,7 @@ const loanPaymentSchema = Joi.object({
 const debtInstallmentSchema = Joi.object({
   sequence: Joi.number().integer().positive().required(),
   dueDate: Joi.date().required(),
-  plannedAmount: Joi.number().integer().positive().required(),
+  plannedAmount: copAmount().positive().required(),
 });
 
 const debtCreateSchema = Joi.object({
@@ -469,7 +474,7 @@ const debtCreateSchema = Joi.object({
 
 const debtPaymentSchema = Joi.object({
   accountId: Joi.string().required().messages({ 'any.required': 'Cuenta origen es requerida' }),
-  amount: Joi.number().integer().positive().required(),
+  amount: copAmount().positive().required(),
   notes: Joi.string().max(500).allow('', null),
 });
 

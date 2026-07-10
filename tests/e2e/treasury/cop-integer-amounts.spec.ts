@@ -50,6 +50,8 @@ test.describe('Tesorería — montos COP enteros y acotados', () => {
     await loginAsAdmin(page);
     await page.goto('/treasury/loans');
     await page.getByTestId('loans-create-button').click();
+    await page.getByPlaceholder(/Buscar o crear/).click();
+    await page.getByRole('button', { name: /Empleado Test/ }).first().click();
     await page.getByTestId('loan-form-account').selectOption(TEST_SEED_IDS.accountCash);
     await page.getByTestId('loan-form-principal').fill('1000000');
     await page.getByTestId('loan-form-installments-count').fill('3'); // 1M/3 no es entero

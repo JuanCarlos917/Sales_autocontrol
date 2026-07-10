@@ -22,14 +22,16 @@ function addInterval(date, freq) {
 
 function generateInstallments(principal, count, frequencyId, firstDate) {
   const freq = FREQUENCIES.find((f) => f.id === frequencyId) || FREQUENCIES[0];
-  const total = parseFloat(principal) || 0;
+  const total = Math.round(parseFloat(principal) || 0);
   const n = Math.max(1, parseInt(count, 10) || 1);
-  const base = Math.floor((total / n) * 100) / 100;
-  const remainder = +(total - base * n).toFixed(2);
+  // COP entero: cuotas base enteras y el residuo va a la última — el backend
+  // exige plannedAmount integer (auditoría 🟡 #12).
+  const base = Math.floor(total / n);
+  const remainder = total - base * n;
   const out = [];
   let date = firstDate || getLocalDateString();
   for (let i = 0; i < n; i++) {
-    const planned = i === n - 1 ? +(base + remainder).toFixed(2) : base;
+    const planned = i === n - 1 ? base + remainder : base;
     out.push({ sequence: i + 1, dueDate: date, plannedAmount: planned });
     date = addInterval(date, freq);
   }
