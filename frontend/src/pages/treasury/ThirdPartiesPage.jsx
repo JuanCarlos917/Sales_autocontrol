@@ -10,6 +10,7 @@ const THIRD_PARTY_TYPES = [
   { id: 'CLIENT', label: 'Cliente', color: 'text-green-400 bg-green-500/20' },
   { id: 'SUPPLIER', label: 'Proveedor', color: 'text-blue-400 bg-blue-500/20' },
   { id: 'PARTNER', label: 'Socio', color: 'text-purple-400 bg-purple-500/20' },
+  { id: 'EMPLOYEE', label: 'Empleado', color: 'text-amber-400 bg-amber-500/20' },
 ];
 
 export default function ThirdPartiesPage() {
