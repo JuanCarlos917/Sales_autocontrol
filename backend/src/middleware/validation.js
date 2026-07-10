@@ -361,7 +361,7 @@ const expenseTreasurySchema = Joi.object({
 const transactionUpdateSchema = Joi.object({
   description: Joi.string().max(500).allow('', null),
   reference: Joi.string().max(100).allow('', null),
-  date: Joi.date(),
+  // `date` fue removida: la fecha de contabilización es inmutable (🟡 #10).
   thirdPartyId: Joi.string().allow(null),
 });
 

@@ -23,8 +23,20 @@ const TRANSACTION_INCLUDE = {
   payablePayment: { select: { id: true } },
 };
 
+// Tope de paginación (auditoría 🟡 #14): un limit arbitrario no puede volcar
+// toda la tabla; NaN/valores basura caen al default.
+const MAX_PAGE_SIZE = 500;
+const DEFAULT_PAGE_SIZE = 100;
+
+function clampPagination(limit, offset) {
+  const l = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
+  const o = Number.isFinite(offset) ? Math.max(Math.trunc(offset), 0) : 0;
+  return { limit: l, offset: o };
+}
+
 class TransactionService {
-  async findAll({ accountId, vehicleId, thirdPartyId, type, category, startDate, endDate, limit = 100, offset = 0 } = {}) {
+  async findAll({ accountId, vehicleId, thirdPartyId, type, category, startDate, endDate, limit, offset } = {}) {
+    const page = clampPagination(limit, offset);
     const where = {};
     if (accountId) where.accountId = accountId;
     if (vehicleId) where.vehicleId = vehicleId;
@@ -45,13 +57,13 @@ class TransactionService {
         // Orden por hora real de registro (contabilización): los movimientos quedan en el
         // orden en que se hicieron, los más recientes arriba, sin agrupar egresos con egresos.
         orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
+        take: page.limit,
+        skip: page.offset,
       }),
       prisma.transaction.count({ where }),
     ]);
 
-    return { transactions, total, limit, offset };
+    return { transactions, total, limit: page.limit, offset: page.offset };
   }
 
   async findById(id) {
@@ -132,12 +144,13 @@ class TransactionService {
       throw new AppError('Este movimiento proviene de un gasto. Editá el gasto en /expenses.', 403);
     }
 
-    // No permitir cambiar tipo o cuenta después de creado
-    const allowedFields = ['description', 'reference', 'date', 'thirdPartyId'];
+    // No permitir cambiar tipo, cuenta NI fecha después de creado (la fecha
+    // es el instante de contabilización — inmutable, auditoría 🟡 #10).
+    const allowedFields = ['description', 'reference', 'thirdPartyId'];
     const updateData = {};
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
-        updateData[field] = field === 'date' ? new Date(data[field]) : data[field];
+        updateData[field] = data[field];
       }
     }
 
@@ -187,9 +200,11 @@ class TransactionService {
     const where = {};
     if (accountId) where.accountId = accountId;
     if (startDate || endDate) {
-      where.date = {};
-      if (startDate) where.date.gte = new Date(startDate);
-      if (endDate) where.date.lte = new Date(endDate);
+      // Misma semántica que findAll: se filtra por hora real de registro
+      // (contabilización) — auditoría 🟡 #10.
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
     const transactions = await prisma.transaction.findMany({
@@ -203,9 +218,11 @@ class TransactionService {
 
     for (const tx of transactions) {
       const amount = parseFloat(tx.amount);
-      if (tx.type === 'INCOME' || tx.type === 'TRANSFER_IN') {
+      // Las transferencias internas NO son ingreso ni egreso real: mueven
+      // plata entre cuentas propias (auditoría 🟡 #10).
+      if (tx.type === 'INCOME') {
         totalIncome += amount;
-      } else {
+      } else if (tx.type === 'EXPENSE') {
         totalExpense += amount;
       }
 

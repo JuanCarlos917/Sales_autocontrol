@@ -21,6 +21,7 @@ const list = async (req, res, next) => {
       where: { entityType, entityId },
       orderBy: { createdAt: 'desc' },
       include: { user: { select: { id: true, name: true, email: true } } },
+      take: 200, // tope defensivo (🟡 #14)
     });
     res.json(entries);
   } catch (err) { next(err); }
