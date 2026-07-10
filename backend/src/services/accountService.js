@@ -92,18 +92,32 @@ class AccountService {
     });
   }
 
-  async delete(id) {
-    const existing = await prisma.account.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Cuenta no encontrada', 404);
+  async delete(id, userId) {
+    // Atómico y bajo lock (anti-TOCTOU): el check de movimientos y el delete
+    // no dejan ventana; el audit DELETE deja traza del hard-delete (🟠 #6).
+    return prisma.$transaction(async (tx) => {
+      await lockRow(tx, 'account', id);
+      const existing = await tx.account.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Cuenta no encontrada', 404);
 
-    // Verificar que no tenga movimientos
-    const transactionCount = await prisma.transaction.count({ where: { accountId: id } });
-    if (transactionCount > 0) {
-      throw new AppError('No se puede eliminar una cuenta con movimientos', 400);
-    }
+      const transactionCount = await tx.transaction.count({ where: { accountId: id } });
+      if (transactionCount > 0) {
+        throw new AppError('No se puede eliminar una cuenta con movimientos', 400);
+      }
 
-    await prisma.account.delete({ where: { id } });
-    return { deleted: true };
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'ACCOUNT',
+          entityId: id,
+          userId,
+          action: 'DELETE',
+          before: snapshotEntity(existing, ACCOUNT_AUDIT_FIELDS),
+        });
+      }
+
+      await tx.account.delete({ where: { id } });
+      return { deleted: true };
+    });
   }
 
   async reverseAccount(id, reason, userId) {

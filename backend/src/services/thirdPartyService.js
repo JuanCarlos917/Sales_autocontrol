@@ -44,14 +44,17 @@ class ThirdPartyService {
     const existing = await prisma.thirdParty.findUnique({ where: { id } });
     if (!existing) throw new AppError('Tercero no encontrado', 404);
 
-    // Verificar que no tenga movimientos asociados
-    const transactionCount = await prisma.transaction.count({ where: { thirdPartyId: id } });
-    if (transactionCount > 0) {
-      throw new AppError('No se puede eliminar un tercero con movimientos asociados', 400);
-    }
-
-    await prisma.thirdParty.delete({ where: { id } });
-    return { deleted: true };
+    // Check + delete atómicos (sin ventana TOCTOU). Nota: el audit polimórfico
+    // de tesorería no tiene entidad THIRD_PARTY en su enum (cambio de schema
+    // pendiente de decisión del usuario); el gate ADMIN vive en la ruta.
+    return prisma.$transaction(async (tx) => {
+      const transactionCount = await tx.transaction.count({ where: { thirdPartyId: id } });
+      if (transactionCount > 0) {
+        throw new AppError('No se puede eliminar un tercero con movimientos asociados', 400);
+      }
+      await tx.thirdParty.delete({ where: { id } });
+      return { deleted: true };
+    });
   }
 
   async getStatement(id, { startDate, endDate } = {}) {
