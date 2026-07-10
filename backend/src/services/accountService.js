@@ -22,11 +22,21 @@ class AccountService {
       orderBy: { name: 'asc' },
     });
 
-    // Calcular saldo actual para cada cuenta
-    return Promise.all(accounts.map(async (account) => {
-      const balance = await this.calculateBalance(account.id);
-      return { ...account, currentBalance: balance };
-    }));
+    // Saldos de TODAS las cuentas con un solo groupBy en la DB
+    // (antes: 1 query por cuenta trayendo todas sus filas — 🟡 #9).
+    const sums = await prisma.transaction.groupBy({
+      by: ['accountId', 'type'],
+      _sum: { amount: true },
+      where: { accountId: { in: accounts.map((a) => a.id) } },
+    });
+    const balanceByAccount = new Map();
+    for (const row of sums) {
+      const sign = (row.type === 'INCOME' || row.type === 'TRANSFER_IN') ? 1 : -1;
+      const prev = balanceByAccount.get(row.accountId) || 0;
+      balanceByAccount.set(row.accountId, prev + sign * parseFloat(row._sum.amount || 0));
+    }
+
+    return accounts.map((a) => ({ ...a, currentBalance: balanceByAccount.get(a.id) || 0 }));
   }
 
   async findById(id) {
@@ -158,16 +168,18 @@ class AccountService {
     const account = await client.account.findUnique({ where: { id: accountId } });
     if (!account) return 0;
 
-    const transactions = await client.transaction.findMany({
+    // Suma en la DB por tipo (antes: todas las filas al proceso y suma JS — 🟡 #9).
+    // Saldo se calcula solo de transacciones (initialBalance genera su propia transacción).
+    const sums = await client.transaction.groupBy({
+      by: ['type'],
+      _sum: { amount: true },
       where: { accountId },
-      select: { type: true, amount: true },
     });
 
-    // Saldo se calcula solo de transacciones (initialBalance genera su propia transacción)
     let balance = 0;
-    for (const tx of transactions) {
-      const amount = parseFloat(tx.amount);
-      if (tx.type === 'INCOME' || tx.type === 'TRANSFER_IN') {
+    for (const row of sums) {
+      const amount = parseFloat(row._sum.amount || 0);
+      if (row.type === 'INCOME' || row.type === 'TRANSFER_IN') {
         balance += amount;
       } else {
         balance -= amount;
