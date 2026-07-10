@@ -60,6 +60,25 @@ const registerSale = async (vehicleId, saleData, userId) => {
   }
 
   const salePriceNum = parseFloat(salePrice);
+
+  // Guard de sobre-recibido (auditoría 🟠 #7): lo recibido (efectivo/transferencia
+  // + cruce) no puede superar el precio de venta — el excedente entraría a caja
+  // sin respaldo contable.
+  const intendedPayments = (Array.isArray(cashPayments) && cashPayments.length > 0)
+    ? cashPayments
+    : (cashPayment ? [cashPayment] : []);
+  const intendedCash = intendedPayments.reduce(
+    (s, p) => (p?.accountId && parseFloat(p.amount) > 0 ? s + parseFloat(p.amount) : s),
+    0,
+  );
+  const intendedTradeIn = tradeIn?.value ? parseFloat(tradeIn.value) : 0;
+  if (intendedCash + intendedTradeIn > salePriceNum + 0.001) {
+    throw new AppError(
+      `Lo recibido (${intendedCash + intendedTradeIn}) supera el precio de venta (${salePriceNum})`,
+      400,
+    );
+  }
+
   let totalReceived = 0;
   let pendingAmount = salePriceNum;
 
