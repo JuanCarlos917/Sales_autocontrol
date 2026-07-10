@@ -4,6 +4,7 @@
 
 const prisma = require('../config/database');
 const accountService = require('./accountService');
+const { dayKeyBogota } = require('../utils/dates');
 
 class TreasuryReportService {
   /**
@@ -99,7 +100,9 @@ class TreasuryReportService {
     for (let i = 0; i < daysDiff; i++) {
       const date = new Date(start);
       date.setDate(date.getDate() + i);
-      const dateKey = date.toISOString().split('T')[0];
+      // Bucket por día en zona Bogotá (🟡 #13): la noche colombiana pertenece
+      // a SU día, no al siguiente UTC.
+      const dateKey = dayKeyBogota(date);
       const dayOfWeek = date.getDay();
 
       daily.push({
@@ -110,9 +113,9 @@ class TreasuryReportService {
       });
     }
 
-    // Poblar con transacciones
+    // Poblar con transacciones (misma clave de día Bogotá que la estructura)
     for (const tx of transactions) {
-      const dateKey = new Date(tx.date).toISOString().split('T')[0];
+      const dateKey = dayKeyBogota(tx.date);
       const dayEntry = daily.find(d => d.date === dateKey);
       if (dayEntry) {
         const amount = parseFloat(tx.amount);
