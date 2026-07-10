@@ -21,7 +21,12 @@ const DEBT_SNAPSHOT_FIELDS = ['name', 'lender', 'totalAmount', 'paidAmount', 'st
 
 // Categorías de egreso que NO representan un gasto real reconciliable a una deuda
 // (correcciones de ledger, desembolsos de préstamo, o ya enlazados a un crédito).
-const NON_RECONCILABLE_CATEGORIES = ['EXPENSE_REVERSAL', 'EXPENSE_ADJUSTMENT', 'DEBT_PAYMENT', 'LOAN_DISBURSEMENT'];
+// Los compensatorios de reversos (MANUAL/LOAN/DEBT_REVERSAL) tampoco: son
+// correcciones, no plata que haya pagado nada.
+const NON_RECONCILABLE_CATEGORIES = [
+  'EXPENSE_REVERSAL', 'EXPENSE_ADJUSTMENT', 'DEBT_PAYMENT', 'LOAN_DISBURSEMENT',
+  'MANUAL_REVERSAL', 'LOAN_REVERSAL', 'DEBT_REVERSAL',
+];
 
 function recomputeDebtStatus(total, paid) {
   const t = parseFloat(total);
@@ -208,7 +213,15 @@ class DebtService {
   // Egresos históricos candidatos a enlazar: transacciones EXPENSE
   // que no estén ya enlazadas a una deuda. Filtro opcional por texto.
   async reconcileCandidates({ search } = {}) {
-    const where = { type: 'EXPENSE', debtId: null, category: { notIn: NON_RECONCILABLE_CATEGORIES } };
+    const where = {
+      type: 'EXPENSE',
+      debtId: null,
+      category: { notIn: NON_RECONCILABLE_CATEGORIES },
+      // Guardas anti-"dinero fantasma": ni compensatorios de un reverso,
+      // ni egresos cuya plata ya volvió a caja por haber sido reversados.
+      reversesTransactionId: null,
+      reversedBy: { none: {} },
+    };
     if (search) where.description = { contains: search, mode: 'insensitive' };
     return prisma.transaction.findMany({
       where,
@@ -233,7 +246,10 @@ class DebtService {
     if (!debt) throw new AppError('Crédito no encontrado', 404);
     if (debt.status === 'CANCELLED') throw new AppError('Crédito cancelado', 400);
 
-    const txs = await prisma.transaction.findMany({ where: { id: { in: transactionIds } } });
+    const txs = await prisma.transaction.findMany({
+      where: { id: { in: transactionIds } },
+      include: { reversedBy: { select: { id: true }, take: 1 } },
+    });
     if (txs.length !== transactionIds.length) {
       throw new AppError('Alguna transacción no existe', 404);
     }
@@ -242,6 +258,14 @@ class DebtService {
       if (t.debtId) throw new AppError(`La transacción ${t.id} ya está enlazada a una deuda`, 400);
       if (NON_RECONCILABLE_CATEGORIES.includes(t.category)) {
         throw new AppError(`La transacción ${t.id} (${t.category}) no es un egreso reconciliable`, 400);
+      }
+      // Mismas guardas que reconcileCandidates: el filtro de candidatos no basta
+      // porque reconcile() acepta ids arbitrarios.
+      if (t.reversesTransactionId) {
+        throw new AppError(`La transacción ${t.id} es el compensatorio de un reverso; no representa un pago real`, 400);
+      }
+      if (t.reversedBy.length > 0) {
+        throw new AppError(`La transacción ${t.id} fue reversada; su dinero ya volvió a caja`, 400);
       }
     }
 
