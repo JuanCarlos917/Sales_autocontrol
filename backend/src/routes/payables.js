@@ -13,36 +13,30 @@ const { validate, schemas } = require('../middleware/validation');
  * GET /api/payables/summary
  * Obtener resumen de CxC/CxP
  */
-router.get('/summary', async (req, res) => {
+router.get('/summary', async (req, res, next) => {
   try {
     const summary = await payableService.getSummary();
     res.json(summary);
-  } catch (error) {
-    console.error('Error getting payables summary:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * GET /api/payables/upcoming
  * Obtener CxC/CxP proximas a vencer
  */
-router.get('/upcoming', async (req, res) => {
+router.get('/upcoming', async (req, res, next) => {
   try {
     const days = parseInt(req.query.days) || 7;
     const upcoming = await payableService.getUpcoming(days);
     res.json(upcoming);
-  } catch (error) {
-    console.error('Error getting upcoming payables:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * GET /api/payables
  * Listar todas las CxC/CxP con filtros
  */
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const filters = {
       type: req.query.type,
@@ -53,69 +47,51 @@ router.get('/', async (req, res) => {
     };
     const payables = await payableService.getAll(filters);
     res.json(payables);
-  } catch (error) {
-    console.error('Error listing payables:', error);
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * GET /api/payables/:id
  * Obtener detalle de una CxC/CxP
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const payable = await payableService.getById(req.params.id);
     res.json(payable);
-  } catch (error) {
-    console.error('Error getting payable:', error);
-    const status = error.message.includes('no encontrada') ? 404 : 500;
-    res.status(status).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * POST /api/payables
  * Crear una nueva CxC/CxP
  */
-router.post('/', validate(schemas.payable), async (req, res) => {
+router.post('/', validate(schemas.payable), async (req, res, next) => {
   try {
     const payable = await payableService.create(req.body, req.user.id);
     res.status(201).json(payable);
-  } catch (error) {
-    console.error('Error creating payable:', error);
-    res.status(400).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * POST /api/payables/:id/payments
  * Registrar un pago a una CxC/CxP
  */
-router.post('/:id/payments', validate(schemas.payablePayment), async (req, res) => {
+router.post('/:id/payments', validate(schemas.payablePayment), async (req, res, next) => {
   try {
     const result = await payableService.addPayment(req.params.id, req.body, req.user.id);
     res.status(201).json(result);
-  } catch (error) {
-    console.error('Error adding payment:', error);
-    const status = error.message.includes('no encontrada') ? 404 : 400;
-    res.status(status).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 /**
  * POST /api/payables/:id/cancel
  * Cancelar una CxC/CxP
  */
-router.post('/:id/cancel', validate(schemas.treasuryDestructive), async (req, res) => {
+router.post('/:id/cancel', validate(schemas.treasuryDestructive), async (req, res, next) => {
   try {
     const payable = await payableService.cancel(req.params.id, req.user.id, { reason: req.body.reason });
     res.json(payable);
-  } catch (error) {
-    console.error('Error cancelling payable:', error);
-    const status = error.message.includes('no encontrada') ? 404 : 400;
-    res.status(status).json({ error: error.message });
-  }
+  } catch (error) { next(error); }
 });
 
 module.exports = router;

@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const prisma = require('../config/database');
+const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 const { lockRow } = require('../utils/txLocks');
@@ -96,7 +97,7 @@ const getById = async (id) => {
   });
 
   if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
+    throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
   }
 
   return payable;
@@ -141,10 +142,10 @@ const addPayment = async (payableId, paymentData, userId) => {
   // Guardas de cuenta (auditoría 🟠 #2): debe existir y estar activa.
   const account = await prisma.account.findUnique({ where: { id: accountId } });
   if (!account) {
-    throw new Error('Cuenta no encontrada');
+    throw new AppError('Cuenta no encontrada', 404);
   }
   if (!account.isActive) {
-    throw new Error('La cuenta está desactivada; no admite movimientos');
+    throw new AppError('La cuenta está desactivada; no admite movimientos', 400);
   }
 
   // Transaccion atomica con lectura autoritativa (anti-TOCTOU, auditoría 🟠 #3/#4):
@@ -160,15 +161,15 @@ const addPayment = async (payableId, paymentData, userId) => {
     });
 
     if (!payable) {
-      throw new Error('Cuenta por cobrar/pagar no encontrada');
+      throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
     }
 
     if (payable.status === 'PAID') {
-      throw new Error('Esta cuenta ya esta completamente pagada');
+      throw new AppError('Esta cuenta ya esta completamente pagada', 400);
     }
 
     if (payable.status === 'CANCELLED') {
-      throw new Error('Esta cuenta fue cancelada');
+      throw new AppError('Esta cuenta fue cancelada', 400);
     }
 
     const currentPaid = parseFloat(payable.paidAmount);
@@ -176,7 +177,7 @@ const addPayment = async (payableId, paymentData, userId) => {
     const remaining = total - currentPaid;
 
     if (paymentAmount > remaining) {
-      throw new Error(`El monto excede el saldo pendiente de ${remaining}`);
+      throw new AppError(`El monto excede el saldo pendiente de ${remaining}`, 400);
     }
 
     const newPaidAmount = currentPaid + paymentAmount;
@@ -189,7 +190,7 @@ const addPayment = async (payableId, paymentData, userId) => {
     if (!isReceivable) {
       const balance = await accountService.calculateBalance(accountId, tx);
       if (balance < paymentAmount) {
-        throw new Error(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`);
+        throw new AppError(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`, 400);
       }
     }
     const isCommission = payable.type === 'COMMISSION';
@@ -272,21 +273,21 @@ const addPayment = async (payableId, paymentData, userId) => {
  */
 const cancel = async (id, userId, { reason } = {}) => {
   if (!reason || reason.trim().length < 10) {
-    throw new Error('Debe indicar un motivo (mín 10 caracteres) para cancelar esta cuenta');
+    throw new AppError('Debe indicar un motivo (mín 10 caracteres) para cancelar esta cuenta', 400);
   }
 
   const payable = await prisma.payable.findUnique({ where: { id } });
 
   if (!payable) {
-    throw new Error('Cuenta por cobrar/pagar no encontrada');
+    throw new AppError('Cuenta por cobrar/pagar no encontrada', 404);
   }
 
   if (payable.status === 'PAID') {
-    throw new Error('No se puede cancelar una cuenta ya pagada');
+    throw new AppError('No se puede cancelar una cuenta ya pagada', 400);
   }
 
   if (parseFloat(payable.paidAmount) > 0) {
-    throw new Error('No se puede cancelar una cuenta con pagos parciales');
+    throw new AppError('No se puede cancelar una cuenta con pagos parciales', 400);
   }
 
   const updated = await prisma.$transaction(async (tx) => {
