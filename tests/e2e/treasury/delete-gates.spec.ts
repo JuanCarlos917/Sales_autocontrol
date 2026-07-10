@@ -74,3 +74,22 @@ test.describe('Tesorería — hard-deletes con gate ADMIN y auditoría', () => {
     expect(entries.some((e) => e.action === 'DELETE')).toBe(true);
   });
 });
+
+// (Ciclo F de la auditoría, 🟡 #15) La creación de cuenta también deja traza.
+test.describe('Tesorería — creación de cuenta auditada', () => {
+  test('crear una cuenta deja entrada CREATE en el audit log', async () => {
+    const token = await apiPinLogin();
+    const account = await apiCreateAccount(token, {
+      name: `Creada auditada ${Date.now()}`, type: 'CASH', initialBalance: 500_000,
+    });
+    const audit = await apiRequestRaw(
+      'GET',
+      `/treasury/audit?entityType=ACCOUNT&entityId=${account.id}`,
+      token,
+      undefined,
+    );
+    expect(audit.status).toBe(200);
+    const entries = audit.body as Array<{ action: string }>;
+    expect(entries.some((e) => e.action === 'CREATE')).toBe(true);
+  });
+});
