@@ -33,6 +33,28 @@ test.describe('Tesorería — hard-deletes con gate ADMIN y auditoría', () => {
     expect(res.status).toBe(403);
   });
 
+  test('borrar un tercero (ADMIN) deja entrada DELETE en el audit log', async () => {
+    const token = await apiPinLogin();
+    const created = await apiRequestRaw('POST', '/treasury/third-parties', token, {
+      name: `Tercero auditado ${Date.now()}`, type: 'CLIENT',
+    });
+    expect(created.status).toBe(201);
+    const tpId = (created.body as { id: string }).id;
+
+    const del = await apiRequestRaw('DELETE', `/treasury/third-parties/${tpId}`, token, undefined);
+    expect(del.status).toBe(200);
+
+    const audit = await apiRequestRaw(
+      'GET',
+      `/treasury/audit?entityType=THIRD_PARTY&entityId=${tpId}`,
+      token,
+      undefined,
+    );
+    expect(audit.status).toBe(200);
+    const entries = audit.body as Array<{ action: string }>;
+    expect(entries.some((e) => e.action === 'DELETE')).toBe(true);
+  });
+
   test('borrar una cuenta (ADMIN) deja entrada DELETE en el audit log', async () => {
     const token = await apiPinLogin();
     const account = await apiCreateAccount(token, {
