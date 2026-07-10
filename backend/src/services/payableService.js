@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 const prisma = require('../config/database');
+const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 
 const PAYABLE_AUDIT_FIELDS = [
@@ -167,6 +168,23 @@ const addPayment = async (payableId, paymentData, userId) => {
 
   // Determinar tipo y categoria de transaccion
   const isReceivable = payable.type === 'RECEIVABLE';
+
+  // Guardas de cuenta (auditoría 🟠 #2): debe existir, estar activa y, para
+  // egresos (CxP/comisiones), tener saldo suficiente — mismo contrato que
+  // transactionService.createExpense.
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) {
+    throw new Error('Cuenta no encontrada');
+  }
+  if (!account.isActive) {
+    throw new Error('La cuenta está desactivada; no admite movimientos');
+  }
+  if (!isReceivable) {
+    const balance = await accountService.calculateBalance(accountId);
+    if (balance < paymentAmount) {
+      throw new Error(`Saldo insuficiente en la cuenta (saldo: ${balance}, requerido: ${paymentAmount})`);
+    }
+  }
   const isCommission = payable.type === 'COMMISSION';
   const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
   // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
