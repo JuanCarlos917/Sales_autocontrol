@@ -51,29 +51,43 @@ class AccountService {
     const { initialBalance, ...accountData } = data;
     const initialBalanceNum = parseFloat(initialBalance) || 0;
 
-    // Crear cuenta con saldo inicial
-    const account = await prisma.account.create({
-      data: {
-        ...accountData,
-        initialBalance: initialBalanceNum,
-      },
-    });
-
-    // Si hay saldo inicial, crear transacción de ingreso
-    if (initialBalanceNum > 0 && userId) {
-      await prisma.transaction.create({
+    // Atómico (🟡 #15): cuenta + transacción de saldo inicial + audit CREATE
+    // en una sola tx — sin ventana en la que el initialBalance quede huérfano
+    // del ledger, y con traza homogénea con UPDATE/DELETE/REVERSE.
+    return prisma.$transaction(async (tx) => {
+      const account = await tx.account.create({
         data: {
-          accountId: account.id,
-          type: 'INCOME',
-          category: 'OTHER_INCOME',
-          amount: initialBalanceNum,
-          description: 'Saldo inicial de cuenta',
-          createdBy: userId,
+          ...accountData,
+          initialBalance: initialBalanceNum,
         },
       });
-    }
 
-    return { ...account, currentBalance: initialBalanceNum };
+      // Si hay saldo inicial, crear transacción de ingreso
+      if (initialBalanceNum > 0 && userId) {
+        await tx.transaction.create({
+          data: {
+            accountId: account.id,
+            type: 'INCOME',
+            category: 'OTHER_INCOME',
+            amount: initialBalanceNum,
+            description: 'Saldo inicial de cuenta',
+            createdBy: userId,
+          },
+        });
+      }
+
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'ACCOUNT',
+          entityId: account.id,
+          userId,
+          action: 'CREATE',
+          after: snapshotEntity(account, ACCOUNT_AUDIT_FIELDS),
+        });
+      }
+
+      return { ...account, currentBalance: initialBalanceNum };
+    });
   }
 
   async update(id, data, userId, { reason } = {}) {
