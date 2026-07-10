@@ -73,7 +73,12 @@ class TransactionService {
   }
 
   async createIncome(data, userId) {
-    return this.createTransaction({ ...data, type: 'INCOME' }, userId);
+    // Con lock de cuenta: un ingreso no puede colarse en paralelo a una
+    // desactivación (reverseAccount valida "sin movimientos" bajo el mismo lock).
+    return prisma.$transaction(async (tx) => {
+      await lockRow(tx, 'account', data.accountId);
+      return this.createTransaction({ ...data, type: 'INCOME' }, userId, tx);
+    });
   }
 
   async createExpense(data, userId) {
@@ -93,9 +98,11 @@ class TransactionService {
   async createTransaction(data, userId, client = prisma) {
     const { accountId, type, category, amount, description, reference, date, vehicleId, thirdPartyId, expenseId } = data;
 
-    // Verificar que la cuenta existe
+    // Verificar que la cuenta existe y está activa (auditoría 🟠 #5: una
+    // cuenta desactivada no admite movimientos — la desactivación es real).
     const account = await client.account.findUnique({ where: { id: accountId } });
     if (!account) throw new AppError('Cuenta no encontrada', 404);
+    if (!account.isActive) throw new AppError('La cuenta está desactivada; no admite movimientos', 400);
 
     return client.transaction.create({
       data: {

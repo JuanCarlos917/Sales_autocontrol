@@ -61,6 +61,9 @@ class TransferService {
 
     if (!fromAccount) throw new AppError('Cuenta de origen no encontrada', 404);
     if (!toAccount) throw new AppError('Cuenta de destino no encontrada', 404);
+    // Auditoría 🟠 #5: cuentas desactivadas no admiten movimientos.
+    if (!fromAccount.isActive) throw new AppError('La cuenta de origen está desactivada; no admite movimientos', 400);
+    if (!toAccount.isActive) throw new AppError('La cuenta de destino está desactivada; no admite movimientos', 400);
 
     // Crear transferencia y movimientos en una transacción atómica
     const result = await prisma.$transaction(async (tx) => {

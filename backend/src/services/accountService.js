@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+const { lockRow } = require('../utils/txLocks');
 
 const ACCOUNT_AUDIT_FIELDS = [
   'id', 'name', 'type', 'currency', 'initialBalance', 'currentBalance',
@@ -106,20 +107,23 @@ class AccountService {
   }
 
   async reverseAccount(id, reason, userId) {
-    const existing = await prisma.account.findUnique({ where: { id } });
-    if (!existing) throw new AppError('Cuenta no encontrada', 404);
-    if (!existing.isActive) throw new AppError('La cuenta ya está desactivada.', 409);
-
-    const balance = await this.calculateBalance(id);
-    if (Math.abs(balance) > 0.001) {
-      throw new AppError('No se puede desactivar una cuenta con saldo distinto de cero.', 403);
-    }
-    const transactionCount = await prisma.transaction.count({ where: { accountId: id } });
-    if (transactionCount > 0) {
-      throw new AppError('No se puede desactivar una cuenta con movimientos.', 403);
-    }
-
     return prisma.$transaction(async (tx) => {
+      // Validaciones DENTRO de la tx con la cuenta bloqueada (anti-TOCTOU):
+      // desactivar y mover plata quedan serializados por el mismo lock.
+      await lockRow(tx, 'account', id);
+      const existing = await tx.account.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Cuenta no encontrada', 404);
+      if (!existing.isActive) throw new AppError('La cuenta ya está desactivada.', 409);
+
+      const balance = await this.calculateBalance(id, tx);
+      if (Math.abs(balance) > 0.001) {
+        throw new AppError('No se puede desactivar una cuenta con saldo distinto de cero.', 403);
+      }
+      const transactionCount = await tx.transaction.count({ where: { accountId: id } });
+      if (transactionCount > 0) {
+        throw new AppError('No se puede desactivar una cuenta con movimientos.', 403);
+      }
+
       const updated = await tx.account.update({ where: { id }, data: { isActive: false } });
       await writeTreasuryAudit(tx, {
         entityType: 'ACCOUNT',
