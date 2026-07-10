@@ -4,6 +4,9 @@
 
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
+const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
+
+const THIRD_PARTY_AUDIT_FIELDS = ['id', 'name', 'type', 'document', 'phone', 'email', 'notes', 'isActive', 'createdAt'];
 
 class ThirdPartyService {
   async findAll({ type, isActive, search } = {}) {
@@ -40,17 +43,25 @@ class ThirdPartyService {
     return prisma.thirdParty.update({ where: { id }, data });
   }
 
-  async delete(id) {
+  async delete(id, userId) {
     const existing = await prisma.thirdParty.findUnique({ where: { id } });
     if (!existing) throw new AppError('Tercero no encontrado', 404);
 
-    // Check + delete atómicos (sin ventana TOCTOU). Nota: el audit polimórfico
-    // de tesorería no tiene entidad THIRD_PARTY en su enum (cambio de schema
-    // pendiente de decisión del usuario); el gate ADMIN vive en la ruta.
+    // Check + delete atómicos (sin ventana TOCTOU), con audit DELETE
+    // (entidad THIRD_PARTY, migración 20260710). El gate ADMIN vive en la ruta.
     return prisma.$transaction(async (tx) => {
       const transactionCount = await tx.transaction.count({ where: { thirdPartyId: id } });
       if (transactionCount > 0) {
         throw new AppError('No se puede eliminar un tercero con movimientos asociados', 400);
+      }
+      if (userId) {
+        await writeTreasuryAudit(tx, {
+          entityType: 'THIRD_PARTY',
+          entityId: id,
+          userId,
+          action: 'DELETE',
+          before: snapshotEntity(existing, THIRD_PARTY_AUDIT_FIELDS),
+        });
       }
       await tx.thirdParty.delete({ where: { id } });
       return { deleted: true };

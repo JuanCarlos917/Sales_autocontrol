@@ -39,7 +39,7 @@ const update = async (req, res, next) => {
 
 const remove = async (req, res, next) => {
   try {
-    await thirdPartyService.delete(req.params.id);
+    await thirdPartyService.delete(req.params.id, req.user.id);
     res.json({ message: 'Tercero eliminado' });
   } catch (err) { next(err); }
 };
