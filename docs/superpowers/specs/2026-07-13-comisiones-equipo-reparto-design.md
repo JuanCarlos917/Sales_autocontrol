@@ -151,3 +151,17 @@ clic → `navigate('/treasury/commissions')`. Consume el mismo summary.
 - Roles/etiquetas personalizadas (requeriría migración).
 - Cambiar el cálculo del bolsillo (base × %, intacto de Fase 1).
 - Reverso de pagos de comisión (futuro, existe el motor universal).
+
+## Follow-ups (revisión final de rama, 2026-07-13)
+
+- `saleService` no aplica `roundCop` al `amount` de cada CxP (pool × pct/100) —
+  pre-existente; con pools no divisibles puede persistir fracciones pese a la
+  convención COP entero.
+- `getSummary` agrega en JS sobre todas las CxP COMMISSION históricas — pasar a
+  `groupBy` en DB si el volumen crece.
+- Las cards "Captador/Cerrador pendiente" de CommissionsPage no reflejan el rol
+  OTHER (resto del dueño y personas "Otro") — evaluar reemplazarlas por la
+  sección "Por persona".
+- Defense-in-depth: `precision(2)` en el Joi de `participants[].sharePct`.
+- Nits: require a mitad del test de commissionService; `parseFloat` vs `Number`
+  en paidThisMonth; catches silenciosos de config/summary (patrón del repo).
