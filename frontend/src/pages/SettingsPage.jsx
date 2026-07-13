@@ -23,7 +23,13 @@ export default function SettingsPage() {
   }, [fetchSettings]);
 
   useEffect(() => {
-    api.get('/settings/commission-config').then(r => setCommCfg(r.data)).catch(() => {});
+    api.get('/settings/commission-config').then(r => {
+      const data = r.data;
+      // _id estable para las keys del editor (se descarta antes del PUT).
+      data.commission_default_team = (data.commission_default_team || [])
+        .map(row => ({ _id: crypto.randomUUID(), ...row }));
+      setCommCfg(data);
+    }).catch(() => {});
   }, []);
 
   const tabs = useMemo(() => {
