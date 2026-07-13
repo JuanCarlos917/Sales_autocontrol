@@ -441,6 +441,11 @@ const commissionConfigSchema = Joi.object({
   default_cerrador_pct:   Joi.number().min(0).max(100).required(),
   reinvest_account_id:    Joi.string().required(),
   tax_reserve_account_id: Joi.string().required(),
+  commission_default_team: Joi.array().items(Joi.object({
+    thirdPartyId: Joi.string().required(),
+    role: Joi.string().valid('CAPTADOR', 'CERRADOR', 'OTHER').required(),
+    sharePct: Joi.number().positive().max(100).required(),
+  })).max(5).default([]),
 });
 
 const loanPaymentSchema = Joi.object({
