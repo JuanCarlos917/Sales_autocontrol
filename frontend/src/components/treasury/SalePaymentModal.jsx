@@ -8,8 +8,11 @@ import Modal from '@/components/shared/Modal';
 import { accountsApi } from '@/lib/treasuryApi';
 import { formatCurrency, getLocalDateString } from '@/lib/constants';
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
+import CommissionSplitEditor from '@/components/treasury/CommissionSplitEditor';
 import { Banknote, Landmark, RefreshCw, ClipboardList, Plus, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
+
+const withIds = (rows) => (rows || []).map((row) => ({ _id: crypto.randomUUID(), ...row }));
 
 const PAYMENT_TYPES = [
   { id: 'CASH', label: 'Efectivo', icon: Banknote },
@@ -55,13 +58,12 @@ export default function SalePaymentModal({
     financingNotes: '',
   });
 
-  // Comisión: sección opcional. touched=false → el payload no manda participants.
-  const [commissionOpen, setCommissionOpen] = useState(false);
-  const [commissionTouched, setCommissionTouched] = useState(false);
-  const [commission, setCommission] = useState({
-    captadorId: 'owner-self', captadorPct: 30,
-    cerradorId: 'owner-self', cerradorPct: 70,
-  });
+  // Reparto de comisión: editor dinámico (default: equipo de Settings).
+  // touched=false → el payload no manda participants (default backend).
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitTouched, setSplitTouched] = useState(false);
+  const [split, setSplit] = useState([]);          // filas actuales del editor
+  const [defaultTeam, setDefaultTeam] = useState([]); // lo que llegó de settings
 
   useEffect(() => {
     if (isOpen) {
@@ -85,13 +87,11 @@ export default function SalePaymentModal({
       }));
 
       const cfgRes = await api.get('/settings/commission-config').catch(() => null);
-      if (cfgRes?.data) {
-        setCommission(c => ({
-          ...c,
-          captadorPct: Number(cfgRes.data.default_captador_pct) || 30,
-          cerradorPct: Number(cfgRes.data.default_cerrador_pct) || 70,
-        }));
-      }
+      const team = Array.isArray(cfgRes?.data?.commission_default_team)
+        ? cfgRes.data.commission_default_team
+        : [];
+      setDefaultTeam(withIds(team));
+      setSplit(withIds(team));
     } catch (err) {
       console.error('Error loading data:', err);
     }
@@ -121,9 +121,9 @@ export default function SalePaymentModal({
       financingDueDate: '',
       financingNotes: '',
     });
-    setCommissionOpen(false);
-    setCommissionTouched(false);
-    setCommission({ captadorId: 'owner-self', captadorPct: 30, cerradorId: 'owner-self', cerradorPct: 70 });
+    setSplitOpen(false);
+    setSplitTouched(false);
+    setSplit(defaultTeam);
   };
 
   const handleTypeSelect = (type) => {
@@ -184,12 +184,15 @@ export default function SalePaymentModal({
       newErrors.salePrice = 'Lo recibido no puede superar el precio de venta';
     }
 
-    if (commissionTouched) {
-      const pctSum = Number(commission.captadorPct) + Number(commission.cerradorPct);
-      if (!commission.captadorId || !commission.cerradorId) {
-        newErrors.commission = 'Selecciona captador y cerrador';
-      } else if (Math.abs(pctSum - 100) > 0.001) {
-        newErrors.commission = `Captador + Cerrador deben sumar 100% (va en ${pctSum}%)`;
+    if (splitTouched) {
+      const clean = split.filter((r) => r.thirdPartyId || parseFloat(r.sharePct) > 0);
+      if (clean.some((r) => !r.thirdPartyId || !(parseFloat(r.sharePct) > 0))) {
+        newErrors.commission = 'Cada fila del reparto necesita persona y % mayor a 0';
+      } else {
+        const ids = clean.map((r) => r.thirdPartyId);
+        const sum = clean.reduce((s, r) => s + parseFloat(r.sharePct), 0);
+        if (new Set(ids).size !== ids.length) newErrors.commission = 'Hay personas repetidas en el reparto';
+        else if (sum > 100.001) newErrors.commission = `El reparto suma ${sum}% (máximo 100; tu parte es el resto)`;
       }
     }
 
@@ -248,12 +251,12 @@ export default function SalePaymentModal({
       };
     }
 
-    // Participantes de comisión: solo si el usuario tocó la sección.
-    if (commissionTouched) {
-      saleData.participants = [
-        { thirdPartyId: commission.captadorId, role: 'CAPTADOR', sharePct: Number(commission.captadorPct) },
-        { thirdPartyId: commission.cerradorId, role: 'CERRADOR', sharePct: Number(commission.cerradorPct) },
-      ];
+    // Participantes de comisión: solo si el usuario tocó el editor.
+    if (splitTouched) {
+      saleData.participants = split
+        .filter((r) => r.thirdPartyId && parseFloat(r.sharePct) > 0)
+        .map((r) => ({ thirdPartyId: r.thirdPartyId, role: r.role, sharePct: Number(r.sharePct) }));
+      if (saleData.participants && saleData.participants.length === 0) delete saleData.participants;
     }
 
     await onSubmit(saleData);
@@ -570,59 +573,24 @@ export default function SalePaymentModal({
             </div>
           )}
 
-          {/* Comisión: captador/cerrador (opcional, default: tú) */}
+          {/* Reparto de comisión (default: equipo de Settings) */}
           <div className="border border-border rounded-lg p-3">
             <button
               type="button"
-              onClick={() => setCommissionOpen(o => !o)}
+              onClick={() => setSplitOpen(o => !o)}
               className="w-full flex items-center gap-2 text-sm font-semibold text-[#8B949E] hover:text-[#E6EDF3]"
               data-testid="sale-commission-toggle"
             >
-              {commissionOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              Comisión — Captador/Cerrador (default: tú)
+              {splitOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              Comisión — Reparto (default: tu equipo)
             </button>
-            {commissionOpen && (
+            {splitOpen && (
               <div className="mt-3 space-y-3">
-                <div className="grid grid-cols-3 gap-3 items-end">
-                  <div className="col-span-2">
-                    <ThirdPartySelector
-                      value={commission.captadorId}
-                      onChange={(id) => { setCommission(c => ({ ...c, captadorId: id })); setCommissionTouched(true); }}
-                      label="Captador"
-                      placeholder="Seleccionar..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-[#8B949E] mb-1">%</label>
-                    <input
-                      type="number" min="0" max="100"
-                      value={commission.captadorPct}
-                      onChange={(e) => { setCommission(c => ({ ...c, captadorPct: e.target.value })); setCommissionTouched(true); }}
-                      className="input w-full"
-                      data-testid="sale-captador-pct"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 items-end">
-                  <div className="col-span-2">
-                    <ThirdPartySelector
-                      value={commission.cerradorId}
-                      onChange={(id) => { setCommission(c => ({ ...c, cerradorId: id })); setCommissionTouched(true); }}
-                      label="Cerrador"
-                      placeholder="Seleccionar..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-[#8B949E] mb-1">%</label>
-                    <input
-                      type="number" min="0" max="100"
-                      value={commission.cerradorPct}
-                      onChange={(e) => { setCommission(c => ({ ...c, cerradorPct: e.target.value })); setCommissionTouched(true); }}
-                      className="input w-full"
-                      data-testid="sale-cerrador-pct"
-                    />
-                  </div>
-                </div>
+                <CommissionSplitEditor
+                  value={split}
+                  onChange={(rows) => { setSplit(rows); setSplitTouched(true); }}
+                  testidPrefix="sale-split"
+                />
                 {errors.commission && (
                   <p className="text-[11px] text-red-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {errors.commission}</p>
                 )}
