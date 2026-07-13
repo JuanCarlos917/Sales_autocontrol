@@ -123,7 +123,8 @@ export default function SalePaymentModal({
     });
     setSplitOpen(false);
     setSplitTouched(false);
-    setSplit(defaultTeam);
+    // Copia (no alias): mutaciones del editor nunca deben tocar defaultTeam.
+    setSplit(defaultTeam.map(r => ({ ...r })));
   };
 
   const handleTypeSelect = (type) => {
