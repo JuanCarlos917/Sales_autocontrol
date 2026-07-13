@@ -3,7 +3,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildCommissionVehicleItem } = require('../commissionService');
+const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS } = require('../commissionService');
+const { AppError } = require('../../middleware/errorHandler');
 
 const vehicle = {
   id: 'v1', plate: 'FJT326', brand: 'Suzuki', model: 'Vitara',
@@ -94,9 +95,6 @@ test('item: gasto legacy COMISION no rompe la identidad de la cascada', () => {
 });
 
 // ── resolveParticipants (equipo de reparto + resto al dueño) ─────
-const { resolveParticipants, MAX_PARTICIPANTS } = require('../commissionService');
-const { AppError } = require('../../middleware/errorHandler');
-
 // Stub de prisma: los terceros consultados existen salvo los marcados.
 const mkTx = (missingIds = []) => ({
   thirdParty: {
@@ -213,4 +211,56 @@ test('reparto: sin participants y sin equipo → fallback legacy (owner captador
   assert.ok(out.every((p) => p.thirdPartyId === 'owner-self'));
   assert.deepEqual(out.map((p) => p.role).sort(), ['CAPTADOR', 'CERRADOR']);
   assert.equal(out.reduce((s, p) => s + p.sharePct, 0), 100);
+});
+
+test('reparto: decimales 33.33+33.33 → resto 33.34 y la lista suma exactamente 100', async () => {
+  const out = await resolveParticipants(mkTx(), [
+    { thirdPartyId: 'a', role: 'OTHER', sharePct: 33.33 },
+    { thirdPartyId: 'b', role: 'OTHER', sharePct: 33.33 },
+  ], CFG_LEGACY);
+  const owner = out.find((p) => p.thirdPartyId === 'owner-self');
+  assert.equal(owner.sharePct, 33.34);
+  assert.equal(Math.round(out.reduce((s, p) => s + p.sharePct, 0) * 100) / 100, 100);
+});
+
+// ── loadCommissionConfig: parse defensivo del equipo ─────────────
+const { loadCommissionConfig } = require('../commissionService');
+
+const SETTING_ROWS = [
+  { key: 'commission_share_pct', value: '60' },
+  { key: 'reinvest_share_pct', value: '30' },
+  { key: 'tax_share_pct', value: '10' },
+  { key: 'default_captador_pct', value: '30' },
+  { key: 'default_cerrador_pct', value: '70' },
+  { key: 'reinvest_account_id', value: 'budget-reinvest' },
+  { key: 'tax_reserve_account_id', value: 'budget-tax' },
+];
+
+const mkSettingsTx = (teamValue) => ({
+  setting: {
+    findMany: async () => teamValue === undefined
+      ? SETTING_ROWS
+      : [...SETTING_ROWS, { key: 'commission_default_team', value: teamValue }],
+  },
+});
+
+test('config: sin key de equipo → defaultTeam null (no exige la key)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined));
+  assert.equal(cfg.defaultTeam, null);
+});
+
+test('config: JSON corrupto → defaultTeam null (no tumba la venta)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx('{{{no-json'));
+  assert.equal(cfg.defaultTeam, null);
+});
+
+test('config: JSON válido pero no-array o vacío → defaultTeam null', async () => {
+  assert.equal((await loadCommissionConfig(mkSettingsTx('{}'))).defaultTeam, null);
+  assert.equal((await loadCommissionConfig(mkSettingsTx('[]'))).defaultTeam, null);
+});
+
+test('config: array válido → defaultTeam parseado', async () => {
+  const team = [{ thirdPartyId: 'x', role: 'OTHER', sharePct: 20 }];
+  const cfg = await loadCommissionConfig(mkSettingsTx(JSON.stringify(team)));
+  assert.deepEqual(cfg.defaultTeam, team);
 });

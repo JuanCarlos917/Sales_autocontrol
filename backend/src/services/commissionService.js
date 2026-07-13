@@ -110,7 +110,7 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
   if (new Set(ids).size !== ids.length) {
     throw new AppError('Hay participantes repetidos en el reparto', 400);
   }
-  const sum = team.reduce((acc, p) => acc + Number(p.sharePct || 0), 0);
+  const sum = team.reduce((acc, p) => acc + Number(p.sharePct), 0);
   if (sum > 100 + SUM_TOLERANCE) {
     throw new AppError(`Los porcentajes del reparto suman ${sum} (máximo 100)`, 400);
   }
@@ -133,9 +133,9 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
   const resolved = team.map((p) => ({
     thirdPartyId: p.thirdPartyId,
     role: p.role,
-    sharePct: Number(p.sharePct),
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
   }));
-  const remainder = 100 - sum;
+  const remainder = Math.round((100 - sum) * 100) / 100;
   if (remainder > SUM_TOLERANCE) {
     resolved.push({ thirdPartyId: OWNER_ID, role: 'OTHER', sharePct: remainder });
   }
