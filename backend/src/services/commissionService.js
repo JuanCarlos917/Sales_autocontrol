@@ -135,7 +135,8 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
     role: p.role,
     sharePct: Math.round(Number(p.sharePct) * 100) / 100,
   }));
-  const remainder = Math.round((100 - sum) * 100) / 100;
+  const roundedSum = resolved.reduce((acc, p) => acc + p.sharePct, 0);
+  const remainder = Math.round((100 - roundedSum) * 100) / 100;
   if (remainder > SUM_TOLERANCE) {
     resolved.push({ thirdPartyId: OWNER_ID, role: 'OTHER', sharePct: remainder });
   }

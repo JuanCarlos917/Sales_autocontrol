@@ -3,7 +3,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS } = require('../commissionService');
+const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
 const { AppError } = require('../../middleware/errorHandler');
 
 const vehicle = {
@@ -224,7 +224,6 @@ test('reparto: decimales 33.33+33.33 → resto 33.34 y la lista suma exactamente
 });
 
 // ── loadCommissionConfig: parse defensivo del equipo ─────────────
-const { loadCommissionConfig } = require('../commissionService');
 
 const SETTING_ROWS = [
   { key: 'commission_share_pct', value: '60' },
