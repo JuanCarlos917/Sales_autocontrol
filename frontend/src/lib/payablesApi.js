@@ -81,6 +81,7 @@ export const expenseTreasuryApi = {
 
 export const commissionsApi = {
   getAll: (params = {}) => api.get('/commissions', { params }),
+  getSummary: () => api.get('/commissions/summary'),
 };
 
 export default payablesApi;
