@@ -22,13 +22,13 @@ export default function CommissionSplitEditor({ value = [], onChange, testidPref
     const next = value.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     onChange(next);
   };
-  const addRow = () => onChange([...value, { thirdPartyId: '', role: 'OTHER', sharePct: '' }]);
+  const addRow = () => onChange([...value, { _id: crypto.randomUUID(), thirdPartyId: '', role: 'OTHER', sharePct: '' }]);
   const removeRow = (i) => onChange(value.filter((_, idx) => idx !== i));
 
   return (
     <div className="space-y-2">
       {value.map((row, i) => (
-        <div key={i} className="grid grid-cols-[1fr_110px_70px_28px] gap-2 items-end">
+        <div key={row._id ?? i} className="grid grid-cols-[1fr_110px_70px_28px] gap-2 items-end">
           <ThirdPartySelector
             value={row.thirdPartyId}
             onChange={(id) => setRow(i, { thirdPartyId: id })}
@@ -41,6 +41,7 @@ export default function CommissionSplitEditor({ value = [], onChange, testidPref
               value={row.role}
               onChange={(e) => setRow(i, { role: e.target.value })}
               className="input w-full"
+              aria-label="Rol"
             >
               {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
@@ -52,6 +53,7 @@ export default function CommissionSplitEditor({ value = [], onChange, testidPref
               value={row.sharePct}
               onChange={(e) => setRow(i, { sharePct: e.target.value })}
               className="input w-full"
+              aria-label="Porcentaje"
               data-testid={`${testidPrefix}-row-${i}-pct`}
             />
           </div>

@@ -68,7 +68,10 @@ const getCommissionConfig = async (req, res, next) => {
         where: { id: { in: team.map((t) => t.thirdPartyId) } },
         select: { id: true, name: true },
       });
-      result.commission_default_team_people = people;
+      const byId = Object.fromEntries(people.map((p) => [p.id, p]));
+      result.commission_default_team_people = team
+        .map((t) => byId[t.thirdPartyId])
+        .filter(Boolean);
     } else {
       result.commission_default_team_people = [];
     }
