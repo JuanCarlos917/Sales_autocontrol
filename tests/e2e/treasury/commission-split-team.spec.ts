@@ -50,6 +50,14 @@ async function sellCar(token: string, participants?: Array<{ thirdPartyId: strin
 }
 
 test.describe('Comisiones — equipo de reparto + métricas', () => {
+  // La tabla settings NO se trunca entre tests: este spec muta el equipo
+  // default global y DEBE restaurarlo para no contaminar otros specs
+  // (commissions-page.spec asume el fallback legacy sin equipo).
+  test.afterEach(async () => {
+    const token = await apiPinLogin();
+    await setTeam(token, []);
+  });
+
   test('venta sin tocar aplica el equipo default y el dueño recibe el resto', async () => {
     const token = await apiPinLogin();
     await setTeam(token, [
