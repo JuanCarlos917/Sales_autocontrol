@@ -9,6 +9,7 @@
 
 const { calculateCommissionBase } = require('../utils/financial');
 const { AppError } = require('../middleware/errorHandler');
+const { dayKeyBogota } = require('../utils/dates');
 
 const MAX_PARTICIPANTS = 5;
 const OWNER_ID = 'owner-self';
@@ -308,6 +309,79 @@ async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
   });
 }
 
+/**
+ * Armado puro de la métrica por persona (testeable sin DB).
+ * Agrega comisiones por thirdParty, calcula totales pagados/pendientes,
+ * cuenta vehículos únicos por persona, y ordena por pendiente descendente.
+ */
+function buildPersonSummary(rows) {
+  const byId = new Map();
+  for (const r of rows) {
+    if (!byId.has(r.thirdPartyId)) {
+      byId.set(r.thirdPartyId, {
+        thirdParty: { id: r.thirdPartyId, name: r.thirdPartyName },
+        totalPaid: 0,
+        totalPending: 0,
+        vehicleIds: new Set(),
+      });
+    }
+    const acc = byId.get(r.thirdPartyId);
+    acc.totalPaid += Number(r.paidAmount || 0);
+    if (r.status === 'PENDING' || r.status === 'PARTIAL') {
+      acc.totalPending += Number(r.totalAmount || 0) - Number(r.paidAmount || 0);
+    }
+    acc.vehicleIds.add(r.vehicleId);
+  }
+  return [...byId.values()]
+    .map(({ vehicleIds, ...rest }) => ({ ...rest, salesCount: vehicleIds.size }))
+    .sort((a, b) => b.totalPending - a.totalPending);
+}
+
+/**
+ * Agregados de comisiones para Dashboard + sección "Por persona".
+ * Retorna: pendingTotal, paidThisMonth (zona Bogotá), byPerson ordenado por pendiente.
+ */
+async function getSummary(prismaOrTx) {
+  const payables = await prismaOrTx.payable.findMany({
+    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    select: {
+      thirdPartyId: true,
+      vehicleId: true,
+      status: true,
+      totalAmount: true,
+      paidAmount: true,
+      thirdParty: { select: { name: true } },
+    },
+  });
+  const rows = payables.map((p) => ({
+    thirdPartyId: p.thirdPartyId,
+    thirdPartyName: p.thirdParty?.name || '—',
+    vehicleId: p.vehicleId,
+    status: p.status,
+    totalAmount: p.totalAmount,
+    paidAmount: p.paidAmount,
+  }));
+  const byPerson = buildPersonSummary(rows);
+  const pendingTotal = byPerson.reduce((s, p) => s + p.totalPending, 0);
+
+  // Pagado este mes: pagos de CxP COMMISSION desde el día 1 en zona Bogotá.
+  const todayKey = dayKeyBogota(new Date()); // YYYY-MM-DD
+  const monthStart = new Date(`${todayKey.slice(0, 7)}-01T00:00:00-05:00`);
+  const paidAgg = await prismaOrTx.payablePayment.aggregate({
+    _sum: { amount: true },
+    where: {
+      createdAt: { gte: monthStart },
+      payable: { type: 'COMMISSION' },
+    },
+  });
+
+  return {
+    pendingTotal,
+    paidThisMonth: parseFloat(paidAgg._sum.amount || 0),
+    byPerson,
+  };
+}
+
 module.exports = {
   loadCommissionConfig,
   resolveParticipants,
@@ -316,6 +390,8 @@ module.exports = {
   calculateCommissionBase, // re-export for convenience
   buildCommissionVehicleItem,
   listByVehicle,
+  buildPersonSummary,
+  getSummary,
   COMMISSION_CONFIG_KEYS,
   MAX_PARTICIPANTS,
 };

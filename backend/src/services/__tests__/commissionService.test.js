@@ -263,3 +263,36 @@ test('config: array válido → defaultTeam parseado', async () => {
   const cfg = await loadCommissionConfig(mkSettingsTx(JSON.stringify(team)));
   assert.deepEqual(cfg.defaultTeam, team);
 });
+
+// ── buildPersonSummary (métricas por persona) ────────────────────
+const { buildPersonSummary } = require('../commissionService');
+
+test('summary: agrega por persona con pagado, pendiente y # ventas distintas', () => {
+  const rows = [
+    { thirdPartyId: 'v', thirdPartyName: 'Vendedor', vehicleId: 'car1', status: 'PAID', totalAmount: 900_000, paidAmount: 900_000 },
+    { thirdPartyId: 'v', thirdPartyName: 'Vendedor', vehicleId: 'car2', status: 'PENDING', totalAmount: 600_000, paidAmount: 0 },
+    { thirdPartyId: 'p', thirdPartyName: 'Papá', vehicleId: 'car1', status: 'PARTIAL', totalAmount: 450_000, paidAmount: 200_000 },
+  ];
+  const out = buildPersonSummary(rows);
+  const v = out.find((x) => x.thirdParty.id === 'v');
+  assert.equal(v.totalPaid, 900_000);
+  assert.equal(v.totalPending, 600_000);
+  assert.equal(v.salesCount, 2);
+  const p = out.find((x) => x.thirdParty.id === 'p');
+  assert.equal(p.totalPending, 250_000);
+  // Orden: mayor pendiente primero
+  assert.equal(out[0].thirdParty.id, 'v');
+});
+
+test('summary: CANCELLED no suma pendiente pero sí lo ya pagado', () => {
+  const rows = [
+    { thirdPartyId: 'v', thirdPartyName: 'V', vehicleId: 'c1', status: 'CANCELLED', totalAmount: 500_000, paidAmount: 100_000 },
+  ];
+  const out = buildPersonSummary(rows);
+  assert.equal(out[0].totalPending, 0);
+  assert.equal(out[0].totalPaid, 100_000);
+});
+
+test('summary: sin filas → lista vacía', () => {
+  assert.deepEqual(buildPersonSummary([]), []);
+});
