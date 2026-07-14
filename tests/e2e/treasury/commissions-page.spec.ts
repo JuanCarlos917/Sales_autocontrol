@@ -61,9 +61,10 @@ test.describe('Comisiones — página dedicada', () => {
   test('venta con participantes custom crea CxPs a nombre del tercero con esos %', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const p = plate('CUS');
+    // Contrato de equipo de reparto: el dueño NO va en las filas — su 60%
+    // llega como resto automático.
     await sellVehicle(token, p, [
       { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 40 },
-      { thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: 60 },
     ]);
 
     const items = await apiListCommissions(token);
@@ -73,6 +74,8 @@ test.describe('Comisiones — página dedicada', () => {
     const captador = item!.roles.find((r) => r.role === 'CAPTADOR');
     expect(captador?.thirdParty.id).toBe(TEST_SEED_IDS.employee);
     expect(captador?.sharePct).toBe(40);
+    const owner = item!.roles.find((r) => r.thirdParty.id === 'owner-self');
+    expect(owner?.sharePct).toBe(60); // resto automático
 
     // Y la UI lo refleja
     await page.goto('/treasury/commissions');

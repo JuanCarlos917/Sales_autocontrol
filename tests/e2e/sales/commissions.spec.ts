@@ -215,7 +215,7 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.summary.transfers).toBeUndefined();
   });
 
-  test('venta con participants[] custom: respeta split y valida suma 100', async ({ page }) => {
+  test('venta con participants[] custom: respeta split y el dueño recibe el resto automático', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `CST${Date.now().toString().slice(-6)}`,
@@ -225,6 +225,9 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
+    // Nuevo contrato: sin owner-self en filas; el resto (50%) va automático al dueño.
+    // pool = (30M − 20M) × 60% = 6M
+    // employee 30% → 1.8M · partner 20% → 1.2M · owner 50% → 3M
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
@@ -232,17 +235,19 @@ test.describe('Comisiones — configuración global', () => {
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
       participants: [
         { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
-        { thirdPartyId: 'owner-self',           role: 'CERRADOR', sharePct: 70 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'OTHER',    sharePct: 20 },
       ],
     });
-    expect(res.summary.participants).toHaveLength(2);
-    const captador = res.summary.participants!.find(p => p.role === 'CAPTADOR');
-    const cerrador = res.summary.participants!.find(p => p.role === 'CERRADOR');
+    expect(res.summary.participants).toHaveLength(3);
+    const captador = res.summary.participants!.find(p => p.thirdPartyId === TEST_SEED_IDS.employee);
+    const socio    = res.summary.participants!.find(p => p.thirdPartyId === TEST_SEED_IDS.partner);
+    const owner    = res.summary.participants!.find(p => p.thirdPartyId === 'owner-self');
     expect(captador?.amount).toBeCloseTo(1_800_000, 0); // 6M × 0.30
-    expect(cerrador?.amount).toBeCloseTo(4_200_000, 0); // 6M × 0.70
+    expect(socio?.amount).toBeCloseTo(1_200_000, 0);   // 6M × 0.20
+    expect(owner?.amount).toBeCloseTo(3_000_000, 0);   // 6M × 0.50 (resto automático)
   });
 
-  test('participants[] con suma ≠ 100 devuelve 400', async ({ page }) => {
+  test('participants[] inválidos devuelven 400: suma >100 y owner-self en filas', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `BAD${Date.now().toString().slice(-6)}`,
@@ -252,18 +257,33 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
-    const res = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
+
+    // Caso 1: suma > 100 → 400
+    const res1 = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
       participants: [
-        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
-        { thirdPartyId: 'owner-self',           role: 'CERRADOR', sharePct: 50 }, // suma 80
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 60 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'OTHER',    sharePct: 50 }, // suma 110
       ],
     });
-    expect(res.status).toBe(400);
-    expect(res.body?.error).toMatch(/sumar 100|sharePct/i);
+    expect(res1.status).toBe(400);
+    expect(res1.body?.error).toMatch(/suman|máximo 100/i);
+
+    // Caso 2: owner-self en filas → 400 (el dueño es el resto automático)
+    const res2 = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: 70 },
+      ],
+    });
+    expect(res2.status).toBe(400);
+    expect(res2.body?.error).toMatch(/dueño|resto automático/i);
   });
 
   test('venta con socio 50%: base de comisión es mi parte (gross × 0.5)', async ({ page }) => {

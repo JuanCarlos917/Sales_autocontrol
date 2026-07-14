@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/shared/FormFields';
 import api from '@/lib/api';
 import UsersSection from '@/components/settings/UsersSection';
+import CommissionSplitEditor from '@/components/treasury/CommissionSplitEditor';
 
 export default function SettingsPage() {
   const { fetchSettings, updateSettings } = useApp();
@@ -22,7 +23,13 @@ export default function SettingsPage() {
   }, [fetchSettings]);
 
   useEffect(() => {
-    api.get('/settings/commission-config').then(r => setCommCfg(r.data)).catch(() => {});
+    api.get('/settings/commission-config').then(r => {
+      const data = r.data;
+      // _id estable para las keys del editor (se descarta antes del PUT).
+      data.commission_default_team = (data.commission_default_team || [])
+        .map(row => ({ _id: crypto.randomUUID(), ...row }));
+      setCommCfg(data);
+    }).catch(() => {});
   }, []);
 
   const tabs = useMemo(() => {
@@ -44,7 +51,10 @@ export default function SettingsPage() {
     const splitSum = Number(commCfg.default_captador_pct) + Number(commCfg.default_cerrador_pct);
     if (Math.abs(splitSum - 100) > 0.001) { setCommError('Captador + cerrador deben sumar 100'); return; }
     try {
-      await api.put('/settings/commission-config', commCfg);
+      const teamClean = (commCfg.commission_default_team || [])
+        .filter((r) => r.thirdPartyId && parseFloat(r.sharePct) > 0)
+        .map((r) => ({ thirdPartyId: r.thirdPartyId, role: r.role, sharePct: Number(r.sharePct) }));
+      await api.put('/settings/commission-config', { ...commCfg, commission_default_team: teamClean, commission_default_team_people: undefined, reinvest_account: undefined, tax_reserve_account: undefined });
       setCommSuccess(true);
     } catch (err) {
       setCommError(err.response?.data?.error || 'Error al guardar');
@@ -116,6 +126,18 @@ export default function SettingsPage() {
                 <Input label="Cerrador % (default)" type="number" value={commCfg.default_cerrador_pct}
                   onChange={e => setCommCfg({ ...commCfg, default_cerrador_pct: e.target.value })}
                   data-testid="settings-cerrador-pct" />
+              </div>
+              <div className="border-t border-border pt-3">
+                <div className="text-sm font-semibold text-[#E6EDF3] mb-1">Equipo de reparto</div>
+                <p className="text-xs text-[#6E7681] mb-2">
+                  Personas que reciben parte del bolsillo de comisión en cada venta (máx 5).
+                  Tu parte es el resto, automática. Puedes ajustarlo por venta al vender.
+                </p>
+                <CommissionSplitEditor
+                  value={commCfg.commission_default_team || []}
+                  onChange={(team) => setCommCfg({ ...commCfg, commission_default_team: team })}
+                  testidPrefix="settings-team"
+                />
               </div>
               <div className="text-xs text-[#8B949E]">
                 Fondo Reinversión: <span className="text-[#E6EDF3] font-mono">{commCfg.reinvest_account?.name || commCfg.reinvest_account_id}</span>

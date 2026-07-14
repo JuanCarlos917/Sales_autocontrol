@@ -649,11 +649,46 @@ export async function apiGetCommissionConfig(token: string): Promise<CommissionC
   return getJson('/settings/commission-config', token);
 }
 
+export interface CommissionDefaultTeamMember {
+  thirdPartyId: string;
+  role: string;
+  sharePct: number;
+}
+
+export interface CommissionConfigInput {
+  commission_share_pct?: string | number;
+  reinvest_share_pct?: string | number;
+  tax_share_pct?: string | number;
+  default_captador_pct?: string | number;
+  default_cerrador_pct?: string | number;
+  reinvest_account_id?: string;
+  tax_reserve_account_id?: string;
+  commission_default_team?: CommissionDefaultTeamMember[];
+  [key: string]: string | number | CommissionDefaultTeamMember[] | undefined;
+}
+
 export async function apiUpdateCommissionConfig(
   token: string,
-  body: Record<string, string | number>,
+  body: CommissionConfigInput,
 ): Promise<{ status: number; body: { error?: string; data?: CommissionConfig } }> {
   return apiRequestRaw('PUT', '/settings/commission-config', token, body);
+}
+
+export interface CommissionPersonSummary {
+  thirdParty: { id: string; name: string };
+  totalPaid: number;
+  totalPending: number;
+  salesCount: number;
+}
+
+export interface CommissionsSummary {
+  pendingTotal: number;
+  paidThisMonth: number;
+  byPerson: CommissionPersonSummary[];
+}
+
+export async function apiGetCommissionsSummary(token: string): Promise<CommissionsSummary> {
+  return getJson('/commissions/summary', token);
 }
 
 // ── User Management (admin-only) ──

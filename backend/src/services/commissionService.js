@@ -9,6 +9,12 @@
 
 const { calculateCommissionBase } = require('../utils/financial');
 const { AppError } = require('../middleware/errorHandler');
+const { dayKeyBogota } = require('../utils/dates');
+
+const MAX_PARTICIPANTS = 5;
+const OWNER_ID = 'owner-self';
+const DEFAULT_TEAM_KEY = 'commission_default_team';
+const SUM_TOLERANCE = 0.001;
 
 const COMMISSION_CONFIG_KEYS = [
   'commission_share_pct',
@@ -23,16 +29,27 @@ const COMMISSION_CONFIG_KEYS = [
 /**
  * Lee Settings por key y devuelve un objeto {key: numericOrString}.
  * Falla si falta alguna key esperada (señal de migración no aplicada).
+ * La key commission_default_team es opcional (parse defensivo, JSON corrupto → null + warn).
  */
 async function loadCommissionConfig(prismaOrTx) {
   const rows = await prismaOrTx.setting.findMany({
-    where: { key: { in: COMMISSION_CONFIG_KEYS } },
+    where: { key: { in: [...COMMISSION_CONFIG_KEYS, DEFAULT_TEAM_KEY] } },
   });
   const cfg = {};
   rows.forEach(r => { cfg[r.key] = r.value; });
   const missing = COMMISSION_CONFIG_KEYS.filter(k => !(k in cfg));
   if (missing.length > 0) {
     throw new AppError(`Settings de comisiones faltantes: ${missing.join(', ')}`, 500);
+  }
+  let defaultTeam = null;
+  if (cfg[DEFAULT_TEAM_KEY]) {
+    try {
+      const parsed = JSON.parse(cfg[DEFAULT_TEAM_KEY]);
+      if (Array.isArray(parsed) && parsed.length > 0) defaultTeam = parsed;
+    } catch {
+      // eslint-disable-next-line no-console
+      console.warn('[commissionService] commission_default_team corrupto; se ignora (fallback legacy)');
+    }
   }
   return {
     commissionPct:        Number(cfg.commission_share_pct),
@@ -42,60 +59,89 @@ async function loadCommissionConfig(prismaOrTx) {
     defaultCerradorPct:   Number(cfg.default_cerrador_pct),
     reinvestAccountId:    cfg.reinvest_account_id,
     taxReserveAccountId:  cfg.tax_reserve_account_id,
+    defaultTeam,
   };
 }
 
 /**
- * Resuelve la lista de participantes para una venta:
- * - Si saleData.participants viene, valida que sume 100 y que cada thirdPartyId exista.
- * - Si no viene, devuelve 2 participantes default desde Settings:
- *     - "owner-self" como CAPTADOR con default_captador_pct
- *     - "owner-self" como CERRADOR con default_cerrador_pct
- *   Hasta que la UI permita reasignar (Fase 2), ambos roles van al dueño con sus
- *   % configurados — pero como CxPs separadas: son pagos diferentes por rol.
- *
- * Devuelve [{ thirdPartyId, role, sharePct }].
+ * Resuelve la lista FINAL de participantes de una venta (siempre suma 100):
+ * 1. `saleParticipants` explícitos (edición por venta): máx 5, suma ≤ 100,
+ *    sin duplicados, sin owner-self, sharePct > 0, terceros existentes.
+ * 2. Sin explícitos → equipo default de Settings (cfg.defaultTeam), mismas
+ *    reglas; si un tercero fue borrado, error accionable.
+ * 3. Sin equipo → fallback legacy: owner-self captador+cerrador con los %
+ *    default (comportamiento pre-equipo, intacto).
+ * En 1 y 2, el resto (100 − suma) genera la fila del dueño (OWNER_ID, OTHER).
  */
 async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
-  if (Array.isArray(saleParticipants) && saleParticipants.length > 0) {
-    const sum = saleParticipants.reduce((acc, p) => acc + Number(p.sharePct || 0), 0);
-    if (Math.abs(sum - 100) > 0.001) {
-      throw new AppError(`participants[].sharePct debe sumar 100 (recibido: ${sum})`, 400);
-    }
-    const ids = saleParticipants.map(p => p.thirdPartyId);
-    const found = await prismaOrTx.thirdParty.findMany({
-      where: { id: { in: ids } },
+  const explicit = Array.isArray(saleParticipants) && saleParticipants.length > 0;
+  const team = explicit ? saleParticipants : (cfg?.defaultTeam || null);
+
+  if (!team) {
+    // Fallback legacy — igual que antes del equipo de reparto.
+    const owner = await prismaOrTx.thirdParty.findUnique({
+      where: { id: OWNER_ID },
       select: { id: true },
     });
-    const foundIds = new Set(found.map(f => f.id));
-    const missing = ids.filter(id => !foundIds.has(id));
-    if (missing.length > 0) {
-      throw new AppError(`Terceros no encontrados: ${missing.join(', ')}`, 400);
+    if (!owner) {
+      throw new AppError(
+        'Tercero default "owner-self" no encontrado. ¿Falta correr la migración de comisiones?',
+        500
+      );
     }
-    return saleParticipants.map(p => ({
-      thirdPartyId: p.thirdPartyId,
-      role: p.role,
-      sharePct: Number(p.sharePct),
-    }));
+    const captadorPct = cfg?.defaultCaptadorPct ?? 30;
+    const cerradorPct = cfg?.defaultCerradorPct ?? 70;
+    return [
+      { thirdPartyId: OWNER_ID, role: 'CAPTADOR', sharePct: captadorPct },
+      { thirdPartyId: OWNER_ID, role: 'CERRADOR', sharePct: cerradorPct },
+    ];
   }
 
-  // Default: 2 CxPs separadas (captador + cerrador) desde Settings.
-  const owner = await prismaOrTx.thirdParty.findUnique({
-    where: { id: 'owner-self' },
+  const source = explicit ? 'participants' : 'el equipo de reparto';
+  if (team.length > MAX_PARTICIPANTS) {
+    throw new AppError(`Máximo ${MAX_PARTICIPANTS} personas en ${source} (sin contar al dueño)`, 400);
+  }
+  if (team.some((p) => p.thirdPartyId === OWNER_ID)) {
+    throw new AppError('El dueño no va en las filas del reparto: su parte es el resto automático', 400);
+  }
+  if (team.some((p) => !(Number(p.sharePct) > 0))) {
+    throw new AppError('Cada participante debe tener un porcentaje mayor a 0', 400);
+  }
+  const ids = team.map((p) => p.thirdPartyId);
+  if (new Set(ids).size !== ids.length) {
+    throw new AppError('Hay participantes repetidos en el reparto', 400);
+  }
+  const sum = team.reduce((acc, p) => acc + Number(p.sharePct), 0);
+  if (sum > 100 + SUM_TOLERANCE) {
+    throw new AppError(`Los porcentajes del reparto suman ${sum} (máximo 100)`, 400);
+  }
+
+  const found = await prismaOrTx.thirdParty.findMany({
+    where: { id: { in: ids } },
     select: { id: true },
   });
-  if (!owner) {
+  const foundIds = new Set(found.map((f) => f.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
     throw new AppError(
-      'Tercero default "owner-self" no encontrado. ¿Falta correr la migración de comisiones?',
-      500
+      explicit
+        ? `Terceros no encontrados: ${missing.join(', ')}`
+        : `El equipo de reparto referencia terceros que ya no existen (${missing.join(', ')}); actualízalo en Configuración`,
+      400
     );
   }
-  const captadorPct = cfg?.defaultCaptadorPct ?? 30;
-  const cerradorPct = cfg?.defaultCerradorPct ?? 70;
-  return [
-    { thirdPartyId: 'owner-self', role: 'CAPTADOR', sharePct: captadorPct },
-    { thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: cerradorPct },
-  ];
+
+  const resolved = team.map((p) => ({
+    thirdPartyId: p.thirdPartyId,
+    role: p.role,
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
+  }));
+  const roundedSum = resolved.reduce((acc, p) => acc + p.sharePct, 0);
+  const remainder = Math.round((100 - roundedSum) * 100) / 100;
+  if (remainder > SUM_TOLERANCE) {
+    resolved.push({ thirdPartyId: OWNER_ID, role: 'OTHER', sharePct: remainder });
+  }
+  return resolved;
 }
 
 /**
@@ -263,6 +309,79 @@ async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
   });
 }
 
+/**
+ * Armado puro de la métrica por persona (testeable sin DB).
+ * Agrega comisiones por thirdParty, calcula totales pagados/pendientes,
+ * cuenta vehículos únicos por persona, y ordena por pendiente descendente.
+ */
+function buildPersonSummary(rows) {
+  const byId = new Map();
+  for (const r of rows) {
+    if (!byId.has(r.thirdPartyId)) {
+      byId.set(r.thirdPartyId, {
+        thirdParty: { id: r.thirdPartyId, name: r.thirdPartyName },
+        totalPaid: 0,
+        totalPending: 0,
+        vehicleIds: new Set(),
+      });
+    }
+    const acc = byId.get(r.thirdPartyId);
+    acc.totalPaid += Number(r.paidAmount || 0);
+    if (r.status === 'PENDING' || r.status === 'PARTIAL') {
+      acc.totalPending += Number(r.totalAmount || 0) - Number(r.paidAmount || 0);
+    }
+    acc.vehicleIds.add(r.vehicleId);
+  }
+  return [...byId.values()]
+    .map(({ vehicleIds, ...rest }) => ({ ...rest, salesCount: vehicleIds.size }))
+    .sort((a, b) => b.totalPending - a.totalPending);
+}
+
+/**
+ * Agregados de comisiones para Dashboard + sección "Por persona".
+ * Retorna: pendingTotal, paidThisMonth (zona Bogotá), byPerson ordenado por pendiente.
+ */
+async function getSummary(prismaOrTx) {
+  const payables = await prismaOrTx.payable.findMany({
+    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    select: {
+      thirdPartyId: true,
+      vehicleId: true,
+      status: true,
+      totalAmount: true,
+      paidAmount: true,
+      thirdParty: { select: { name: true } },
+    },
+  });
+  const rows = payables.map((p) => ({
+    thirdPartyId: p.thirdPartyId,
+    thirdPartyName: p.thirdParty?.name || '—',
+    vehicleId: p.vehicleId,
+    status: p.status,
+    totalAmount: p.totalAmount,
+    paidAmount: p.paidAmount,
+  }));
+  const byPerson = buildPersonSummary(rows);
+  const pendingTotal = byPerson.reduce((s, p) => s + p.totalPending, 0);
+
+  // Pagado este mes: pagos de CxP COMMISSION desde el día 1 en zona Bogotá.
+  const todayKey = dayKeyBogota(new Date()); // YYYY-MM-DD
+  const monthStart = new Date(`${todayKey.slice(0, 7)}-01T00:00:00-05:00`);
+  const paidAgg = await prismaOrTx.payablePayment.aggregate({
+    _sum: { amount: true },
+    where: {
+      createdAt: { gte: monthStart },
+      payable: { type: 'COMMISSION' },
+    },
+  });
+
+  return {
+    pendingTotal,
+    paidThisMonth: parseFloat(paidAgg._sum.amount || 0),
+    byPerson,
+  };
+}
+
 module.exports = {
   loadCommissionConfig,
   resolveParticipants,
@@ -271,5 +390,8 @@ module.exports = {
   calculateCommissionBase, // re-export for convenience
   buildCommissionVehicleItem,
   listByVehicle,
+  buildPersonSummary,
+  getSummary,
   COMMISSION_CONFIG_KEYS,
+  MAX_PARTICIPANTS,
 };

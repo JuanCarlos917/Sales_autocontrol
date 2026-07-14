@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { STAGES, EXPENSE_CATEGORIES, formatCurrency, formatPercent } from '@/lib/constants';
 import api from '@/lib/api';
+import { commissionsApi } from '@/lib/payablesApi';
 import AlertsPanel from '@/components/shared/AlertsPanel';
 import { TrendingUp } from 'lucide-react';
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { fetchDashboard, dashboard } = useApp();
   const [projection, setProjection] = useState(null);
+  const [commSummary, setCommSummary] = useState(null);
   const [projForm, setProjForm] = useState({ purchasePrice: '', estimatedExpenses: '', salePrice: '', estimatedDays: '20', participation: '1' });
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  useEffect(() => {
+    commissionsApi.getSummary().then(r => setCommSummary(r.data)).catch(() => {});
+  }, []);
 
   const runProjection = async () => {
     try {
@@ -63,6 +71,24 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {commSummary && (
+        <button
+          type="button"
+          onClick={() => navigate('/treasury/commissions')}
+          className="kpi-card w-full text-left hover:border-accent/40 transition-colors cursor-pointer"
+          data-testid="dashboard-commissions-card"
+        >
+          <div className="text-[11px] text-[#6E7681] uppercase tracking-wider">Comisiones</div>
+          <div className="mt-1.5 flex items-baseline gap-3">
+            <span className="text-xl font-bold font-mono text-amber-400">{formatCurrency(commSummary.pendingTotal)}</span>
+            <span className="text-[11px] text-[#6E7681]">pendientes</span>
+          </div>
+          <div className="text-[11px] text-[#8B949E] mt-0.5">
+            Pagado este mes: <span className="font-mono text-green-400">{formatCurrency(commSummary.paidThisMonth)}</span> →
+          </div>
+        </button>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Pipeline Distribution */}

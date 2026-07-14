@@ -13,4 +13,10 @@ const list = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { list };
+const summary = async (req, res, next) => {
+  try {
+    res.json(await commissionService.getSummary(prisma));
+  } catch (err) { next(err); }
+};
+
+module.exports = { list, summary };
