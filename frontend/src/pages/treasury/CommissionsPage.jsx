@@ -101,6 +101,7 @@ function CommissionCard({ item, onPay }) {
 
 export default function CommissionsPage() {
   const [items, setItems] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPaid, setShowPaid] = useState(false);
   const [paying, setPaying] = useState(null); // { item, role }
@@ -108,8 +109,12 @@ export default function CommissionsPage() {
 
   const load = async () => {
     try {
-      const { data } = await commissionsApi.getAll();
+      const [{ data }, sumRes] = await Promise.all([
+        commissionsApi.getAll(),
+        commissionsApi.getSummary().catch(() => null),
+      ]);
       setItems(data || []);
+      setSummary(sumRes?.data || null);
     } catch (err) {
       console.error('Error loading commissions:', err);
     } finally {
@@ -170,6 +175,31 @@ export default function CommissionsPage() {
           <div className="text-lg font-mono font-bold text-[#BC8CFF] mt-1">{formatCurrency(pendingByRole('CERRADOR'))}</div>
         </div>
       </div>
+
+      {/* Por persona */}
+      {summary?.byPerson?.length > 0 && (
+        <section className="card p-4" data-testid="commissions-by-person">
+          <h3 className="text-sm font-semibold text-[#E6EDF3] mb-2">Por persona</h3>
+          <div className="space-y-1.5">
+            {summary.byPerson.map((p) => (
+              <div
+                key={p.thirdParty.id}
+                className="flex items-center justify-between text-sm border-t border-border/50 pt-1.5 first:border-0 first:pt-0"
+                data-testid={`commissions-person-${p.thirdParty.id}`}
+              >
+                <span className="text-[#E6EDF3]">{p.thirdParty.name}
+                  <span className="text-[#6E7681] ml-1.5 text-xs">({p.salesCount} {p.salesCount === 1 ? 'venta' : 'ventas'})</span>
+                </span>
+                <span className="font-mono text-xs">
+                  <span className="text-green-400">{formatCurrency(p.totalPaid)} pagado</span>
+                  <span className="text-[#6E7681]"> · </span>
+                  <span className={p.totalPending > 0 ? 'text-amber-400' : 'text-[#6E7681]'}>{formatCurrency(p.totalPending)} pendiente</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Pendientes */}
       {pending.length === 0 ? (

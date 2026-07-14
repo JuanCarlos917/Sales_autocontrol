@@ -35,6 +35,7 @@ const COMMISSION_CONFIG_KEYS = [
   'default_cerrador_pct',
   'reinvest_account_id',
   'tax_reserve_account_id',
+  'commission_default_team',
 ];
 
 const getCommissionConfig = async (req, res, next) => {
@@ -55,6 +56,24 @@ const getCommissionConfig = async (req, res, next) => {
       const byId = Object.fromEntries(accounts.map(a => [a.id, a]));
       result.reinvest_account = byId[result.reinvest_account_id] || null;
       result.tax_reserve_account = byId[result.tax_reserve_account_id] || null;
+    }
+
+    // Parsear y hidratar equipo de reparto
+    let team = [];
+    try { team = JSON.parse(result.commission_default_team || '[]'); } catch { team = []; }
+    if (!Array.isArray(team)) team = [];
+    result.commission_default_team = team;
+    if (team.length > 0) {
+      const people = await prisma.thirdParty.findMany({
+        where: { id: { in: team.map((t) => t.thirdPartyId) } },
+        select: { id: true, name: true },
+      });
+      const byId = Object.fromEntries(people.map((p) => [p.id, p]));
+      result.commission_default_team_people = team
+        .map((t) => byId[t.thirdPartyId])
+        .filter(Boolean);
+    } else {
+      result.commission_default_team_people = [];
     }
 
     res.json(result);
@@ -104,14 +123,35 @@ const updateCommissionConfig = async (req, res, next) => {
       });
     }
 
-    // 4) Persistir los 7 ajustes en una transacción
+    // 3b) Equipo de reparto (opcional): sin owner-self, sin duplicados,
+    // suma ≤ 100, terceros existentes (mismo contrato que resolveParticipants).
+    const team = Array.isArray(data.commission_default_team) ? data.commission_default_team : [];
+    if (team.some((p) => p.thirdPartyId === 'owner-self')) {
+      return res.status(400).json({ error: 'El dueño no va en el equipo: su parte es el resto automático' });
+    }
+    const teamIds = team.map((p) => p.thirdPartyId);
+    if (new Set(teamIds).size !== teamIds.length) {
+      return res.status(400).json({ error: 'Hay personas repetidas en el equipo de reparto' });
+    }
+    const teamSum = team.reduce((s, p) => s + Number(p.sharePct), 0);
+    if (teamSum > 100.001) {
+      return res.status(400).json({ error: `Los porcentajes del equipo suman ${teamSum} (máximo 100)` });
+    }
+    if (teamIds.length > 0) {
+      const foundTps = await prisma.thirdParty.findMany({ where: { id: { in: teamIds } }, select: { id: true } });
+      if (foundTps.length !== teamIds.length) {
+        return res.status(400).json({ error: 'Algún tercero del equipo no existe' });
+      }
+    }
+
+    // 4) Persistir los ajustes en una transacción
     const entries = Object.entries(data);
     await prisma.$transaction(
       entries.map(([key, value]) =>
         prisma.setting.upsert({
           where: { key },
-          update: { value: String(value) },
-          create: { key, value: String(value) },
+          update: { value: key === 'commission_default_team' ? JSON.stringify(value) : String(value) },
+          create: { key, value: key === 'commission_default_team' ? JSON.stringify(value) : String(value) },
         })
       )
     );
