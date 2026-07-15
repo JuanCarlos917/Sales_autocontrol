@@ -136,6 +136,9 @@ export default function ThirdPartiesPage() {
           <tbody>
             {filtered.map((tp) => {
               const typeInfo = getTypeInfo(tp.type);
+              // Tercero de sistema (Dueño / Yo): no se puede borrar — el backend
+              // lo rechaza (400) y su ausencia rompe el reparto de comisiones.
+              const isSystem = tp.id === 'owner-self';
               return (
                 <tr key={tp.id} className="border-t border-border hover:bg-surface-hover">
                   <td className="p-3 font-medium text-[#E6EDF3]">{tp.name}</td>
@@ -150,7 +153,11 @@ export default function ThirdPartiesPage() {
                   </td>
                   <td className="p-3 text-right">
                     <button onClick={() => openEdit(tp)} className="text-accent hover:underline mr-3">Editar</button>
-                    <button onClick={() => handleDelete(tp.id)} className="text-red-400 hover:underline">Eliminar</button>
+                    {isSystem ? (
+                      <span className="text-[#8B949E] text-xs italic" title="Tercero del sistema: no se puede eliminar">Sistema</span>
+                    ) : (
+                      <button onClick={() => handleDelete(tp.id)} className="text-red-400 hover:underline">Eliminar</button>
+                    )}
                   </td>
                 </tr>
               );
