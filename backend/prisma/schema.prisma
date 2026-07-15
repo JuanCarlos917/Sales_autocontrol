@@ -483,6 +483,7 @@ enum ParticipantRole {
   CAPTADOR
   CERRADOR
   OTHER
+  INVESTOR
 }
 
 model PayablePayment {
@@ -502,6 +503,7 @@ enum PayableType {
   RECEIVABLE
   PAYABLE
   COMMISSION
+  PROFIT_SHARE
 }
 
 enum PayableStatus {
