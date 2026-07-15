@@ -8,6 +8,17 @@ const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit')
 
 const THIRD_PARTY_AUDIT_FIELDS = ['id', 'name', 'type', 'document', 'phone', 'email', 'notes', 'isActive', 'createdAt'];
 
+// Terceros centinela del sistema (creados por migración, referenciados por código).
+// owner-self = "Dueño / Yo", destino del resto del reparto de comisiones. Borrarlo
+// rompe toda venta que reparte comisión (FK en la CxP COMMISSION → 500).
+const SYSTEM_THIRD_PARTY_IDS = new Set(['owner-self']);
+
+function assertThirdPartyDeletable(id) {
+  if (SYSTEM_THIRD_PARTY_IDS.has(id)) {
+    throw new AppError('No se puede eliminar el tercero del sistema "Dueño / Yo"', 400);
+  }
+}
+
 class ThirdPartyService {
   async findAll({ type, isActive, search } = {}) {
     const where = {};
@@ -44,6 +55,7 @@ class ThirdPartyService {
   }
 
   async delete(id, userId) {
+    assertThirdPartyDeletable(id); // guard de centinelas antes de tocar la DB
     const existing = await prisma.thirdParty.findUnique({ where: { id } });
     if (!existing) throw new AppError('Tercero no encontrado', 404);
 
@@ -106,3 +118,5 @@ class ThirdPartyService {
 }
 
 module.exports = new ThirdPartyService();
+module.exports.assertThirdPartyDeletable = assertThirdPartyDeletable;
+module.exports.SYSTEM_THIRD_PARTY_IDS = SYSTEM_THIRD_PARTY_IDS;

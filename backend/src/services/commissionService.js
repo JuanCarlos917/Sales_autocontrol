@@ -73,22 +73,26 @@ async function loadCommissionConfig(prismaOrTx) {
  *    default (comportamiento pre-equipo, intacto).
  * En 1 y 2, el resto (100 − suma) genera la fila del dueño (OWNER_ID, OTHER).
  */
+async function ensureOwnerExists(prismaOrTx) {
+  const owner = await prismaOrTx.thirdParty.findUnique({
+    where: { id: OWNER_ID },
+    select: { id: true },
+  });
+  if (!owner) {
+    throw new AppError(
+      'Tercero default "owner-self" no encontrado. ¿Falta correr la migración de comisiones?',
+      500
+    );
+  }
+}
+
 async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
   const explicit = Array.isArray(saleParticipants) && saleParticipants.length > 0;
   const team = explicit ? saleParticipants : (cfg?.defaultTeam || null);
 
   if (!team) {
     // Fallback legacy — igual que antes del equipo de reparto.
-    const owner = await prismaOrTx.thirdParty.findUnique({
-      where: { id: OWNER_ID },
-      select: { id: true },
-    });
-    if (!owner) {
-      throw new AppError(
-        'Tercero default "owner-self" no encontrado. ¿Falta correr la migración de comisiones?',
-        500
-      );
-    }
+    await ensureOwnerExists(prismaOrTx);
     const captadorPct = cfg?.defaultCaptadorPct ?? 30;
     const cerradorPct = cfg?.defaultCerradorPct ?? 70;
     return [
@@ -139,6 +143,11 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
   const roundedSum = resolved.reduce((acc, p) => acc + p.sharePct, 0);
   const remainder = Math.round((100 - roundedSum) * 100) / 100;
   if (remainder > SUM_TOLERANCE) {
+    // El resto va al dueño (owner-self). Verificamos que el centinela exista
+    // ANTES de devolverlo: si fue borrado, saleService crearía la CxP de
+    // comisión con un thirdPartyId inválido y reventaría con FK (P2003) → 500
+    // genérico. Preferimos un error accionable aquí.
+    await ensureOwnerExists(prismaOrTx);
     resolved.push({ thirdPartyId: OWNER_ID, role: 'OTHER', sharePct: remainder });
   }
   return resolved;

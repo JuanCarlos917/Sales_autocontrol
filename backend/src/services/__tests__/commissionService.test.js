@@ -184,6 +184,25 @@ test('reparto: tercero inexistente → 400 con mensaje accionable', async () => 
   );
 });
 
+test('reparto: hay resto al dueño pero owner-self no existe → error accionable, no FK crash', async () => {
+  // Regresión: el centinela owner-self fue borrado de la DB. Al calcular el resto
+  // del dueño, resolveParticipants debe fallar con mensaje claro ANTES de que
+  // saleService intente crear la CxP y reviente con un FK (P2003) → 500 genérico.
+  await assert.rejects(
+    resolveParticipants(mkTx(['owner-self']), [
+      { thirdPartyId: 'a', role: 'CAPTADOR', sharePct: 60 },
+    ], CFG_LEGACY),
+    (e) => e instanceof AppError && /owner-self/.test(e.message),
+  );
+});
+
+test('reparto: hay resto al dueño y owner-self existe → incluye la fila del dueño', async () => {
+  const out = await resolveParticipants(mkTx(), [
+    { thirdPartyId: 'a', role: 'CAPTADOR', sharePct: 60 },
+  ], CFG_LEGACY);
+  assert.equal(out.find((p) => p.thirdPartyId === 'owner-self').sharePct, 40);
+});
+
 test('reparto: sin participants + equipo default → team + resto al dueño', async () => {
   const cfg = {
     ...CFG_LEGACY,
