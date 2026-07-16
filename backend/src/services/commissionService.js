@@ -24,7 +24,11 @@ const COMMISSION_CONFIG_KEYS = [
   'default_cerrador_pct',
   'reinvest_account_id',
   'tax_reserve_account_id',
+  'commission_gross_pct',
+  'reinvest_pct',
+  'tax_pct',
 ];
+const INVESTOR_TEAM_KEY = 'investor_team';
 
 /**
  * Lee Settings por key y devuelve un objeto {key: numericOrString}.
@@ -33,7 +37,7 @@ const COMMISSION_CONFIG_KEYS = [
  */
 async function loadCommissionConfig(prismaOrTx) {
   const rows = await prismaOrTx.setting.findMany({
-    where: { key: { in: [...COMMISSION_CONFIG_KEYS, DEFAULT_TEAM_KEY] } },
+    where: { key: { in: [...COMMISSION_CONFIG_KEYS, DEFAULT_TEAM_KEY, INVESTOR_TEAM_KEY] } },
   });
   const cfg = {};
   rows.forEach(r => { cfg[r.key] = r.value; });
@@ -51,15 +55,28 @@ async function loadCommissionConfig(prismaOrTx) {
       console.warn('[commissionService] commission_default_team corrupto; se ignora (fallback legacy)');
     }
   }
+  let investorTeam = [];
+  if (cfg[INVESTOR_TEAM_KEY]) {
+    try {
+      const parsed = JSON.parse(cfg[INVESTOR_TEAM_KEY]);
+      if (Array.isArray(parsed)) investorTeam = parsed;
+    } catch {
+      // eslint-disable-next-line no-console
+      console.warn('[commissionService] investor_team corrupto; se ignora (fallback [])');
+    }
+  }
   return {
     commissionPct:        Number(cfg.commission_share_pct),
-    reinvestPct:          Number(cfg.reinvest_share_pct),
-    taxPct:               Number(cfg.tax_share_pct),
+    reinvestPct:          Number(cfg.reinvest_pct),
+    taxPct:               Number(cfg.tax_pct),
     defaultCaptadorPct:   Number(cfg.default_captador_pct),
     defaultCerradorPct:   Number(cfg.default_cerrador_pct),
     reinvestAccountId:    cfg.reinvest_account_id,
     taxReserveAccountId:  cfg.tax_reserve_account_id,
     defaultTeam,
+    sellerTeam:           defaultTeam,
+    commissionGrossPct:   Number(cfg.commission_gross_pct),
+    investorTeam,
   };
 }
 
@@ -151,6 +168,67 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
     resolved.push({ thirdPartyId: OWNER_ID, role: 'OTHER', sharePct: remainder });
   }
   return resolved;
+}
+
+/**
+ * Resuelve la lista de VENDEDORES para la cascada ganancia vs comisión
+ * (`calculateSaleDistribution`). A diferencia de `resolveParticipants`, NO
+ * genera fila de "resto al dueño": si no suman 100 exacto, es un error del
+ * usuario. Sin vendedores → [] (venta sin comisión, todo el gross profit
+ * pasa a repartirse entre inversionistas).
+ */
+async function resolveSellers(prismaOrTx, saleParticipants, cfg) {
+  const explicit = Array.isArray(saleParticipants) && saleParticipants.length > 0;
+  const team = explicit ? saleParticipants : (cfg?.sellerTeam || null);
+  if (!team || team.length === 0) return []; // venta sin vendedor → sin comisión
+
+  if (team.length > MAX_PARTICIPANTS) throw new AppError(`Máximo ${MAX_PARTICIPANTS} vendedores`, 400);
+  if (team.some((p) => p.thirdPartyId === OWNER_ID)) throw new AppError('El dueño no comisiona', 400);
+  if (team.some((p) => !(Number(p.sharePct) > 0))) throw new AppError('Cada vendedor debe tener % > 0', 400);
+  const ids = team.map((p) => p.thirdPartyId);
+  if (new Set(ids).size !== ids.length) throw new AppError('Vendedores repetidos', 400);
+  const sum = Math.round(team.reduce((s, p) => s + Number(p.sharePct), 0) * 100) / 100;
+  if (sum !== 100) throw new AppError(`Los % de vendedores deben sumar 100 (suman ${sum})`, 400);
+
+  const found = await prismaOrTx.thirdParty.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  const foundIds = new Set(found.map((f) => f.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) throw new AppError(`Vendedores no encontrados: ${missing.join(', ')}`, 400);
+
+  return team.map((p) => ({
+    thirdPartyId: p.thirdPartyId, role: p.role || 'OTHER',
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
+  }));
+}
+
+/**
+ * Resuelve la lista de INVERSIONISTAS para la cascada ganancia vs comisión.
+ * Sin equipo configurado → fallback owner-self 100% (comportamiento pre-equipo).
+ * Con equipo → debe sumar 100 exacto y todos los terceros deben existir.
+ */
+async function resolveInvestors(prismaOrTx, cfg) {
+  const team = Array.isArray(cfg?.investorTeam) ? cfg.investorTeam : [];
+  if (team.length === 0) {
+    await ensureOwnerExists(prismaOrTx);
+    return [{ thirdPartyId: OWNER_ID, role: 'INVESTOR', sharePct: 100 }];
+  }
+  if (team.some((p) => !(Number(p.sharePct) > 0))) throw new AppError('Cada inversionista debe tener % > 0', 400);
+  const ids = team.map((p) => p.thirdPartyId);
+  if (new Set(ids).size !== ids.length) throw new AppError('Inversionistas repetidos en el equipo', 400);
+  const sum = Math.round(team.reduce((s, p) => s + Number(p.sharePct), 0) * 100) / 100;
+  if (sum !== 100) throw new AppError(`Los % de capital deben sumar 100 (suman ${sum})`, 400);
+
+  const found = await prismaOrTx.thirdParty.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  const foundIds = new Set(found.map((f) => f.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    throw new AppError(`El equipo de inversionistas referencia terceros que ya no existen (${missing.join(', ')}); actualízalo en Configuración`, 400);
+  }
+  if (ids.includes(OWNER_ID)) await ensureOwnerExists(prismaOrTx);
+  return team.map((p) => ({
+    thirdPartyId: p.thirdPartyId, role: 'INVESTOR',
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
+  }));
 }
 
 /**
@@ -394,6 +472,8 @@ async function getSummary(prismaOrTx) {
 module.exports = {
   loadCommissionConfig,
   resolveParticipants,
+  resolveSellers,
+  resolveInvestors,
   calculatePools,
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience

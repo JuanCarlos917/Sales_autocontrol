@@ -4,6 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
+const { resolveSellers, resolveInvestors } = require('../commissionService');
 const { AppError } = require('../../middleware/errorHandler');
 
 const vehicle = {
@@ -242,6 +243,53 @@ test('reparto: decimales 33.33+33.33 → resto 33.34 y la lista suma exactamente
   assert.equal(Math.round(out.reduce((s, p) => s + p.sharePct, 0) * 100) / 100, 100);
 });
 
+// ── resolveSellers / resolveInvestors (ganancia vs comisión) ─────
+
+const CFG_DIST = { investorTeam: [
+  { thirdPartyId: 'owner-self', sharePct: 50 },
+  { thirdPartyId: 'mama', sharePct: 25 },
+  { thirdPartyId: 'papa', sharePct: 25 },
+] };
+
+test('resolveSellers: un vendedor debe sumar 100', async () => {
+  const out = await resolveSellers(mkTx(), [{ thirdPartyId: 'a', role: 'CERRADOR', sharePct: 100 }], {});
+  assert.equal(out.length, 1);
+  assert.equal(out[0].sharePct, 100);
+});
+
+test('resolveSellers: sin vendedores → []', async () => {
+  const out = await resolveSellers(mkTx(), [], {});
+  assert.deepEqual(out, []);
+});
+
+test('resolveSellers: no suman 100 → 400', async () => {
+  await assert.rejects(
+    resolveSellers(mkTx(), [{ thirdPartyId: 'a', role: 'OTHER', sharePct: 60 }], {}),
+    (e) => e instanceof AppError && e.statusCode === 400,
+  );
+});
+
+test('resolveInvestors: team válido → filas INVESTOR que suman 100', async () => {
+  const out = await resolveInvestors(mkTx(), CFG_DIST);
+  assert.equal(out.length, 3);
+  assert.ok(out.every((r) => r.role === 'INVESTOR'));
+  assert.equal(out.reduce((s, r) => s + r.sharePct, 0), 100);
+});
+
+test('resolveInvestors: sin team → fallback owner-self 100', async () => {
+  const out = await resolveInvestors(mkTx(), { investorTeam: [] });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].thirdPartyId, 'owner-self');
+  assert.equal(out[0].sharePct, 100);
+});
+
+test('resolveInvestors: team con owner-self borrado → error (ensureOwnerExists)', async () => {
+  await assert.rejects(
+    resolveInvestors(mkTx(['owner-self']), CFG_DIST),
+    (e) => e instanceof AppError && /owner-self/.test(e.message),
+  );
+});
+
 // ── loadCommissionConfig: parse defensivo del equipo ─────────────
 
 const SETTING_ROWS = [
@@ -252,6 +300,9 @@ const SETTING_ROWS = [
   { key: 'default_cerrador_pct', value: '70' },
   { key: 'reinvest_account_id', value: 'budget-reinvest' },
   { key: 'tax_reserve_account_id', value: 'budget-tax' },
+  { key: 'commission_gross_pct', value: '10' },
+  { key: 'reinvest_pct', value: '30' },
+  { key: 'tax_pct', value: '10' },
 ];
 
 const mkSettingsTx = (teamValue) => ({
