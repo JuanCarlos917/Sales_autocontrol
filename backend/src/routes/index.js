@@ -25,6 +25,7 @@ router.use('/settings', require('./settings'));
 router.use('/treasury', require('./treasury'));
 router.use('/payables', require('./payables'));
 router.use('/commissions', require('./commissions'));
+router.use('/investors', require('./investors'));
 router.use('/alerts', require('./alerts'));
 router.use('/loans', require('./loans'));
 router.use('/loan-payments', require('./loanPayments'));
