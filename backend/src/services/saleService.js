@@ -5,7 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const commissionService = require('./commissionService');
-const { calculateCommissionBase } = require('../utils/financial');
+const { calculateSaleDistribution } = require('../utils/financial');
 
 /**
  * Tipos de pago de venta
@@ -204,62 +204,70 @@ const registerSale = async (vehicleId, saleData, userId) => {
       }
     }
 
-    // ─── Paso 5: Comisiones y bolsillos ─────────────────────────────
-    // Calcula la base, resuelve participantes, crea CxP COMMISSION por
-    // participante y Transfers proporcionales al efectivo recibido.
-    let commissionSummary = null;
+    // ─── Paso 5: Distribución — comisión (vendedores) y ganancia (inversionistas) ───
+    // Cascada nueva (calculateSaleDistribution, fuente única de verdad):
+    //   grossProfit → comisión sobre bruto (vendedores) → reservas reinversión/
+    //   impuestos sobre el neto → ganancia repartida por capital (inversionistas).
+    // Se crea una CxP COMMISSION por vendedor y una CxP PROFIT_SHARE por
+    // inversionista (ambas PENDING, monto completo), más las Transfers de reservas
+    // proporcionales al efectivo recibido. Si no hay utilidad (skip) no se crea nada.
+    let distributionSummary = null;
     const vehicleForBase = {
       salePrice: salePriceNum,
       purchasePrice: vehicle.purchasePrice,
       negotiatedValue: vehicle.negotiatedValue,
       fromTradeIn: vehicle.fromTradeIn,
-      participation: vehicle.participation,
       expenses: vehicle.expenses,
     };
-    const { commissionBase, skip } = calculateCommissionBase(vehicleForBase);
+    const cfg = await commissionService.loadCommissionConfig(tx);
+    const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
+    const investors = await commissionService.resolveInvestors(tx, cfg);
+    const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors });
 
-    if (!skip) {
-      const cfg = await commissionService.loadCommissionConfig(tx);
-      const pools = commissionService.calculatePools(commissionBase, cfg);
-      const resolved = await commissionService.resolveParticipants(tx, saleData.participants, cfg);
-
-      // 5a. Crear SaleParticipant + Payable COMMISSION por cada uno
-      const participantResults = [];
-      for (const p of resolved) {
-        const amount = pools.commissionPool * (p.sharePct / 100);
+    if (!dist.skip) {
+      // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
+      //     PROFIT_SHARE (inversionista). totalAmount = monto completo de la fila.
+      const mkPayable = async (type, row, label) => {
         const payable = await tx.payable.create({
           data: {
-            type: 'COMMISSION',
+            type,
             status: 'PENDING',
-            totalAmount: amount,
+            totalAmount: row.amount,
             paidAmount: 0,
-            description: `Comisión venta ${vehicle.plate} — ${p.role}`,
+            description: `${label} venta ${vehicle.plate} — ${row.role}`,
             vehicleId,
-            thirdPartyId: p.thirdPartyId,
+            thirdPartyId: row.thirdPartyId,
             createdBy: userId,
           },
         });
         const sp = await tx.saleParticipant.create({
           data: {
             vehicleId,
-            thirdPartyId: p.thirdPartyId,
-            role: p.role,
-            sharePct: p.sharePct,
-            amount,
+            thirdPartyId: row.thirdPartyId,
+            role: row.role,
+            sharePct: row.sharePct,
+            amount: row.amount,
             payableId: payable.id,
           },
         });
-        participantResults.push({
+        return {
           id: sp.id,
-          thirdPartyId: p.thirdPartyId,
-          role: p.role,
-          sharePct: p.sharePct,
-          amount,
+          thirdPartyId: row.thirdPartyId,
+          role: row.role,
+          sharePct: row.sharePct,
+          amount: row.amount,
           payableId: payable.id,
-        });
-      }
+        };
+      };
 
-      // 5b. Transfers proporcionales al efectivo recibido.
+      const sellerResults = [];
+      for (const r of dist.sellerRows) sellerResults.push(await mkPayable('COMMISSION', r, 'Comisión'));
+      const investorResults = [];
+      for (const r of dist.investorRows) investorResults.push(await mkPayable('PROFIT_SHARE', r, 'Ganancia'));
+
+      // 5b. Reservas: transfers a reinversión / impuestos proporcionales al efectivo
+      // recibido (mismo cashRatio que el flujo anterior). Las CxP se crean por el
+      // monto completo; sólo las reservas mueven efectivo real proporcional a lo cobrado.
       //
       // El patrón estándar del proyecto (transferService.create) crea 1 Transfer
       // + 2 Transactions (TRANSFER_OUT en origen, TRANSFER_IN en destino).
@@ -312,8 +320,8 @@ const registerSale = async (vehicleId, saleData, userId) => {
       };
 
       if (cashReceived > 0 && moneyPayments.length > 0) {
-        const reinvestAmt = pools.reinvestPool * cashRatio;
-        const taxAmt = pools.taxPool * cashRatio;
+        const reinvestAmt = dist.reinvestAmount * cashRatio;
+        const taxAmt = dist.taxAmount * cashRatio;
         if (reinvestAmt > 0) {
           const t = await createBucketTransfer(cfg.reinvestAccountId, reinvestAmt, 'Reinversión');
           transferResults.push({
@@ -336,13 +344,15 @@ const registerSale = async (vehicleId, saleData, userId) => {
         }
       }
 
-      commissionSummary = {
-        commissionBase,
-        commissionPool: pools.commissionPool,
-        reinvestPool: pools.reinvestPool,
-        taxPool: pools.taxPool,
+      distributionSummary = {
+        grossProfit: dist.grossProfit,
+        commissionPool: dist.commissionPool,
+        reinvestAmount: dist.reinvestAmount,
+        taxAmount: dist.taxAmount,
+        profitToDistribute: dist.profitToDistribute,
         cashRatioApplied: cashRatio,
-        participants: participantResults,
+        sellers: sellerResults,
+        investors: investorResults,
         transfers: transferResults,
       };
     }
@@ -357,7 +367,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
         totalReceived,
         pendingAmount: pendingAmount > 0 ? pendingAmount : 0,
         tradeInValue: tradeIn?.value || 0,
-        ...(commissionSummary || {}),
+        ...(distributionSummary || {}),
       }
     };
   });
