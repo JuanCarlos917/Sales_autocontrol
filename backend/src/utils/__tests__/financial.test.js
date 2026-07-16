@@ -496,3 +496,69 @@ test('deal: cadena vacía — cerrada false, sin vitrina, directa 0', () => {
   assert.equal(d.showcaseVehicleId, null);
   assert.equal(d.directProfit, 0);
 });
+
+// ── calculateSaleDistribution ────────────────────────────────
+const { calculateSaleDistribution } = require('../financial');
+
+const distVehicle = { salePrice: 20_000_000, purchasePrice: 15_000_000, fromTradeIn: false, expenses: [] };
+const distCfg = { commissionGrossPct: 10, reinvestPct: 30, taxPct: 10 };
+const oneSeller = [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }];
+const team = [
+  { thirdPartyId: 'owner-self', role: 'INVESTOR', sharePct: 50 },
+  { thirdPartyId: 'mama', role: 'INVESTOR', sharePct: 25 },
+  { thirdPartyId: 'papa', role: 'INVESTOR', sharePct: 25 },
+];
+
+test('dist: cascada completa con comisión + reservas + reparto por capital', () => {
+  const d = calculateSaleDistribution(distVehicle, distCfg, { sellers: oneSeller, investors: team });
+  assert.equal(d.skip, false);
+  assert.equal(d.grossProfit, 5_000_000);
+  assert.equal(d.commissionPool, 500_000);
+  assert.equal(d.afterCommission, 4_500_000);
+  assert.equal(d.reinvestAmount, 1_350_000);
+  assert.equal(d.taxAmount, 450_000);
+  assert.equal(d.profitToDistribute, 2_700_000);
+  assert.equal(d.sellerRows[0].amount, 500_000);
+  assert.equal(d.investorRows.find((r) => r.thirdPartyId === 'owner-self').amount, 1_350_000);
+  assert.equal(d.investorRows.find((r) => r.thirdPartyId === 'mama').amount, 675_000);
+  assert.equal(d.investorRows.reduce((s, r) => s + r.amount, 0), 2_700_000);
+});
+
+test('dist: sin vendedores → commissionPool 0, todo a reservas + inversionistas', () => {
+  const d = calculateSaleDistribution(distVehicle, distCfg, { sellers: [], investors: team });
+  assert.equal(d.commissionPool, 0);
+  assert.equal(d.sellerRows.length, 0);
+  assert.equal(d.afterCommission, 5_000_000);
+  assert.equal(d.reinvestAmount, 1_500_000);
+  assert.equal(d.taxAmount, 500_000);
+  assert.equal(d.profitToDistribute, 3_000_000);
+  assert.equal(d.investorRows.reduce((s, r) => s + r.amount, 0), 3_000_000);
+});
+
+test('dist: grossProfit <= 0 → skip sin filas', () => {
+  const d = calculateSaleDistribution(
+    { salePrice: 10_000_000, purchasePrice: 12_000_000, expenses: [] }, distCfg,
+    { sellers: oneSeller, investors: team },
+  );
+  assert.equal(d.skip, true);
+  assert.equal(d.commissionPool, 0);
+  assert.equal(d.sellerRows.length, 0);
+  assert.equal(d.investorRows.length, 0);
+});
+
+test('dist: redondeo — el reparto de inversionistas cuadra exacto con el sobrante a owner-self', () => {
+  // profitToDistribute que no divide parejo por 3
+  const d = calculateSaleDistribution(
+    { salePrice: 20_000_001, purchasePrice: 15_000_000, expenses: [] }, distCfg,
+    { sellers: [], investors: team },
+  );
+  assert.equal(d.investorRows.reduce((s, r) => s + r.amount, 0), d.profitToDistribute);
+});
+
+test('dist: fromTradeIn usa negotiatedValue como costo', () => {
+  const d = calculateSaleDistribution(
+    { salePrice: 20_000_000, fromTradeIn: true, negotiatedValue: 15_000_000, expenses: [] },
+    distCfg, { sellers: [], investors: team },
+  );
+  assert.equal(d.grossProfit, 5_000_000);
+});

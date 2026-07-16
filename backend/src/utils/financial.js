@@ -293,4 +293,50 @@ function calculateDealMetrics(chain) {
   };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics };
+/**
+ * Cascada de distribución de una venta (fuente única de verdad).
+ * Recibe vendedores e inversionistas YA resueltos (con sharePct que suman 100).
+ * Devuelve montos enteros COP; cada bloque (comisión/ganancia) suma exacto.
+ */
+function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] } = {}) {
+  const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
+  const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const salePrice = Number(vehicle.salePrice || 0);
+  const purchaseCost = vehicle.fromTradeIn
+    ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
+    : Number(vehicle.purchasePrice || 0);
+
+  const grossProfit = salePrice - purchaseCost - directExpenses;
+  const empty = { grossProfit, skip: true, commissionPool: 0, afterCommission: 0,
+    reinvestAmount: 0, taxAmount: 0, profitToDistribute: 0, sellerRows: [], investorRows: [] };
+  if (grossProfit <= 0) return empty;
+
+  const hasSellers = Array.isArray(sellers) && sellers.length > 0;
+  const commissionPool = hasSellers ? roundCop((Number(cfg.commissionGrossPct) / 100) * grossProfit) : 0;
+  const afterCommission = grossProfit - commissionPool;
+  const reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * afterCommission);
+  const taxAmount = roundCop((Number(cfg.taxPct) / 100) * afterCommission);
+  const profitToDistribute = afterCommission - reinvestAmount - taxAmount;
+
+  // Reparte `pool` entre `rows` por sharePct; el sobrante de redondeo va a la fila `anchorId`
+  // (o a la primera fila si no está), garantizando Σ amount === pool.
+  const split = (rows, pool, anchorId) => {
+    if (!rows || rows.length === 0) return [];
+    const out = rows.map((r) => ({ ...r, amount: roundCop((Number(r.sharePct) / 100) * pool) }));
+    const diff = pool - out.reduce((s, r) => s + r.amount, 0);
+    if (diff !== 0) {
+      const idx = Math.max(0, out.findIndex((r) => r.thirdPartyId === anchorId));
+      out[idx] = { ...out[idx], amount: out[idx].amount + diff };
+    }
+    return out;
+  };
+
+  return {
+    grossProfit, skip: false, commissionPool, afterCommission,
+    reinvestAmount, taxAmount, profitToDistribute,
+    sellerRows: split(sellers, commissionPool, sellers[0]?.thirdPartyId),
+    investorRows: split(investors, profitToDistribute, 'owner-self'),
+  };
+}
+
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics, calculateSaleDistribution };
