@@ -86,6 +86,34 @@ test('investorService.getSummary: sin filas PROFIT_SHARE → byPerson vacío', a
   assert.equal(summary.pendingTotal, 0);
 });
 
+// ── getSummary: paidThisMonth solo suma pagos PROFIT_SHARE del mes ──────
+// (gap detectado en revisión de Task 6: el aggregate real filtra por
+// payable.type + createdAt >= monthStart; ningún test lo ejercía con
+// filas de pago no vacías).
+
+test('investorService.getSummary: paidThisMonth solo suma pagos PROFIT_SHARE dentro del mes actual', async () => {
+  const now = new Date();
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 5, 12, 0, 0);
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 20, 12, 0, 0);
+
+  const paymentRows = [
+    // COMMISSION este mes — no debe contar en el reporte de inversionistas.
+    { payableType: 'COMMISSION', amount: 900_000, createdAt: thisMonth },
+    // PROFIT_SHARE este mes — sí cuentan.
+    { payableType: 'PROFIT_SHARE', amount: 300_000, createdAt: thisMonth },
+    { payableType: 'PROFIT_SHARE', amount: 400_000, createdAt: thisMonth },
+    // PROFIT_SHARE del mes anterior — excluido por createdAt < monthStart.
+    { payableType: 'PROFIT_SHARE', amount: 999_999, createdAt: lastMonth },
+  ];
+
+  const tx = mkTx(PAYABLES, paymentRows);
+  const summary = await investorService.getSummary(tx);
+
+  // Solo 300k + 400k (PROFIT_SHARE, este mes); excluye la COMMISSION del
+  // mes actual y la PROFIT_SHARE del mes anterior.
+  assert.equal(summary.paidThisMonth, 700_000);
+});
+
 // ── addPayment: reutiliza el flujo genérico de payableService.addPayment ──
 // (mismo PayablePayment/Transaction/treasuryAudit que usan las comisiones).
 // payableService.addPayment abre una $transaction real con locks + balance;
