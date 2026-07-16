@@ -309,6 +309,10 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] 
   const grossProfit = salePrice - purchaseCost - directExpenses;
   const empty = { grossProfit, skip: true, commissionPool: 0, afterCommission: 0,
     reinvestAmount: 0, taxAmount: 0, profitToDistribute: 0, sellerRows: [], investorRows: [] };
+  // Sin base de costo (vehículo vendido sin precio de compra registrado, o
+  // cruce sin valor negociado), no hay forma de calcular ganancia real:
+  // evitamos tratar el salePrice completo como ganancia.
+  if (purchaseCost <= 0) return empty;
   if (grossProfit <= 0) return empty;
 
   const hasSellers = Array.isArray(sellers) && sellers.length > 0;

@@ -562,3 +562,40 @@ test('dist: fromTradeIn usa negotiatedValue como costo', () => {
   );
   assert.equal(d.grossProfit, 5_000_000);
 });
+
+test('dist: sin purchasePrice (0/NULL) y sin fromTradeIn → skip sin filas ni reservas', () => {
+  const noCostVehicle = { salePrice: 20_000_000, purchasePrice: 0, fromTradeIn: false, expenses: [] };
+  const d = calculateSaleDistribution(noCostVehicle, distCfg, { sellers: oneSeller, investors: team });
+  assert.equal(d.skip, true);
+  assert.equal(d.sellerRows.length, 0);
+  assert.equal(d.investorRows.length, 0);
+  assert.equal(d.commissionPool, 0);
+  assert.equal(d.reinvestAmount, 0);
+  assert.equal(d.taxAmount, 0);
+  assert.equal(d.profitToDistribute, 0);
+
+  const nullCostVehicle = { salePrice: 20_000_000, purchasePrice: null, fromTradeIn: false, expenses: [] };
+  const d2 = calculateSaleDistribution(nullCostVehicle, distCfg, { sellers: oneSeller, investors: team });
+  assert.equal(d2.skip, true);
+  assert.equal(d2.sellerRows.length, 0);
+  assert.equal(d2.investorRows.length, 0);
+});
+
+test('dist: fromTradeIn sin negotiatedValue (0/NULL) → skip sin filas ni reservas', () => {
+  const d = calculateSaleDistribution(
+    { salePrice: 20_000_000, fromTradeIn: true, negotiatedValue: 0, purchasePrice: 0, expenses: [] },
+    distCfg, { sellers: oneSeller, investors: team },
+  );
+  assert.equal(d.skip, true);
+  assert.equal(d.sellerRows.length, 0);
+  assert.equal(d.investorRows.length, 0);
+  assert.equal(d.reinvestAmount, 0);
+  assert.equal(d.taxAmount, 0);
+
+  const d2 = calculateSaleDistribution(
+    { salePrice: 20_000_000, fromTradeIn: true, negotiatedValue: null, purchasePrice: null, expenses: [] },
+    distCfg, { sellers: oneSeller, investors: team },
+  );
+  assert.equal(d2.skip, true);
+  assert.equal(d2.sellerRows.length, 0);
+});
