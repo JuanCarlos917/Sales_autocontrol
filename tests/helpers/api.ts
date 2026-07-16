@@ -261,12 +261,24 @@ export interface RegisterSaleResult {
     totalReceived: number;
     pendingAmount: number;
     tradeInValue: number;
-    commissionBase?: number;
+    // Cascada nueva (calculateSaleDistribution, Task 4): comisión sobre el gross
+    // (vendedores) → reservas (reinversión/impuestos) sobre el neto → ganancia
+    // repartida por capital (inversionistas). Ausentes si la venta no tuvo utilidad.
+    grossProfit?: number;
     commissionPool?: number;
-    reinvestPool?: number;
-    taxPool?: number;
+    reinvestAmount?: number;
+    taxAmount?: number;
+    profitToDistribute?: number;
     cashRatioApplied?: number;
-    participants?: Array<{
+    sellers?: Array<{
+      id: string;
+      thirdPartyId: string;
+      role: string;
+      sharePct: number;
+      amount: number;
+      payableId: string;
+    }>;
+    investors?: Array<{
       id: string;
       thirdPartyId: string;
       role: string;

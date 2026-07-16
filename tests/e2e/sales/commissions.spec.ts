@@ -98,7 +98,7 @@ test.describe('Comisiones — configuración global', () => {
     });
   });
 
-  test('venta 100% cash con default participant: crea CxP COMMISSION y 2 Transfers', async ({ page }) => {
+  test('venta 100% cash con vendedores explícitos: crea CxP COMMISSION + PROFIT_SHARE y 2 Transfers', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `CSH${Date.now().toString().slice(-6)}`,
@@ -108,35 +108,50 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
+    // Contrato nuevo: sin `commission_default_team` configurado y sin `participants`
+    // explícitos, resolveSellers devuelve [] (venta sin comisión) — el fallback
+    // legacy owner-self 30/70 ya no existe para vendedores. Pasamos un equipo
+    // explícito que suma 100 exacto (resolveSellers lo exige; el dueño no comisiona).
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
     });
 
-    // Profit = 30M - 20M = 10M (sin gastos directos, sin socio)
-    expect(res.summary.commissionBase).toBe(10_000_000);
-    expect(res.summary.commissionPool).toBe(6_000_000);   // 60%
-    expect(res.summary.reinvestPool).toBe(3_000_000);     // 30%
-    expect(res.summary.taxPool).toBe(1_000_000);          // 10%
-    expect(res.summary.cashRatioApplied).toBe(1);         // 100% cash
+    // Profit = 30M - 20M = 10M (sin gastos directos)
+    // Cascada: comisión = 10% del gross (vendedores) → reservas 30%/10% del neto → ganancia al resto
+    expect(res.summary.grossProfit).toBe(10_000_000);
+    expect(res.summary.commissionPool).toBe(1_000_000);       // 10% de 10M
+    expect(res.summary.reinvestAmount).toBe(2_700_000);       // 30% de (10M − 1M)
+    expect(res.summary.taxAmount).toBe(900_000);              // 10% de (10M − 1M)
+    expect(res.summary.profitToDistribute).toBe(5_400_000);   // resto tras comisión + reservas
+    expect(res.summary.cashRatioApplied).toBe(1);             // 100% cash
 
-    // Default desde Settings (30% captador + 70% cerrador): 2 CxPs separadas a owner-self
-    expect(res.summary.participants).toHaveLength(2);
-    const captador = res.summary.participants!.find(p => p.role === 'CAPTADOR');
-    const cerrador = res.summary.participants!.find(p => p.role === 'CERRADOR');
-    expect(captador?.thirdPartyId).toBe('owner-self');
-    expect(cerrador?.thirdPartyId).toBe('owner-self');
-    expect(captador?.amount).toBe(1_800_000);   // 6M × 30%
-    expect(cerrador?.amount).toBe(4_200_000);   // 6M × 70%
+    // 2 CxPs COMMISSION a nombre de los vendedores explícitos (el dueño no comisiona)
+    expect(res.summary.sellers).toHaveLength(2);
+    const captador = res.summary.sellers!.find(p => p.role === 'CAPTADOR');
+    const cerrador = res.summary.sellers!.find(p => p.role === 'CERRADOR');
+    expect(captador?.thirdPartyId).toBe(TEST_SEED_IDS.employee);
+    expect(cerrador?.thirdPartyId).toBe(TEST_SEED_IDS.partner);
+    expect(captador?.amount).toBe(300_000);   // 1M × 30%
+    expect(cerrador?.amount).toBe(700_000);   // 1M × 70%
 
-    // 2 Transfers: reinvest 3M y tax 1M
+    // Sin investor_team configurado → fallback owner-self 100% de la ganancia
+    expect(res.summary.investors).toHaveLength(1);
+    expect(res.summary.investors![0].thirdPartyId).toBe('owner-self');
+    expect(res.summary.investors![0].amount).toBe(5_400_000);
+
+    // 2 Transfers: reinvest 2.7M y tax 0.9M
     expect(res.summary.transfers).toHaveLength(2);
     const reinvest = res.summary.transfers!.find(t => t.toAccountId === 'budget-reinvest');
     const tax = res.summary.transfers!.find(t => t.toAccountId === 'budget-tax');
-    expect(reinvest?.amount).toBe(3_000_000);
-    expect(tax?.amount).toBe(1_000_000);
+    expect(reinvest?.amount).toBe(2_700_000);
+    expect(tax?.amount).toBe(900_000);
   });
 
   test('venta 100% cruce: crea CxP COMMISSION pero 0 transfers', async ({ page }) => {
@@ -154,14 +169,18 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'TRADE_IN',
       buyerId: TEST_SEED_IDS.buyer,
       tradeIn: { plate: `RCV${Date.now().toString().slice(-6)}`, value: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
     });
 
-    expect(res.summary.commissionBase).toBe(10_000_000);
+    expect(res.summary.grossProfit).toBe(10_000_000);
     expect(res.summary.cashRatioApplied).toBe(0);
-    // Default 30/70 split → 2 CxPs (captador 1.8M + cerrador 4.2M = pool 6M)
-    expect(res.summary.participants).toHaveLength(2);
-    const totalCommitted = res.summary.participants!.reduce((s, p) => s + p.amount, 0);
-    expect(totalCommitted).toBe(6_000_000);
+    // 2 CxPs (10% de 10M repartido 30/70 entre los vendedores)
+    expect(res.summary.sellers).toHaveLength(2);
+    const totalCommitted = res.summary.sellers!.reduce((s, p) => s + p.amount, 0);
+    expect(totalCommitted).toBe(1_000_000);
     expect(res.summary.transfers).toHaveLength(0);                // sin caja, sin transfer
   });
 
@@ -175,7 +194,8 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
-    // Total: 30M (15M cash + 15M cruce) → cashRatio = 0.5
+    // Total: 30M (15M cash + 15M cruce) → cashRatio = 0.5. Sin vendedores (no es
+    // el foco del test): commissionPool = 0, así que afterCommission = grossProfit.
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'MIXED',
@@ -184,16 +204,16 @@ test.describe('Comisiones — configuración global', () => {
       tradeIn: { plate: `RCM${Date.now().toString().slice(-6)}`, value: 15_000_000 },
     });
 
-    expect(res.summary.commissionBase).toBe(10_000_000);
+    expect(res.summary.grossProfit).toBe(10_000_000);
     expect(res.summary.cashRatioApplied).toBeCloseTo(0.5, 5);
     expect(res.summary.transfers).toHaveLength(2);
     const reinvest = res.summary.transfers!.find(t => t.toAccountId === 'budget-reinvest');
     const tax = res.summary.transfers!.find(t => t.toAccountId === 'budget-tax');
-    expect(reinvest?.amount).toBeCloseTo(1_500_000, 0);  // 3M × 0.5
-    expect(tax?.amount).toBeCloseTo(500_000, 0);          // 1M × 0.5
+    expect(reinvest?.amount).toBeCloseTo(1_500_000, 0);  // 30% de 10M × 0.5
+    expect(tax?.amount).toBeCloseTo(500_000, 0);          // 10% de 10M × 0.5
   });
 
-  test('venta con pérdida: cero CxP, cero transfers, sin participants', async ({ page }) => {
+  test('venta con pérdida: cero CxP, cero transfers, sin sellers/investors', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `LOSS${Date.now().toString().slice(-6)}`,
@@ -210,12 +230,13 @@ test.describe('Comisiones — configuración global', () => {
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 25_000_000 },
     });
 
-    expect(res.summary.commissionBase).toBeUndefined();
-    expect(res.summary.participants).toBeUndefined();
+    expect(res.summary.grossProfit).toBeUndefined();
+    expect(res.summary.sellers).toBeUndefined();
+    expect(res.summary.investors).toBeUndefined();
     expect(res.summary.transfers).toBeUndefined();
   });
 
-  test('venta con participants[] custom: respeta split y el dueño recibe el resto automático', async ({ page }) => {
+  test('venta con participants[] custom (vendedores): deben sumar 100 exacto, el dueño no comisiona', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `CST${Date.now().toString().slice(-6)}`,
@@ -225,9 +246,9 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
-    // Nuevo contrato: sin owner-self en filas; el resto (50%) va automático al dueño.
-    // pool = (30M − 20M) × 60% = 6M
-    // employee 30% → 1.8M · partner 20% → 1.2M · owner 50% → 3M
+    // Contrato nuevo (resolveSellers): sin fila de "resto al dueño" para comisión —
+    // los vendedores deben sumar 100 exacto y owner-self no puede ir en la lista.
+    // pool = (30M − 20M) × 10% = 1M · captador 30% → 300k · otro 70% → 700k
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
@@ -235,16 +256,21 @@ test.describe('Comisiones — configuración global', () => {
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
       participants: [
         { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
-        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'OTHER',    sharePct: 20 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'OTHER',    sharePct: 70 },
       ],
     });
-    expect(res.summary.participants).toHaveLength(3);
-    const captador = res.summary.participants!.find(p => p.thirdPartyId === TEST_SEED_IDS.employee);
-    const socio    = res.summary.participants!.find(p => p.thirdPartyId === TEST_SEED_IDS.partner);
-    const owner    = res.summary.participants!.find(p => p.thirdPartyId === 'owner-self');
-    expect(captador?.amount).toBeCloseTo(1_800_000, 0); // 6M × 0.30
-    expect(socio?.amount).toBeCloseTo(1_200_000, 0);   // 6M × 0.20
-    expect(owner?.amount).toBeCloseTo(3_000_000, 0);   // 6M × 0.50 (resto automático)
+    expect(res.summary.sellers).toHaveLength(2);
+    const captador = res.summary.sellers!.find(p => p.thirdPartyId === TEST_SEED_IDS.employee);
+    const socio    = res.summary.sellers!.find(p => p.thirdPartyId === TEST_SEED_IDS.partner);
+    expect(res.summary.sellers!.some(p => p.thirdPartyId === 'owner-self')).toBe(false);
+    expect(captador?.amount).toBe(300_000); // 1M × 0.30
+    expect(socio?.amount).toBe(700_000);    // 1M × 0.70
+
+    // El dueño sigue recibiendo su parte, pero ahora como INVERSIONISTA (fallback
+    // owner-self 100% de la ganancia, ya que no hay investor_team configurado).
+    expect(res.summary.investors).toHaveLength(1);
+    expect(res.summary.investors![0].thirdPartyId).toBe('owner-self');
+    expect(res.summary.investors![0].amount).toBe(5_400_000); // profitToDistribute completo
   });
 
   test('participants[] inválidos devuelven 400: suma >100 y owner-self en filas', async ({ page }) => {
@@ -272,7 +298,8 @@ test.describe('Comisiones — configuración global', () => {
     expect(res1.status).toBe(400);
     expect(res1.body?.error).toMatch(/suman|máximo 100/i);
 
-    // Caso 2: owner-self en filas → 400 (el dueño es el resto automático)
+    // Caso 2: owner-self en filas → 400 (el dueño no comisiona: su parte se
+    // reparte del lado de los inversionistas, no del de los vendedores)
     const res2 = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
@@ -283,10 +310,10 @@ test.describe('Comisiones — configuración global', () => {
       ],
     });
     expect(res2.status).toBe(400);
-    expect(res2.body?.error).toMatch(/dueño|resto automático/i);
+    expect(res2.body?.error).toMatch(/dueño/i);
   });
 
-  test('venta con socio 50%: base de comisión es mi parte (gross × 0.5)', async ({ page }) => {
+  test('venta con socio 50%: la cascada usa la ganancia bruta completa (participation ya no reduce la base)', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `PRT${Date.now().toString().slice(-6)}`,
@@ -303,10 +330,13 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [{ thirdPartyId: TEST_SEED_IDS.employee, role: 'CERRADOR', sharePct: 100 }],
     });
-    // Gross profit global = 10M, mi parte = 10M × 0.5 = 5M
-    expect(res.summary.commissionBase).toBe(5_000_000);
-    expect(res.summary.commissionPool).toBe(3_000_000); // 60% de 5M
+    // Gross profit global = 10M. A diferencia del modelo viejo (commissionBase =
+    // gross × participation = 5M), calculateSaleDistribution NO lee
+    // vehicle.participation: la cascada corre siempre sobre el gross completo.
+    expect(res.summary.grossProfit).toBe(10_000_000);
+    expect(res.summary.commissionPool).toBe(1_000_000); // 10% de 10M (no de 5M)
   });
 
   test('cancelSale bloqueado si hay Payables COMMISSION (incluso sin transacciones de caja)', async ({ page }) => {
@@ -324,6 +354,7 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'TRADE_IN',
       buyerId: TEST_SEED_IDS.buyer,
       tradeIn: { plate: `RXC${Date.now().toString().slice(-6)}`, value: 30_000_000 },
+      participants: [{ thirdPartyId: TEST_SEED_IDS.employee, role: 'CERRADOR', sharePct: 100 }],
     });
 
     const res = await apiRequestRaw('POST', `/vehicles/${v.id}/cancel-sale`, token);
@@ -346,9 +377,13 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
     });
-    // Paga la CxP del CERRADOR (4.2M = 70% de 6M pool con default split 30/70)
-    const cerradorPayable = sale.summary.participants!.find(p => p.role === 'CERRADOR');
+    // Paga la CxP del CERRADOR (700k = 70% de 1M pool: 10% de la ganancia de 10M)
+    const cerradorPayable = sale.summary.sellers!.find(p => p.role === 'CERRADOR');
     expect(cerradorPayable).toBeDefined();
 
     const pay = await apiRequestRaw('POST', `/payables/${cerradorPayable!.payableId}/payments`, token, {
@@ -422,20 +457,24 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
     });
 
     const res = await apiRequestRaw('GET', '/payables/summary', token);
     expect(res.status).toBe(200);
     const body = res.body as { payables?: { total: number; count: number } };
     expect(body.payables).toBeDefined();
-    // El total Por Pagar incluye las CxP COMMISSION (al menos 6M de esta venta)
-    expect(body.payables!.total).toBeGreaterThanOrEqual(6_000_000);
+    // El total Por Pagar incluye las CxP COMMISSION (10% de 10M = 1M de esta venta)
+    expect(body.payables!.total).toBeGreaterThanOrEqual(1_000_000);
     expect(body.payables!.count).toBeGreaterThanOrEqual(2); // al menos 2 nuevas (cap+cer)
   });
 
-  test('PayablesPage muestra 1 card por venta con desglose Captador/Cerrador y % de Settings', async ({ page }) => {
+  test('PayablesPage muestra 1 card por venta con desglose Captador/Cerrador y % pasados', async ({ page }) => {
     const token = await loginAsAdmin(page);
-    // Venta cash con ganancia 10M → pool comisión 6M → captador 1.8M (30%) + cerrador 4.2M (70%)
+    // Venta cash con ganancia 10M → pool comisión = 10% de 10M = 1M → captador 300k (30%) + cerrador 700k (70%)
     const plate = `PYD${Date.now().toString().slice(-6)}`;
     const v = await apiCreateVehicle(token, {
       plate,
@@ -450,13 +489,17 @@ test.describe('Comisiones — configuración global', () => {
       paymentType: 'CASH',
       buyerId: TEST_SEED_IDS.buyer,
       cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
     });
 
     await page.goto('/treasury/payables');
 
     // Header card de totales sigue mostrando los subtotales por rol
-    await expect(page.getByTestId('commissions-captador')).toContainText(/1\.800\.000|1,800,000/);
-    await expect(page.getByTestId('commissions-cerrador')).toContainText(/4\.200\.000|4,200,000/);
+    await expect(page.getByTestId('commissions-captador')).toContainText(/300\.000|300,000/);
+    await expect(page.getByTestId('commissions-cerrador')).toContainText(/700\.000|700,000/);
 
     // En el listado debe aparecer UNA card agrupada por venta con desglose interno
     const group = page.getByTestId(`commission-group-${plate}`);
@@ -467,11 +510,11 @@ test.describe('Comisiones — configuración global', () => {
     await expect(captadorRow).toBeVisible();
     await expect(cerradorRow).toBeVisible();
 
-    // Cada row muestra el % junto al monto (tomado de Settings: 30% y 70%)
+    // Cada row muestra el % junto al monto (tomado del SaleParticipant, 30% y 70%)
     await expect(captadorRow).toContainText(/Captador.*30%/);
-    await expect(captadorRow).toContainText(/1\.800\.000|1,800,000/);
+    await expect(captadorRow).toContainText(/300\.000|300,000/);
     await expect(cerradorRow).toContainText(/Cerrador.*70%/);
-    await expect(cerradorRow).toContainText(/4\.200\.000|4,200,000/);
+    await expect(cerradorRow).toContainText(/700\.000|700,000/);
 
     // Cada rol tiene su propio botón Pagar
     await expect(captadorRow.getByText(/Pagar/)).toBeVisible();
