@@ -446,6 +446,20 @@ const commissionConfigSchema = Joi.object({
     role: Joi.string().valid('CAPTADOR', 'CERRADOR', 'OTHER').required(),
     sharePct: Joi.number().positive().max(100).required(),
   })).max(5).default([]),
+  // Porcentajes editables de la cascada ganancia (Task 8): independientes
+  // entre sí, la validación cruzada (reinvest+tax <= 100) vive en el
+  // controlador junto con el resto de validación cruzada de este endpoint.
+  commission_gross_pct: Joi.number().min(0).max(100),
+  reinvest_pct:         Joi.number().min(0).max(100),
+  tax_pct:              Joi.number().min(0).max(100),
+  // Equipo de inversionistas: a diferencia de commission_default_team,
+  // owner-self SÍ puede aparecer (el dueño es inversionista). La suma a
+  // 100 (o vacío) y la existencia de terceros se validan en el controlador.
+  investor_team: Joi.array().items(Joi.object({
+    thirdPartyId: Joi.string().required(),
+    role: Joi.string().valid('INVESTOR').default('INVESTOR'),
+    sharePct: Joi.number().positive().max(100).required(),
+  })).default([]),
 });
 
 const loanPaymentSchema = Joi.object({
