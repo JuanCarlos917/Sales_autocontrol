@@ -338,10 +338,12 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
 /**
  * Lista items de comisión agrupados por vehículo vendido, pendientes primero.
  * status: 'pending' | 'paid' | 'all' (default all).
+ * payableType: PayableType a agregar (default 'COMMISSION'; investorService
+ * reutiliza esto con 'PROFIT_SHARE' — mismo armado, distinto tipo de CxP).
  */
-async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
+async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMISSION' } = {}) {
   const payables = await prismaOrTx.payable.findMany({
-    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    where: { type: payableType, vehicleId: { not: null } },
     include: {
       vehicle: { include: { expenses: true } },
       thirdParty: { select: { id: true, name: true } },
@@ -436,10 +438,12 @@ function buildPersonSummary(rows) {
 /**
  * Agregados de comisiones para Dashboard + sección "Por persona".
  * Retorna: pendingTotal, paidThisMonth (zona Bogotá), byPerson ordenado por pendiente.
+ * payableType: PayableType a agregar (default 'COMMISSION'; investorService
+ * reutiliza esto con 'PROFIT_SHARE' para el reporte de ganancia por inversionista).
  */
-async function getSummary(prismaOrTx) {
+async function getSummary(prismaOrTx, { payableType = 'COMMISSION' } = {}) {
   const payables = await prismaOrTx.payable.findMany({
-    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    where: { type: payableType, vehicleId: { not: null } },
     select: {
       thirdPartyId: true,
       vehicleId: true,
@@ -467,7 +471,7 @@ async function getSummary(prismaOrTx) {
     _sum: { amount: true },
     where: {
       createdAt: { gte: monthStart },
-      payable: { type: 'COMMISSION' },
+      payable: { type: payableType },
     },
   });
 
