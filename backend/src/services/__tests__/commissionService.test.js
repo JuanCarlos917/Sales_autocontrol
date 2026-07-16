@@ -292,6 +292,10 @@ test('resolveInvestors: team con owner-self borrado → error (ensureOwnerExists
 
 // ── loadCommissionConfig: parse defensivo del equipo ─────────────
 
+// reinvest_share_pct/tax_share_pct (legacy, consumidos por calculatePools/
+// saleService) se fijan DELIBERADAMENTE distintos de reinvest_pct/tax_pct
+// (nuevos, sólo consumidos por distributionCfg) para poder probar que
+// loadCommissionConfig no mezcla ambas fuentes.
 const SETTING_ROWS = [
   { key: 'commission_share_pct', value: '60' },
   { key: 'reinvest_share_pct', value: '30' },
@@ -301,15 +305,17 @@ const SETTING_ROWS = [
   { key: 'reinvest_account_id', value: 'budget-reinvest' },
   { key: 'tax_reserve_account_id', value: 'budget-tax' },
   { key: 'commission_gross_pct', value: '10' },
-  { key: 'reinvest_pct', value: '30' },
-  { key: 'tax_pct', value: '10' },
+  { key: 'reinvest_pct', value: '99' },
+  { key: 'tax_pct', value: '88' },
 ];
 
-const mkSettingsTx = (teamValue) => ({
+const mkSettingsTx = (teamValue, investorTeamValue) => ({
   setting: {
-    findMany: async () => teamValue === undefined
-      ? SETTING_ROWS
-      : [...SETTING_ROWS, { key: 'commission_default_team', value: teamValue }],
+    findMany: async () => [
+      ...SETTING_ROWS,
+      ...(teamValue === undefined ? [] : [{ key: 'commission_default_team', value: teamValue }]),
+      ...(investorTeamValue === undefined ? [] : [{ key: 'investor_team', value: investorTeamValue }]),
+    ],
   },
 });
 
@@ -332,6 +338,45 @@ test('config: array válido → defaultTeam parseado', async () => {
   const team = [{ thirdPartyId: 'x', role: 'OTHER', sharePct: 20 }];
   const cfg = await loadCommissionConfig(mkSettingsTx(JSON.stringify(team)));
   assert.deepEqual(cfg.defaultTeam, team);
+});
+
+test('config: distributionCfg mapea commissionGrossPct/reinvestPct/taxPct desde las keys nuevas', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  assert.deepEqual(cfg.distributionCfg, {
+    commissionGrossPct: 10,
+    reinvestPct: 99,
+    taxPct: 88,
+  });
+});
+
+test('REGRESIÓN: reinvestPct/taxPct top-level siguen viniendo de las keys viejas (no de las nuevas)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  // Fixture: reinvest_share_pct=30/tax_share_pct=10 (viejas) vs reinvest_pct=99/tax_pct=88 (nuevas).
+  assert.equal(cfg.reinvestPct, 30);
+  assert.equal(cfg.taxPct, 10);
+  assert.notEqual(cfg.reinvestPct, cfg.distributionCfg.reinvestPct);
+  assert.notEqual(cfg.taxPct, cfg.distributionCfg.taxPct);
+});
+
+test('config: investorTeam — JSON array válido se parsea', async () => {
+  const team = [{ thirdPartyId: 'mama', role: 'INVESTOR', sharePct: 100 }];
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, JSON.stringify(team)));
+  assert.deepEqual(cfg.investorTeam, team);
+});
+
+test('config: investorTeam — JSON corrupto → [] (no tumba la venta)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, '{{{no-json'));
+  assert.deepEqual(cfg.investorTeam, []);
+});
+
+test('config: investorTeam — JSON válido pero no-array → []', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, '{"foo":"bar"}'));
+  assert.deepEqual(cfg.investorTeam, []);
+});
+
+test('config: investorTeam — sin key → [] (default)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  assert.deepEqual(cfg.investorTeam, []);
 });
 
 // ── buildPersonSummary (métricas por persona) ────────────────────

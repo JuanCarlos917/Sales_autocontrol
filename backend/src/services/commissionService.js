@@ -66,17 +66,26 @@ async function loadCommissionConfig(prismaOrTx) {
     }
   }
   return {
+    // Legacy pool config (consumido por calculatePools/saleService — NO tocar
+    // hasta que Task 4 rewire el flujo de venta a la cascada nueva).
     commissionPct:        Number(cfg.commission_share_pct),
-    reinvestPct:          Number(cfg.reinvest_pct),
-    taxPct:               Number(cfg.tax_pct),
+    reinvestPct:          Number(cfg.reinvest_share_pct),
+    taxPct:               Number(cfg.tax_share_pct),
     defaultCaptadorPct:   Number(cfg.default_captador_pct),
     defaultCerradorPct:   Number(cfg.default_cerrador_pct),
     reinvestAccountId:    cfg.reinvest_account_id,
     taxReserveAccountId:  cfg.tax_reserve_account_id,
     defaultTeam,
     sellerTeam:           defaultTeam,
-    commissionGrossPct:   Number(cfg.commission_gross_pct),
     investorTeam,
+    // Config de la cascada ganancia vs comisión (calculateSaleDistribution,
+    // Task 4). Deliberadamente separada de los campos legacy de arriba para
+    // no repointear el flujo de venta actual antes de que esté migrado.
+    distributionCfg: {
+      commissionGrossPct: Number(cfg.commission_gross_pct),
+      reinvestPct:         Number(cfg.reinvest_pct),
+      taxPct:              Number(cfg.tax_pct),
+    },
   };
 }
 
