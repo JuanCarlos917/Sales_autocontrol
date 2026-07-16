@@ -455,11 +455,24 @@ const commissionConfigSchema = Joi.object({
   // Equipo de inversionistas: a diferencia de commission_default_team,
   // owner-self SÍ puede aparecer (el dueño es inversionista). La suma a
   // 100 (o vacío) y la existencia de terceros se validan en el controlador.
+  //
+  // SIN `.default([])`: el middleware `validate()` reasigna `req.body = value`
+  // tras correr Joi, así que un default aquí inyectaría `investor_team: []`
+  // en CUALQUIER PUT que omita el campo, y el controlador lo persistiría
+  // (upsert sobre `Object.entries(data)`), borrando en silencio un reparto
+  // de inversionistas ya configurado. Al quedar `undefined`, el controlador
+  // (`if (data.investor_team !== undefined)`) omite el upsert correctamente.
+  //
+  // `sharePct` SIN `.positive()`: el controlador ya valida sharePct > 0 con
+  // su propio mensaje en español ("Cada inversionista debe tener un
+  // porcentaje mayor a 0"); si Joi lo rechazara primero con el shape
+  // genérico `{ error: 'Datos inválidos', details }`, ese chequeo del
+  // controlador quedaría muerto e inalcanzable en la ruta real.
   investor_team: Joi.array().items(Joi.object({
     thirdPartyId: Joi.string().required(),
     role: Joi.string().valid('INVESTOR').default('INVESTOR'),
-    sharePct: Joi.number().positive().max(100).required(),
-  })).default([]),
+    sharePct: Joi.number().required(),
+  })).optional(),
 });
 
 const loanPaymentSchema = Joi.object({
