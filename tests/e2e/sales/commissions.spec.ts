@@ -531,7 +531,10 @@ test.describe('Comisiones — configuración global', () => {
     await page.getByTestId('settings-commission-pct').fill('55');
     await page.getByTestId('settings-reinvest-pct').fill('35');
     await page.getByTestId('settings-save-commissions').click();
-    await expect(page.getByText('Guardado.')).toBeVisible({ timeout: 5_000 });
+    // Scoped a la card de comisiones: la card de inversionistas (Task 9, feature
+    // ganancia-inversionistas) agregó su propio "Guardado." en la misma pestaña,
+    // por lo que un getByText('Guardado.') global ahora es ambiguo (2 elementos).
+    await expect(page.getByTestId('settings-commissions-card').getByText('Guardado.')).toBeVisible({ timeout: 5_000 });
 
     // Restaurar defaults
     await page.getByTestId('settings-commission-pct').fill('60');

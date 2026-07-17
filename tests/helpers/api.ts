@@ -756,7 +756,9 @@ export async function apiReverseTransactionRaw(
 
 // ── Commissions ───────────────────────────────────────────
 
-export async function apiListCommissions(token: string): Promise<Array<{
+// Espejo del shape de /investors: ambos endpoints reutilizan
+// commissionService.listByVehicle parametrizado por PayableType.
+export interface CommissionOrInvestorVehicleItem {
   vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
   cascade: {
     salePrice: number; purchaseCost: number; directExpenses: number;
@@ -769,6 +771,18 @@ export async function apiListCommissions(token: string): Promise<Array<{
   }>;
   buckets: { reinvest: number; tax: number } | null;
   hasPending: boolean;
-}>> {
+}
+
+export async function apiListCommissions(token: string): Promise<CommissionOrInvestorVehicleItem[]> {
   return getJson('/commissions', token);
+}
+
+// ── Investors (ganancia por inversionista, espejo de Commissions) ──
+
+export async function apiListInvestors(token: string): Promise<CommissionOrInvestorVehicleItem[]> {
+  return getJson('/investors', token);
+}
+
+export async function apiGetInvestorsSummary(token: string): Promise<CommissionsSummary> {
+  return getJson('/investors/summary', token);
 }
