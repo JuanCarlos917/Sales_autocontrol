@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildCommissionVehicleItem, buildInvestorVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
-const { resolveSellers, resolveInvestors } = require('../commissionService');
+const { resolveSellers, resolveInvestors, resolveSocio } = require('../commissionService');
 const { AppError } = require('../../middleware/errorHandler');
 
 const vehicle = {
@@ -404,6 +404,46 @@ test('resolveInvestors: team con owner-self borrado → error (ensureOwnerExists
   await assert.rejects(
     resolveInvestors(mkTx(['owner-self']), CFG_DIST),
     (e) => e instanceof AppError && /owner-self/.test(e.message),
+  );
+});
+
+// ── resolveSocio (detección externo/inversionista + regla 100%) ──
+
+const CFG_SOCIO = { investorTeam: [
+  { thirdPartyId: 'owner-self', sharePct: 50 },
+  { thirdPartyId: 'tp-mama', sharePct: 25 },
+  { thirdPartyId: 'tp-papa', sharePct: 25 },
+] };
+
+test('resolveSocio: sin partnerId → null', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: null, participation: 1 }, CFG_SOCIO);
+  assert.equal(out, null);
+});
+
+test('resolveSocio: externo parcial → share 0.4, isInvestor false', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: 'tp-externo', participation: 0.6 }, CFG_SOCIO);
+  assert.equal(out.thirdPartyId, 'tp-externo');
+  assert.equal(out.share, 0.4);
+  assert.equal(out.isInvestor, false);
+});
+
+test('resolveSocio: inversionista al 100% → share 1, isInvestor true', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: 'tp-mama', participation: 0 }, CFG_SOCIO);
+  assert.equal(out.share, 1);
+  assert.equal(out.isInvestor, true);
+});
+
+test('resolveSocio: inversionista parcial → 400', async () => {
+  await assert.rejects(
+    resolveSocio(mkTx(), { partnerId: 'tp-mama', participation: 0.6 }, CFG_SOCIO),
+    (e) => e instanceof AppError && e.statusCode === 400 && /100%/.test(e.message),
+  );
+});
+
+test('resolveSocio: externo al 100% → 400', async () => {
+  await assert.rejects(
+    resolveSocio(mkTx(), { partnerId: 'tp-externo', participation: 0 }, CFG_SOCIO),
+    (e) => e instanceof AppError && e.statusCode === 400,
   );
 });
 

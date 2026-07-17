@@ -244,6 +244,30 @@ async function resolveInvestors(prismaOrTx, cfg) {
 }
 
 /**
+ * Resuelve el SOCIO del vehículo (partnerId) para la cascada ganancia vs
+ * comisión: `share` es la porción de la ganancia que le corresponde
+ * (1 − participation, la parte del dueño/equipo). Sin partnerId → sin socio
+ * (null). isInvestor detecta si el socio es owner-self o pertenece al equipo
+ * de inversionistas configurado (cfg.investorTeam); un inversionista debe
+ * poner el 100% del vehículo (share === 1) y un socio externo NO puede poner
+ * el 100% (debe ser inversionista) — ambas violaciones son error 400.
+ */
+async function resolveSocio(prismaOrTx, vehicle, cfg) {
+  if (!vehicle.partnerId) return null;
+  const share = Math.round((1 - Number(vehicle.participation ?? 1)) * 10000) / 10000;
+  if (share <= 0) return null; // participation 1 = sin socio efectivo
+  const team = Array.isArray(cfg?.investorTeam) ? cfg.investorTeam : [];
+  const isInvestor = vehicle.partnerId === OWNER_ID || team.some((i) => i.thirdPartyId === vehicle.partnerId);
+  if (isInvestor && share !== 1) {
+    throw new AppError('Un socio inversionista debe poner el 100% del vehículo', 400);
+  }
+  if (!isInvestor && share === 1) {
+    throw new AppError('Un socio externo no puede poner el 100%; debe ser un inversionista', 400);
+  }
+  return { thirdPartyId: vehicle.partnerId, share, isInvestor };
+}
+
+/**
  * Calcula los tres "pools" (montos absolutos) a partir de la base de comisión.
  */
 function calculatePools(commissionBase, cfg) {
@@ -558,6 +582,7 @@ module.exports = {
   resolveParticipants,
   resolveSellers,
   resolveInvestors,
+  resolveSocio,
   calculatePools,
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience
