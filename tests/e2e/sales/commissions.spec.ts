@@ -273,7 +273,7 @@ test.describe('Comisiones — configuración global', () => {
     expect(res.summary.investors![0].amount).toBe(5_400_000); // profitToDistribute completo
   });
 
-  test('participants[] inválidos devuelven 400: suma >100 y owner-self en filas', async ({ page }) => {
+  test('participants[] inválidos devuelven 400: suma >100 y vendedor que no suma 100', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `BAD${Date.now().toString().slice(-6)}`,
@@ -298,8 +298,9 @@ test.describe('Comisiones — configuración global', () => {
     expect(res1.status).toBe(400);
     expect(res1.body?.error).toMatch(/suman|máximo 100/i);
 
-    // Caso 2: owner-self en filas → 400 (el dueño no comisiona: su parte se
-    // reparte del lado de los inversionistas, no del de los vendedores)
+    // Caso 2: los vendedores deben sumar 100 exacto. El dueño (owner-self) SÍ puede
+    // comisionar como vendedor (cambio de contrato), pero un único vendedor al 70%
+    // no suma 100 → 400 (por la suma, no por ser el dueño).
     const res2 = await apiRequestRaw('POST', `/vehicles/${v.id}/sell`, token, {
       salePrice: 30_000_000,
       paymentType: 'CASH',
@@ -310,7 +311,7 @@ test.describe('Comisiones — configuración global', () => {
       ],
     });
     expect(res2.status).toBe(400);
-    expect(res2.body?.error).toMatch(/dueño/i);
+    expect(res2.body?.error).toMatch(/sumar 100|suman/i);
   });
 
   test('venta con socio 50%: la cascada usa la ganancia bruta completa (participation ya no reduce la base)', async ({ page }) => {
