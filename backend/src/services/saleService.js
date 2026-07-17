@@ -7,6 +7,13 @@ const { AppError } = require('../middleware/errorHandler');
 const commissionService = require('./commissionService');
 const { calculateSaleDistribution } = require('../utils/financial');
 
+// Un vehículo con socio puede tener DOS CxP tipo RECEIVABLE: la de la venta
+// financiada (saldo pendiente del comprador) y la de la comisión del socio.
+// Este prefijo identifica la de la VENTA para que getSaleSummary/addSaleCollection/
+// cancelSale no la confundan con la del socio ("Comisión socio venta ...").
+const SALE_RECEIVABLE_PREFIX = 'Venta vehículo';
+const isSaleReceivable = (p) => p.type === 'RECEIVABLE' && (p.description || '').startsWith(SALE_RECEIVABLE_PREFIX);
+
 /**
  * Tipos de pago de venta
  * - CASH: Efectivo (ingreso directo)
@@ -185,7 +192,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
           totalAmount: salePriceNum,
           paidAmount: totalReceived,
           dueDate: financing?.dueDate ? new Date(financing.dueDate) : null,
-          description: `Venta vehículo ${vehicle.plate}`,
+          description: `${SALE_RECEIVABLE_PREFIX} ${vehicle.plate}`,
           vehicleId: vehicleId,
           thirdPartyId: clientId || null,
           createdBy: userId
@@ -415,12 +422,13 @@ const registerSale = async (vehicleId, saleData, userId) => {
  * Registrar cobro de venta (pago a CxC)
  */
 const addSaleCollection = async (vehicleId, collectionData, userId) => {
-  // Buscar el receivable asociado al vehículo
+  // Buscar el receivable DE LA VENTA (no el de comisión del socio) asociado al vehículo
   const receivable = await prisma.payable.findFirst({
     where: {
       vehicleId,
       type: 'RECEIVABLE',
-      status: { in: ['PENDING', 'PARTIAL'] }
+      status: { in: ['PENDING', 'PARTIAL'] },
+      description: { startsWith: SALE_RECEIVABLE_PREFIX }
     }
   });
 
@@ -519,7 +527,7 @@ const getSaleSummary = async (vehicleId) => {
   }
 
   const purchasePayable = vehicle.payables.find(p => p.type === 'PAYABLE');
-  const saleReceivable = vehicle.payables.find(p => p.type === 'RECEIVABLE');
+  const saleReceivable = vehicle.payables.find(isSaleReceivable);
 
   // Calcular totales
   const totalExpenses = vehicle.expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
@@ -584,7 +592,7 @@ const cancelSale = async (vehicleId, userId) => {
   }
 
   // Verificar si hay CxC con pagos
-  const saleReceivable = vehicle.payables.find(p => p.type === 'RECEIVABLE');
+  const saleReceivable = vehicle.payables.find(isSaleReceivable);
   if (saleReceivable && parseFloat(saleReceivable.paidAmount) > 0) {
     throw new AppError('No se puede cancelar la venta porque ya hay cobros registrados', 400);
   }
@@ -664,5 +672,7 @@ module.exports = {
   registerSale,
   addSaleCollection,
   getSaleSummary,
-  cancelSale
+  cancelSale,
+  isSaleReceivable,
+  SALE_RECEIVABLE_PREFIX,
 };
