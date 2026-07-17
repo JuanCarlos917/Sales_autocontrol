@@ -238,12 +238,13 @@ test('dist socio inversionista 100%: reservas sobre todo; reparto al fondo 0', (
 });
 
 test('dist sin socio: idéntico al comportamiento actual', () => {
+  // vBase = 30M − 20M = bruta 10M; comisión 1M; afterCommission 9M.
   const d = calculateSaleDistribution(vBase, socioCfg, { sellers: oneSellerS, investors: teamS, socio: null });
   assert.equal(d.partnerProfit, 0);
   assert.equal(d.partnerCommissionOwed, 0);
-  assert.equal(d.reinvestAmount, 1_350_000);       // 30% × 9M
-  assert.equal(d.taxAmount, 450_000);
-  assert.equal(d.profitToDistribute, 2_700_000);
+  assert.equal(d.reinvestAmount, 2_700_000);       // 30% × 9M
+  assert.equal(d.taxAmount, 900_000);              // 10% × 9M
+  assert.equal(d.profitToDistribute, 5_400_000);   // 9M − 2.7M − 0.9M
 });
 ```
 
