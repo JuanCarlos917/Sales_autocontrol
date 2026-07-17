@@ -99,14 +99,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const supplierLocked = !!vehicle?.supplierId;
   const partnerIdLocked = !!vehicle?.partnerId;
 
-  // Cargar equipo de inversionistas una vez, para validar socio inversionista⟺100%
+  // Cargar quién es inversionista (para validar socio inversionista⟺100%). Se lee de
+  // la lista de terceros (/treasury/third-parties expone isInvestor) — accesible por
+  // todos los roles, a diferencia de /settings/commission-config que es ADMIN-only.
   useEffect(() => {
-    api.get('/settings/commission-config')
+    api.get('/treasury/third-parties')
       .then(res => {
-        const team = Array.isArray(res.data?.investor_team) ? res.data.investor_team : [];
-        setInvestorTeamIds(team.map(t => t.thirdPartyId).filter(Boolean));
+        const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        setInvestorTeamIds(list.filter(tp => tp.isInvestor).map(tp => tp.id));
       })
-      .catch(err => console.error('Error loading commission config:', err));
+      .catch(err => console.error('Error loading third parties:', err));
   }, []);
 
   // Cargar cuentas al montar (creando O confirmando compra)

@@ -19,6 +19,21 @@ function assertThirdPartyDeletable(id) {
   }
 }
 
+// Lee los thirdPartyId del equipo de inversionistas (investor_team) de forma
+// defensiva, sin exigir las demás keys de comisiones (a diferencia de
+// loadCommissionConfig). Devuelve un Set; investor_team corrupto/ausente → vacío.
+async function getInvestorThirdPartyIds() {
+  const ids = new Set();
+  const row = await prisma.setting.findUnique({ where: { key: 'investor_team' } });
+  if (row?.value) {
+    try {
+      const team = JSON.parse(row.value);
+      if (Array.isArray(team)) team.forEach((t) => t?.thirdPartyId && ids.add(t.thirdPartyId));
+    } catch { /* investor_team corrupto → sin miembros */ }
+  }
+  return ids;
+}
+
 class ThirdPartyService {
   async findAll({ type, isActive, search } = {}) {
     const where = {};
@@ -31,10 +46,14 @@ class ThirdPartyService {
       ];
     }
 
-    return prisma.thirdParty.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+    const [list, investorIds] = await Promise.all([
+      prisma.thirdParty.findMany({ where, orderBy: { name: 'asc' } }),
+      getInvestorThirdPartyIds(),
+    ]);
+    // isInvestor: owner-self o miembro del investor_team. Permite a la UI (p. ej.
+    // validación del socio en la compra) saber quién es inversionista sin depender
+    // del endpoint ADMIN-only de commission-config.
+    return list.map((tp) => ({ ...tp, isInvestor: tp.id === 'owner-self' || investorIds.has(tp.id) }));
   }
 
   async findById(id) {
