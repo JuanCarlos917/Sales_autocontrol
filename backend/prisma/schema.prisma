@@ -505,6 +505,7 @@ enum PayableType {
   PAYABLE
   COMMISSION
   PROFIT_SHARE
+  PARTNER_SHARE
 }
 
 enum PayableStatus {
