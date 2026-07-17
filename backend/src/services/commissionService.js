@@ -405,8 +405,9 @@ function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, buc
 /**
  * Lista items de comisión agrupados por vehículo vendido, pendientes primero.
  * status: 'pending' | 'paid' | 'all' (default all).
- * payableType: PayableType a agregar (default 'COMMISSION'; investorService
- * reutiliza esto con 'PROFIT_SHARE' — mismo armado, distinto tipo de CxP).
+ * payableType: PayableType a agregar (default 'COMMISSION'). Nota: la ganancia a
+ * inversionistas NO pasa por aquí — investorService.listByVehicle tiene su propia
+ * query + buildInvestorVehicleItem (cascada de ganancia, no de comisión).
  */
 async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMISSION' } = {}) {
   const payables = await prismaOrTx.payable.findMany({
