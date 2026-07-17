@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateParticipation } = require('../utils/financial');
+const { isSaleReceivable } = require('./saleService');
 
 /**
  * Normaliza el payload de pago a una lista de líneas { accountId, amount, method }.
@@ -328,7 +329,8 @@ const getVehiclePaymentStatus = async (vehicleId) => {
   });
 
   const purchase = payables.find(p => p.type === 'PAYABLE');
-  const sale = payables.find(p => p.type === 'RECEIVABLE');
+  // Solo la CxC de la venta, no la de comisión del socio (mismo tipo RECEIVABLE).
+  const sale = payables.find(isSaleReceivable);
 
   return {
     purchase: purchase ? {
