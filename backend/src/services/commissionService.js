@@ -262,6 +262,36 @@ function calculateCashRatio(totalReceived, cashReceived) {
 const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
 
 /**
+ * Arma las filas de "roles" (una por Payable) compartidas entre la cascada de
+ * comisión y la de ganancia: sharePct del SaleParticipant o derivado de
+ * montos (total/pool) para data legacy sin participante.
+ */
+function buildPayableRoles(payables, pool) {
+  return payables.map((p) => {
+    const total = Number(p.totalAmount || 0);
+    const paid = Number(p.paidAmount || 0);
+    const sharePct = p.saleParticipant
+      ? Number(p.saleParticipant.sharePct)
+      : (pool > 0 ? Math.round((total / pool) * 100) : 0);
+    return {
+      role: p.saleParticipant?.role || 'OTHER',
+      thirdParty: { id: p.thirdParty?.id || null, name: p.thirdParty?.name || '—' },
+      sharePct,
+      total,
+      paid,
+      pending: total - paid,
+      status: p.status,
+      payableId: p.id,
+      payments: (p.payments || []).map((pp) => ({
+        date: pp.transaction?.date || null,
+        amount: Number(pp.amount),
+        accountName: pp.transaction?.account?.name || '—',
+      })),
+    };
+  }).sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+}
+
+/**
  * Arma el item de comisión de UN vehículo desde datos ya cargados (puro, sin DB).
  * - cascade: recalculada con calculateCommissionBase (mismo helper de la venta);
  *   commissionPool = Σ totalAmount de las CxP (persistido — inmune a cambios
@@ -283,28 +313,7 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
     : Number(vehicle.purchasePrice || 0);
   const commissionPool = payables.reduce((s, p) => s + Number(p.totalAmount || 0), 0);
 
-  const roles = payables.map((p) => {
-    const total = Number(p.totalAmount || 0);
-    const paid = Number(p.paidAmount || 0);
-    const sharePct = p.saleParticipant
-      ? Number(p.saleParticipant.sharePct)
-      : (commissionPool > 0 ? Math.round((total / commissionPool) * 100) : 0);
-    return {
-      role: p.saleParticipant?.role || 'OTHER',
-      thirdParty: { id: p.thirdParty?.id || null, name: p.thirdParty?.name || '—' },
-      sharePct,
-      total,
-      paid,
-      pending: total - paid,
-      status: p.status,
-      payableId: p.id,
-      payments: (p.payments || []).map((pp) => ({
-        date: pp.transaction?.date || null,
-        amount: Number(pp.amount),
-        accountName: pp.transaction?.account?.name || '—',
-      })),
-    };
-  }).sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+  const roles = buildPayableRoles(payables, commissionPool);
 
   let buckets = null;
   if (Array.isArray(bucketTransfers) && bucketTransfers.length > 0) {
@@ -328,6 +337,64 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
       participation: Number(vehicle.participation || 1),
       commissionBase,
       commissionPool,
+    },
+    roles,
+    buckets,
+    hasPending: roles.some((r) => r.status === 'PENDING' || r.status === 'PARTIAL'),
+  };
+}
+
+/**
+ * Arma el item de GANANCIA (inversionistas) de UN vehículo desde datos ya
+ * cargados (puro, sin DB). A diferencia de buildCommissionVehicleItem, NO usa
+ * calculateCommissionBase (esa base aplica `participation` y excluye gastos
+ * COMISION — semántica de comisión, no de ganancia de fondo). En su lugar
+ * replica la cascada real de `calculateSaleDistribution` (financial.js):
+ *   grossProfit = salePrice − purchaseCost − TODOS los gastos no borrados
+ *   commissionPool = Σ totalAmount de las CxP COMMISSION del vehículo (deducción)
+ *   reinvest/tax = reservas ya transferidas (bucketTransfers)
+ *   profitToDistribute = Σ totalAmount de las CxP PROFIT_SHARE (persistido)
+ * Invariante (venta normal): grossProfit − commissionPool − reinvest − tax
+ * === profitToDistribute (los montos persistidos ya cuadran porque salieron
+ * de calculateSaleDistribution al momento de la venta).
+ */
+function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, bucketTransfers }) {
+  const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
+  const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const purchaseCost = vehicle.fromTradeIn
+    ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
+    : Number(vehicle.purchasePrice || 0);
+  const salePrice = Number(vehicle.salePrice || 0);
+  const grossProfit = salePrice - purchaseCost - directExpenses;
+  const commissionPool = Number(commissionPayableSum || 0);
+  const profitToDistribute = payables.reduce((s, p) => s + Number(p.totalAmount || 0), 0);
+
+  let reinvest = 0;
+  let tax = 0;
+  if (Array.isArray(bucketTransfers)) {
+    for (const t of bucketTransfers) {
+      if (t.bucket === 'reinvest') reinvest += Number(t.amount || 0);
+      if (t.bucket === 'tax') tax += Number(t.amount || 0);
+    }
+  }
+
+  const roles = buildPayableRoles(payables, profitToDistribute);
+  const buckets = (Array.isArray(bucketTransfers) && bucketTransfers.length > 0) ? { reinvest, tax } : null;
+
+  return {
+    vehicle: {
+      id: vehicle.id, plate: vehicle.plate, brand: vehicle.brand,
+      model: vehicle.model, saleDate: vehicle.saleDate, salePrice,
+    },
+    cascade: {
+      salePrice,
+      purchaseCost,
+      directExpenses,
+      grossProfit,
+      commissionPool,
+      reinvest,
+      tax,
+      profitToDistribute,
     },
     roles,
     buckets,
@@ -491,6 +558,7 @@ module.exports = {
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience
   buildCommissionVehicleItem,
+  buildInvestorVehicleItem,
   listByVehicle,
   buildPersonSummary,
   getSummary,

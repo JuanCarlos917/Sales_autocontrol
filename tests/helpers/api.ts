@@ -757,32 +757,59 @@ export async function apiReverseTransactionRaw(
 // ── Commissions ───────────────────────────────────────────
 
 // Espejo del shape de /investors: ambos endpoints reutilizan
-// commissionService.listByVehicle parametrizado por PayableType.
-export interface CommissionOrInvestorVehicleItem {
+// commissionService.buildCommissionVehicleItem — cascada de comisión
+// (calculateCommissionBase: aplica `participation`, excluye gastos COMISION).
+interface VehicleItemRole {
+  role: string; sharePct: number; total: number; paid: number; pending: number;
+  status: string; payableId: string; thirdParty: { id: string; name: string };
+  payments: Array<{ date: string | null; amount: number; accountName: string }>;
+}
+
+export interface CommissionVehicleItem {
   vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
   cascade: {
     salePrice: number; purchaseCost: number; directExpenses: number;
     grossProfit: number; participation: number; commissionBase: number; commissionPool: number;
   };
-  roles: Array<{
-    role: string; sharePct: number; total: number; paid: number; pending: number;
-    status: string; payableId: string; thirdParty: { id: string; name: string };
-    payments: Array<{ date: string | null; amount: number; accountName: string }>;
-  }>;
+  roles: VehicleItemRole[];
   buckets: { reinvest: number; tax: number } | null;
   hasPending: boolean;
 }
 
-export async function apiListCommissions(token: string): Promise<CommissionOrInvestorVehicleItem[]> {
+export async function apiListCommissions(token: string): Promise<CommissionVehicleItem[]> {
   return getJson('/commissions', token);
 }
 
-// ── Investors (ganancia por inversionista, espejo de Commissions) ──
+// ── Investors (ganancia por inversionista) ──
+// commissionService.buildInvestorVehicleItem — cascada de GANANCIA real
+// (espejo de calculateSaleDistribution): NO usa participation/commissionBase,
+// resta la CxP COMMISSION + reservas reinvest/tax, y profitToDistribute es el
+// pool que se reparte entre inversionistas.
+export interface InvestorVehicleItem {
+  vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
+  cascade: {
+    salePrice: number; purchaseCost: number; directExpenses: number; grossProfit: number;
+    commissionPool: number; reinvest: number; tax: number; profitToDistribute: number;
+  };
+  roles: VehicleItemRole[];
+  buckets: { reinvest: number; tax: number } | null;
+  hasPending: boolean;
+}
 
-export async function apiListInvestors(token: string): Promise<CommissionOrInvestorVehicleItem[]> {
+export async function apiListInvestors(token: string): Promise<InvestorVehicleItem[]> {
   return getJson('/investors', token);
 }
 
 export async function apiGetInvestorsSummary(token: string): Promise<CommissionsSummary> {
   return getJson('/investors/summary', token);
+}
+
+// ── Payables summary (CxC/CxP consolidado) ──
+export interface PayablesSummary {
+  receivables: { total: number; count: number; overdueCount: number };
+  payables: { total: number; count: number; overdueCount: number };
+}
+
+export async function apiGetPayablesSummary(token: string): Promise<PayablesSummary> {
+  return getJson('/payables/summary', token);
 }

@@ -30,7 +30,6 @@ function CascadeRow({ label, value, negative, bold }) {
 
 function InvestorCard({ item, onPay }) {
   const { vehicle, cascade, roles, buckets } = item;
-  const pct = cascade.commissionBase > 0 ? Math.round((cascade.commissionPool / cascade.commissionBase) * 100) : 0;
   return (
     <div className="card p-4 space-y-3" data-testid={`investor-card-${vehicle.plate}`}>
       <div className="flex justify-between items-start">
@@ -41,14 +40,16 @@ function InvestorCard({ item, onPay }) {
         <span className="text-xs text-[#6E7681]">vendida {formatDate(vehicle.saleDate)}</span>
       </div>
 
-      {/* Cascada contable */}
+      {/* Cascada de ganancia — waterfall real (calculateSaleDistribution), NO la base de comisión */}
       <div className="bg-[#161B22] rounded-lg p-3">
-        <CascadeRow label="Venta" value={cascade.salePrice} />
+        <CascadeRow label="Precio de venta" value={cascade.salePrice} />
         <CascadeRow label="Costo" value={cascade.purchaseCost} negative />
         <CascadeRow label="Gastos" value={cascade.directExpenses} negative />
-        <CascadeRow label="Ganancia" value={cascade.grossProfit} bold />
-        <CascadeRow label={`Base de reparto (×${Math.round(cascade.participation * 100)}% part.)`} value={cascade.commissionBase} />
-        <CascadeRow label={`Ganancia a repartir (${pct}%)`} value={cascade.commissionPool} bold />
+        <CascadeRow label="Ganancia bruta" value={cascade.grossProfit} bold />
+        <CascadeRow label="Comisión" value={cascade.commissionPool} negative />
+        <CascadeRow label="Reinversión" value={cascade.reinvest} negative />
+        <CascadeRow label="Impuestos" value={cascade.tax} negative />
+        <CascadeRow label="Ganancia a repartir" value={cascade.profitToDistribute} bold />
         {buckets && (
           <div className="text-[11px] text-[#6E7681] mt-1.5">
             · Reinversión {formatCurrency(buckets.reinvest)} · Impuestos {formatCurrency(buckets.tax)} <span className="text-green-500">✓ auto</span>

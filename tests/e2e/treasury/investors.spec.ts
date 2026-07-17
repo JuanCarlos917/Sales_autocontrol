@@ -7,6 +7,7 @@ import {
   apiUpdateCommissionConfig,
   apiListInvestors,
   apiGetInvestorsSummary,
+  apiGetPayablesSummary,
   apiRequestRaw,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
@@ -115,6 +116,25 @@ test.describe('Ganancia — inversionistas (flujo venta → reparto → pago)', 
     expect(b?.amount).toBe(2_160_000);
     const investorsSum = sale.summary.investors!.reduce((s, p) => s + p.amount, 0);
     expect(investorsSum).toBe(sale.summary.profitToDistribute);
+
+    // GET /investors expone la cascada de GANANCIA real (buildInvestorVehicleItem),
+    // NO la base de comisión (commissionBase/participation) — Findings #3.
+    const items = await apiListInvestors(token);
+    const item = items.find((i) => i.vehicle.plate === sale.vehicle.plate);
+    expect(item).toBeTruthy();
+    expect(item!.cascade.salePrice).toBe(30_000_000);
+    expect(item!.cascade.purchaseCost).toBe(20_000_000);
+    expect(item!.cascade.grossProfit).toBe(10_000_000);
+    expect(item!.cascade.commissionPool).toBe(1_000_000);
+    expect(item!.cascade.reinvest).toBe(2_700_000);
+    expect(item!.cascade.tax).toBe(900_000);
+    expect(item!.cascade.profitToDistribute).toBe(5_400_000);
+    // Invariante de la cascada: gross − comisión − reinversión − impuestos = a repartir.
+    expect(
+      item!.cascade.grossProfit - item!.cascade.commissionPool - item!.cascade.reinvest - item!.cascade.tax,
+    ).toBe(item!.cascade.profitToDistribute);
+    // El item de comisión (base) NO se mezcla en el de inversionistas.
+    expect((item!.cascade as unknown as { commissionBase?: number }).commissionBase).toBeUndefined();
   });
 
   test('GET /investors/summary refleja la ganancia pendiente por persona', async () => {
@@ -126,6 +146,11 @@ test.describe('Ganancia — inversionistas (flujo venta → reparto → pago)', 
       { thirdPartyId: invB, sharePct: 40 },
     ]);
 
+    // Finding #2 (verificación e2e): GET /payables/summary debe INCLUIR la CxP
+    // PROFIT_SHARE pendiente en payables.total (payableService.getSummary agrega
+    // PAYABLE + COMMISSION + PROFIT_SHARE) — snapshot antes de vender.
+    const beforeSummary = await apiGetPayablesSummary(token);
+
     await sellCarWithSellers(token, plate('SUM'));
 
     const summary = await apiGetInvestorsSummary(token);
@@ -136,6 +161,14 @@ test.describe('Ganancia — inversionistas (flujo venta → reparto → pago)', 
     expect(personB?.totalPending).toBe(2_160_000);
     expect(personB?.salesCount).toBe(1);
     expect(summary.pendingTotal).toBeGreaterThanOrEqual(5_400_000);
+
+    // La venta también generó CxP COMMISSION (1M, vendedores) además de la
+    // PROFIT_SHARE (5.4M, inversionistas): payables.total sube por AL MENOS
+    // la ganancia pendiente de los inversionistas.
+    const afterSummary = await apiGetPayablesSummary(token);
+    expect(afterSummary.payables.total).toBeGreaterThanOrEqual(
+      beforeSummary.payables.total + 5_400_000,
+    );
   });
 
   test('pagar la CxP PROFIT_SHARE de un inversionista baja el pendiente', async () => {
@@ -161,6 +194,13 @@ test.describe('Ganancia — inversionistas (flujo venta → reparto → pago)', 
       description: 'Pago ganancia inversionista A',
     });
     expect(pay.status).toBe(201);
+
+    // Finding #1 (verificación e2e): la Transaction creada al pagar una CxP
+    // PROFIT_SHARE debe categorizarse como 'PROFIT_SHARE', NO 'VEHICLE_PURCHASE'
+    // (payableService.addPayment) — contaminaría el costo del vehículo.
+    const payBody = pay.body as { transaction?: { category?: string; type?: string } };
+    expect(payBody.transaction?.category).toBe('PROFIT_SHARE');
+    expect(payBody.transaction?.type).toBe('EXPENSE');
 
     const after = await apiGetInvestorsSummary(token);
     const afterA = after.byPerson.find((p) => p.thirdParty.id === invA);
@@ -204,6 +244,14 @@ test.describe('Ganancia — inversionistas (flujo venta → reparto → pago)', 
     const card1 = page.getByTestId(`investor-card-${p1}`);
     await expect(card1).toBeVisible({ timeout: 10_000 });
     await expect(card1).toContainText('10.000.000'); // grossProfit determinista del escenario
+    // Cascada de GANANCIA real (Finding #3): labels correctos, sin "base de
+    // comisión" ni "% participación" mezclados en la vista de inversionistas.
+    await expect(card1).toContainText('Ganancia bruta');
+    await expect(card1).toContainText('Comisión');
+    await expect(card1).toContainText('Reinversión');
+    await expect(card1).toContainText('Impuestos');
+    await expect(card1).toContainText('Ganancia a repartir');
+    await expect(card1).not.toContainText('Base de reparto');
 
     const card2 = page.getByTestId(`investor-card-${p2}`);
     await expect(card2).toBeVisible();

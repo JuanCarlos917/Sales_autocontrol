@@ -3,7 +3,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
+const { buildCommissionVehicleItem, buildInvestorVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
 const { resolveSellers, resolveInvestors } = require('../commissionService');
 const { AppError } = require('../../middleware/errorHandler');
 
@@ -93,6 +93,104 @@ test('item: gasto legacy COMISION no rompe la identidad de la cascada', () => {
     item.cascade.salePrice - item.cascade.purchaseCost - item.cascade.directExpenses,
     item.cascade.grossProfit,
   );
+});
+
+// ── buildInvestorVehicleItem (cascada de GANANCIA, no de comisión) ──
+// A diferencia de buildCommissionVehicleItem: NO usa calculateCommissionBase
+// (sin `participation`, sin excluir gastos COMISION); grossProfit = salePrice
+// − purchaseCost − TODOS los gastos, igual que calculateSaleDistribution.
+
+const mkInvestorPayable = (over = {}) => ({
+  id: 'inv-pay-1', status: 'PENDING', totalAmount: 5_400_000, paidAmount: 0,
+  thirdParty: { id: 'owner-self', name: 'Juan' },
+  saleParticipant: { role: 'INVESTOR', sharePct: 100 },
+  payments: [],
+  ...over,
+});
+
+test('investor item: cascada replica calculateSaleDistribution — grossProfit − commission − reinvest − tax === profitToDistribute', () => {
+  // Mismo escenario que investors.spec.ts: venta 30M − costo 20M = gross 10M.
+  // commissionPool 1M (10% comisión), reinvest 2.7M, tax 0.9M → profitToDistribute 5.4M.
+  const v = {
+    id: 'v1', plate: 'INV001', brand: 'Suzuki', model: 'Vitara',
+    saleDate: '2026-06-01T00:00:00Z', salePrice: 30_000_000,
+    purchasePrice: 20_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [],
+  };
+  const payables = [
+    mkInvestorPayable({ id: 'inv-pay-a', totalAmount: 3_240_000, thirdParty: { id: 'invA', name: 'Inversionista A' }, saleParticipant: { role: 'INVESTOR', sharePct: 60 } }),
+    mkInvestorPayable({ id: 'inv-pay-b', totalAmount: 2_160_000, thirdParty: { id: 'invB', name: 'Inversionista B' }, saleParticipant: { role: 'INVESTOR', sharePct: 40 } }),
+  ];
+  const item = buildInvestorVehicleItem({
+    vehicle: v,
+    payables,
+    commissionPayableSum: 1_000_000,
+    bucketTransfers: [
+      { bucket: 'reinvest', amount: 2_700_000 },
+      { bucket: 'tax', amount: 900_000 },
+    ],
+  });
+
+  assert.equal(item.cascade.salePrice, 30_000_000);
+  assert.equal(item.cascade.purchaseCost, 20_000_000);
+  assert.equal(item.cascade.directExpenses, 0);
+  assert.equal(item.cascade.grossProfit, 10_000_000);
+  assert.equal(item.cascade.commissionPool, 1_000_000);
+  assert.equal(item.cascade.reinvest, 2_700_000);
+  assert.equal(item.cascade.tax, 900_000);
+  assert.equal(item.cascade.profitToDistribute, 5_400_000);
+
+  // Invariante de la cascada.
+  assert.equal(
+    item.cascade.grossProfit - item.cascade.commissionPool - item.cascade.reinvest - item.cascade.tax,
+    item.cascade.profitToDistribute,
+  );
+  // Σ montos de inversionistas === profitToDistribute (persistido).
+  const investorsSum = item.roles.reduce((s, r) => s + r.total, 0);
+  assert.equal(investorsSum, item.cascade.profitToDistribute);
+  assert.equal(item.roles.length, 2);
+  assert.deepEqual(item.buckets, { reinvest: 2_700_000, tax: 900_000 });
+});
+
+test('investor item: venta sin vendedor (sin comisión) → commissionPool 0, profitToDistribute = ganancia completa', () => {
+  const v = {
+    id: 'v2', plate: 'INV002', brand: 'Mazda', model: '3',
+    saleDate: '2026-06-05T00:00:00Z', salePrice: 25_000_000,
+    purchasePrice: 18_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [{ amount: 1_000_000, category: 'MECANICA', deletedAt: null }],
+  };
+  const payables = [mkInvestorPayable({ totalAmount: 6_000_000 })];
+  const item = buildInvestorVehicleItem({
+    vehicle: v,
+    payables,
+    commissionPayableSum: 0,
+    bucketTransfers: [],
+  });
+
+  assert.equal(item.cascade.grossProfit, 6_000_000); // 25M - 18M - 1M
+  assert.equal(item.cascade.commissionPool, 0);
+  assert.equal(item.cascade.reinvest, 0);
+  assert.equal(item.cascade.tax, 0);
+  assert.equal(item.cascade.profitToDistribute, 6_000_000);
+  assert.equal(item.buckets, null);
+  assert.equal(item.cascade.grossProfit - item.cascade.commissionPool - item.cascade.reinvest - item.cascade.tax, item.cascade.profitToDistribute);
+});
+
+test('investor item: gasto category COMISION SÍ se descuenta (a diferencia de la comisión)', () => {
+  const v = {
+    id: 'v3', plate: 'INV003', brand: 'Renault', model: 'Duster',
+    saleDate: '2026-06-10T00:00:00Z', salePrice: 40_000_000,
+    purchasePrice: 30_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [{ amount: 500_000, category: 'COMISION', deletedAt: null }],
+  };
+  const item = buildInvestorVehicleItem({
+    vehicle: v, payables: [mkInvestorPayable({ totalAmount: 9_500_000 })],
+    commissionPayableSum: 0, bucketTransfers: [],
+  });
+  // A diferencia de calculateCommissionBase (excluye COMISION), la cascada de
+  // ganancia SÍ resta todos los gastos no borrados (match con calculateSaleDistribution).
+  assert.equal(item.cascade.directExpenses, 500_000);
+  assert.equal(item.cascade.grossProfit, 9_500_000);
 });
 
 // ── resolveParticipants (equipo de reparto + resto al dueño) ─────
