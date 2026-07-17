@@ -31,7 +31,6 @@ export default function CommissionSplitEditor({
 }) {
   const sum = value.reduce((s, r) => s + (parseFloat(r.sharePct) || 0), 0);
   const roundedSum = Math.round(sum * 100) / 100;
-  const ownerShare = Math.round((100 - sum) * 100) / 100;
   const showRoleSelect = roles.length > 1;
 
   const setRow = (i, patch) => {
@@ -101,21 +100,12 @@ export default function CommissionSplitEditor({
         >
           <Plus className="w-3.5 h-3.5" /> Agregar persona ({value.length}/{maxPeople})
         </button>
-        {requireExactSum ? (
-          <span
-            className={`text-sm font-semibold ${value.length > 0 && roundedSum !== 100 ? 'text-red-400' : 'text-[#3FB950]'}`}
-            data-testid={`${testidPrefix}-owner-share`}
-          >
-            Suma: {roundedSum}% {value.length > 0 ? '(deben sumar 100)' : '(vacío = 100% al dueño)'}
-          </span>
-        ) : (
-          <span
-            className={`text-sm font-semibold ${ownerShare < 0 ? 'text-red-400' : 'text-[#3FB950]'}`}
-            data-testid={`${testidPrefix}-owner-share`}
-          >
-            Tu parte: {ownerShare}%
-          </span>
-        )}
+        <span
+          className={`text-sm font-semibold ${value.length > 0 && roundedSum !== 100 ? 'text-red-400' : 'text-[#3FB950]'}`}
+          data-testid={`${testidPrefix}-owner-share`}
+        >
+          Suma: {roundedSum}% {value.length > 0 ? '(deben sumar 100)' : (requireExactSum ? '(vacío = 100% al dueño)' : '(vacío = sin comisión)')}
+        </span>
       </div>
     </div>
   );

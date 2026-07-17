@@ -48,8 +48,9 @@ export default function SettingsPage() {
 
   const handleSaveCommissions = async () => {
     setCommError(''); setCommSuccess(false);
-    const bucketSum = Number(commCfg.commission_share_pct) + Number(commCfg.reinvest_share_pct) + Number(commCfg.tax_share_pct);
-    if (Math.abs(bucketSum - 100) > 0.001) { setCommError('Los tres bolsillos deben sumar 100'); return; }
+    // Los bolsillos legacy (commission_share_pct/reinvest_share_pct/tax_share_pct) ya no
+    // se editan aquí — se round-tripean sin cambios desde el GET. Los % vivos de la
+    // cascada están en la card de Ganancia. Solo validamos lo editable en esta card.
     const splitSum = Number(commCfg.default_captador_pct) + Number(commCfg.default_cerrador_pct);
     if (Math.abs(splitSum - 100) > 0.001) { setCommError('Captador + cerrador deben sumar 100'); return; }
     const investorTeamClean = (commCfg.investor_team || [])
@@ -125,22 +126,12 @@ export default function SettingsPage() {
         commCfg ? (
           <>
           <div className="card" data-testid="settings-commissions-card">
-            <div className="card-title">Comisiones y bolsillos</div>
+            <div className="card-title">Comisiones</div>
             <p className="text-xs text-[#6E7681] mb-3">
-              Cómo se reparte la ganancia bruta de cada venta. Los tres porcentajes deben sumar 100.
+              Quién recibe comisión por vender y con qué rol. Los porcentajes de comisión,
+              reinversión e impuestos se configuran en la card de Ganancia.
             </p>
             <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <Input label="Comisiones %" type="number" value={commCfg.commission_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, commission_share_pct: e.target.value })}
-                  data-testid="settings-commission-pct" />
-                <Input label="Reinversión %" type="number" value={commCfg.reinvest_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, reinvest_share_pct: e.target.value })}
-                  data-testid="settings-reinvest-pct" />
-                <Input label="Impuestos %" type="number" value={commCfg.tax_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, tax_share_pct: e.target.value })}
-                  data-testid="settings-tax-pct" />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Captador % (default)" type="number" value={commCfg.default_captador_pct}
                   onChange={e => setCommCfg({ ...commCfg, default_captador_pct: e.target.value })}
@@ -152,19 +143,14 @@ export default function SettingsPage() {
               <div className="border-t border-border pt-3">
                 <div className="text-sm font-semibold text-[#E6EDF3] mb-1">Equipo de reparto</div>
                 <p className="text-xs text-[#6E7681] mb-2">
-                  Personas que reciben parte del bolsillo de comisión en cada venta (máx 5).
-                  Tu parte es el resto, automática. Puedes ajustarlo por venta al vender.
+                  Personas que reciben comisión en cada venta (máx 5). Sus porcentajes deben
+                  sumar 100. Puedes ajustarlo por venta al vender.
                 </p>
                 <CommissionSplitEditor
                   value={commCfg.commission_default_team || []}
                   onChange={(team) => setCommCfg({ ...commCfg, commission_default_team: team })}
                   testidPrefix="settings-team"
                 />
-              </div>
-              <div className="text-xs text-[#8B949E]">
-                Fondo Reinversión: <span className="text-[#E6EDF3] font-mono">{commCfg.reinvest_account?.name || commCfg.reinvest_account_id}</span>
-                {' · '}
-                Reserva Impuestos: <span className="text-[#E6EDF3] font-mono">{commCfg.tax_reserve_account?.name || commCfg.tax_reserve_account_id}</span>
               </div>
               {commError && <div className="text-[12px] text-red-400">{commError}</div>}
               {commSuccess && <div className="text-[12px] text-green-400">Guardado.</div>}

@@ -527,9 +527,11 @@ test.describe('Comisiones — configuración global', () => {
     // Settings ahora es por pestañas: abrir la de Comisiones.
     await page.getByTestId('settings-tab-comisiones').click();
     await expect(page.getByTestId('settings-commissions-card')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByTestId('settings-commission-pct')).toHaveValue('60');
-    await page.getByTestId('settings-commission-pct').fill('55');
-    await page.getByTestId('settings-reinvest-pct').fill('35');
+    // Los % de comisión/reinversión/impuestos viven ahora en la card de Ganancia;
+    // la card de Comisiones conserva el default captador/cerrador + el equipo de reparto.
+    await expect(page.getByTestId('settings-captador-pct')).toHaveValue('30');
+    await page.getByTestId('settings-captador-pct').fill('40');
+    await page.getByTestId('settings-cerrador-pct').fill('60');
     await page.getByTestId('settings-save-commissions').click();
     // Scoped a la card de comisiones: la card de inversionistas (Task 9, feature
     // ganancia-inversionistas) agregó su propio "Guardado." en la misma pestaña,
@@ -537,8 +539,8 @@ test.describe('Comisiones — configuración global', () => {
     await expect(page.getByTestId('settings-commissions-card').getByText('Guardado.')).toBeVisible({ timeout: 5_000 });
 
     // Restaurar defaults
-    await page.getByTestId('settings-commission-pct').fill('60');
-    await page.getByTestId('settings-reinvest-pct').fill('30');
+    await page.getByTestId('settings-captador-pct').fill('30');
+    await page.getByTestId('settings-cerrador-pct').fill('70');
     await page.getByTestId('settings-save-commissions').click();
   });
 });
