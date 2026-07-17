@@ -270,6 +270,13 @@ export interface RegisterSaleResult {
     taxAmount?: number;
     profitToDistribute?: number;
     cashRatioApplied?: number;
+    // Socio del vehículo (partnerId/participation, Task 3): su ganancia bruta
+    // (partnerProfit → CxP PARTNER_SHARE), su % de la comisión adeudada al
+    // fondo (partnerCommissionOwed → CxC "Comisión socio") y su share (1 −
+    // participation). Ausentes/0 si el vehículo no tiene socio.
+    partnerProfit?: number;
+    partnerCommissionOwed?: number;
+    socioShare?: number;
     sellers?: Array<{
       id: string;
       thirdPartyId: string;
@@ -312,14 +319,25 @@ export async function apiGetVehiclePaymentStatus(token: string, id: string): Pro
 export interface Payable {
   id: string;
   vehicleId: string | null;
-  type: 'PAYABLE' | 'RECEIVABLE';
+  thirdPartyId: string | null;
+  description: string | null;
+  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE';
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   totalAmount: string | number;
   paidAmount: string | number;
 }
 
-export async function apiListPayables(token: string): Promise<Payable[]> {
-  return getJson('/payables', token);
+export interface PayableFilters {
+  type?: string;
+  status?: string;
+  vehicleId?: string;
+  thirdPartyId?: string;
+}
+
+export async function apiListPayables(token: string, filters: PayableFilters = {}): Promise<Payable[]> {
+  const entries = Object.entries(filters).filter(([, v]) => v !== undefined) as [string, string][];
+  const qs = new URLSearchParams(entries).toString();
+  return getJson(`/payables${qs ? `?${qs}` : ''}`, token);
 }
 
 export interface LoanInstallmentInput {
