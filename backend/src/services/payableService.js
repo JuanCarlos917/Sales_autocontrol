@@ -330,12 +330,12 @@ const getSummary = async () => {
     _count: true
   });
 
-  // Total por pagar (CxP) — incluye PAYABLE de compras, COMMISSION de comisiones y
-  // PROFIT_SHARE de ganancia a inversionistas ya devengadas. Las tres son deudas
-  // reales del negocio.
+  // Total por pagar (CxP) — incluye PAYABLE de compras, COMMISSION de comisiones,
+  // PROFIT_SHARE de ganancia a inversionistas y PARTNER_SHARE de ganancia de socio
+  // ya devengadas. Las cuatro son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -353,7 +353,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }

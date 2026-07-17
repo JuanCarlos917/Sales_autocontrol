@@ -609,14 +609,14 @@ const cancelSale = async (vehicleId, userId) => {
     throw new AppError('No se puede cancelar la venta porque ya hay transacciones registradas', 400);
   }
 
-  // Verificar si hay Payables COMMISSION o PROFIT_SHARE asociadas
+  // Verificar si hay Payables COMMISSION, PROFIT_SHARE o PARTNER_SHARE asociadas
   const commissionPayables = await prisma.payable.findMany({
-    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE'] } },
+    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] } },
   });
   if (commissionPayables.length > 0) {
     throw new AppError(
-      'No se puede cancelar la venta porque hay comisiones o ganancias devengadas. ' +
-      'Anula o paga esas CxP primero.',
+      'No se puede cancelar la venta porque hay comisiones o ganancias devengadas ' +
+      '(incluye ganancia de socio). Anula o paga esas CxP primero.',
       400
     );
   }
