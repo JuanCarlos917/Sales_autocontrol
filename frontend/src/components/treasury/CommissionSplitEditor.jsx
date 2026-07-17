@@ -38,7 +38,8 @@ export default function CommissionSplitEditor({
     const next = value.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     onChange(next);
   };
-  const addRow = () => onChange([...value, { _id: crypto.randomUUID(), thirdPartyId: '', role: roles[0].id, sharePct: '' }]);
+  const defaultRoleId = roles.find((r) => r.id === 'OTHER')?.id ?? roles[0].id;
+  const addRow = () => onChange([...value, { _id: crypto.randomUUID(), thirdPartyId: '', role: defaultRoleId, sharePct: '' }]);
   const removeRow = (i) => onChange(value.filter((_, idx) => idx !== i));
 
   return (

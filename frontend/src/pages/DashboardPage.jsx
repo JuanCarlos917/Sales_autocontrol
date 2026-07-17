@@ -78,7 +78,7 @@ export default function DashboardPage() {
       </div>
 
       {(commSummary || investorSummary) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 gap-3 ${commSummary && investorSummary ? 'md:grid-cols-2' : ''}`}>
           {commSummary && (
             <button
               type="button"
