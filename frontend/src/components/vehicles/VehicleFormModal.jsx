@@ -7,6 +7,7 @@ import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormField
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
 import { accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi } from '@/lib/payablesApi';
+import api from '@/lib/api';
 import { Lock, AlertTriangle, Info, Users, Handshake, CreditCard, Banknote, Landmark, Check } from 'lucide-react';
 
 // Mapa de tipos de issue → campo en el formulario + mensaje rojo sobre el input
@@ -50,6 +51,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const [dueDate, setDueDate] = useState('');
   // null = aún no consultado, true/false = resultado
   const [hasExistingPayable, setHasExistingPayable] = useState(null);
+  // IDs de terceros del equipo de inversionistas (para validar socio inversionista⟺100%)
+  const [investorTeamIds, setInvestorTeamIds] = useState([]);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const togglePortal = (pid) => s('publishedPortals', f.publishedPortals.includes(pid) ? f.publishedPortals.filter(x => x !== pid) : [...f.publishedPortals, pid]);
 
@@ -96,6 +99,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const supplierLocked = !!vehicle?.supplierId;
   const partnerIdLocked = !!vehicle?.partnerId;
 
+  // Cargar equipo de inversionistas una vez, para validar socio inversionista⟺100%
+  useEffect(() => {
+    api.get('/settings/commission-config')
+      .then(res => {
+        const team = Array.isArray(res.data?.investor_team) ? res.data.investor_team : [];
+        setInvestorTeamIds(team.map(t => t.thirdPartyId).filter(Boolean));
+      })
+      .catch(err => console.error('Error loading commission config:', err));
+  }, []);
+
   // Cargar cuentas al montar (creando O confirmando compra)
   useEffect(() => {
     if (vehicle && !isConfirmingPurchase) return;
@@ -129,6 +142,26 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     const suggested = price > 0 ? Math.round((myCap / price) * 10000) / 100 : 100;
     return { myCapital: myCap, suggestedPercent: suggested };
   }, [f.purchasePrice, f.partnerContribution]);
+
+  // Validación en vivo: socio inversionista (equipo de inversionistas u owner-self) debe
+  // aportar el 100% del precio de compra; socio externo debe aportar solo una parte.
+  const isPartnerInvestor = f.partnerId === 'owner-self' || investorTeamIds.includes(f.partnerId);
+  const partnerValidationError = useMemo(() => {
+    const currentPrice = parseFloat(f.purchasePrice) || 0;
+    if (!f.partnerId || tradeInLocked || currentPrice <= 0) return null;
+    const partnerAmt = parseFloat(f.partnerContribution) || 0;
+    const isFullContribution = partnerAmt >= currentPrice;
+    if (isPartnerInvestor && !isFullContribution) {
+      return 'Un socio inversionista debe aportar el 100% del precio de compra (tu participación quedaría en 0%).';
+    }
+    if (!isPartnerInvestor && isFullContribution) {
+      return 'Un socio externo debe aportar solo una parte del precio de compra, no el 100%.';
+    }
+    if (!isPartnerInvestor && partnerAmt <= 0) {
+      return 'Indica el aporte del socio externo: debe ser mayor a 0 y menor al precio de compra.';
+    }
+    return null;
+  }, [f.partnerId, f.partnerContribution, f.purchasePrice, isPartnerInvestor, tradeInLocked]);
 
   // Cuando cambia el aporte del socio, auto-ajustar participación sugerida
   const onPartnerContributionChange = (value) => {
@@ -202,6 +235,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     // Proveedor solo obligatorio después de COMPRADO
     if (!['NEGOCIANDO', 'COMPRADO'].includes(f.stage) && !f.supplierId) {
       setSaveError('Debes seleccionar un proveedor para esta etapa');
+      return;
+    }
+    // Socio inversionista → 100%; socio externo → participación parcial
+    if (!partnerLocked && partnerValidationError) {
+      setSaveError(partnerValidationError);
       return;
     }
     if (showPaymentSection) {
@@ -513,6 +551,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             El aporte del socio NO descuenta de tu tesorería — solo se registra como dato.
             Tu participación se calcula automáticamente a partir del aporte.
           </p>
+          <div className="text-[11px] text-[#8B949E] mb-2">
+            {isPartnerInvestor
+              ? 'Socio inversionista: debe aportar el 100% del precio de compra.'
+              : 'Socio externo: debe aportar solo una parte del precio de compra.'}
+          </div>
           <Input
             label="Aporte del socio (COP)"
             type="number"
@@ -521,6 +564,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="20000000"
             disabled={partnerLocked}
           />
+          {!partnerLocked && partnerValidationError && (
+            <div className="text-xs text-red-400 mt-2 flex items-start gap-1.5" data-testid="vehicle-form-partner-error">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>{partnerValidationError}</span>
+            </div>
+          )}
           {price > 0 && (
             <div className="mt-2 text-xs text-[#8B949E]">
               Tu participación: <span className="text-[#E6EDF3] font-semibold">{suggestedPercent}%</span>
