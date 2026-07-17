@@ -599,3 +599,47 @@ test('dist: fromTradeIn sin negotiatedValue (0/NULL) → skip sin filas ni reser
   assert.equal(d2.skip, true);
   assert.equal(d2.sellerRows.length, 0);
 });
+
+// ── calculateSaleDistribution: socio en la cascada ───────────
+const socioCfg = { commissionGrossPct: 10, reinvestPct: 30, taxPct: 10 };
+const oneSellerS = [{ thirdPartyId: 'v', role: 'CERRADOR', sharePct: 100 }];
+const teamS = [
+  { thirdPartyId: 'owner-self', role: 'INVESTOR', sharePct: 50 },
+  { thirdPartyId: 'mama', role: 'INVESTOR', sharePct: 25 },
+  { thirdPartyId: 'papa', role: 'INVESTOR', sharePct: 25 },
+];
+// bruta = 30M − 20M = 10M
+const vBase = { salePrice: 30_000_000, purchasePrice: 20_000_000, expenses: [] };
+
+test('dist socio externo 40%: reservas solo sobre parte del fondo; comisión por %', () => {
+  const d = calculateSaleDistribution(vBase, socioCfg,
+    { sellers: oneSellerS, investors: teamS, socio: { thirdPartyId: 'ext', share: 0.4, isInvestor: false } });
+  assert.equal(d.grossProfit, 10_000_000);
+  assert.equal(d.commissionPool, 1_000_000);
+  assert.equal(d.partnerProfit, 4_000_000);        // 40% × bruta, sin reservas
+  assert.equal(d.partnerCommissionOwed, 400_000);  // 40% × comisión
+  assert.equal(d.reinvestAmount, 1_620_000);       // 30% × (60% × 9M)
+  assert.equal(d.taxAmount, 540_000);              // 10% × (60% × 9M)
+  assert.equal(d.profitToDistribute, 3_240_000);   // 5.4M − 1.62M − 0.54M
+  assert.equal(d.investorRows.reduce((s, r) => s + r.amount, 0), 3_240_000);
+});
+
+test('dist socio inversionista 100%: reservas sobre todo; reparto al fondo 0', () => {
+  const d = calculateSaleDistribution(vBase, socioCfg,
+    { sellers: oneSellerS, investors: teamS, socio: { thirdPartyId: 'mama', share: 1, isInvestor: true } });
+  assert.equal(d.reinvestAmount, 2_700_000);       // 30% × 9M
+  assert.equal(d.taxAmount, 900_000);              // 10% × 9M
+  assert.equal(d.partnerProfit, 6_400_000);        // bruta − reservas
+  assert.equal(d.partnerCommissionOwed, 1_000_000);
+  assert.equal(d.profitToDistribute, 0);
+  assert.equal(d.investorRows.length, 0);
+});
+
+test('dist sin socio: idéntico al comportamiento actual', () => {
+  const d = calculateSaleDistribution(vBase, socioCfg, { sellers: oneSellerS, investors: teamS, socio: null });
+  assert.equal(d.partnerProfit, 0);
+  assert.equal(d.partnerCommissionOwed, 0);
+  assert.equal(d.reinvestAmount, 2_700_000);       // 30% × 9M
+  assert.equal(d.taxAmount, 900_000);              // 10% × 9M
+  assert.equal(d.profitToDistribute, 5_400_000);   // 9M − 2.7M − 0.9M
+});

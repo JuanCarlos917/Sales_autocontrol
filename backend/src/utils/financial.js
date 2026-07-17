@@ -298,7 +298,7 @@ function calculateDealMetrics(chain) {
  * Recibe vendedores e inversionistas YA resueltos (con sharePct que suman 100).
  * Devuelve montos enteros COP; cada bloque (comisión/ganancia) suma exacto.
  */
-function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] } = {}) {
+function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [], socio = null } = {}) {
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
   const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const salePrice = Number(vehicle.salePrice || 0);
@@ -308,7 +308,8 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] 
 
   const grossProfit = salePrice - purchaseCost - directExpenses;
   const empty = { grossProfit, skip: true, commissionPool: 0, afterCommission: 0,
-    reinvestAmount: 0, taxAmount: 0, profitToDistribute: 0, sellerRows: [], investorRows: [] };
+    reinvestAmount: 0, taxAmount: 0, profitToDistribute: 0, sellerRows: [], investorRows: [],
+    partnerProfit: 0, partnerCommissionOwed: 0, socioShare: 0, socioIsInvestor: false, partnerThirdPartyId: null };
   // Sin base de costo (vehículo vendido sin precio de compra registrado, o
   // cruce sin valor negociado), no hay forma de calcular ganancia real:
   // evitamos tratar el salePrice completo como ganancia.
@@ -318,9 +319,34 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] 
   const hasSellers = Array.isArray(sellers) && sellers.length > 0;
   const commissionPool = hasSellers ? roundCop((Number(cfg.commissionGrossPct) / 100) * grossProfit) : 0;
   const afterCommission = grossProfit - commissionPool;
-  const reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * afterCommission);
-  const taxAmount = roundCop((Number(cfg.taxPct) / 100) * afterCommission);
-  const profitToDistribute = afterCommission - reinvestAmount - taxAmount;
+
+  // Socio en la cascada: el socio recibe su % de la ganancia bruta (y adeuda su % de
+  // la comisión), y las reservas (reinvertir/impuesto) se calculan solo sobre la
+  // parte del fondo. Sin socio → comportamiento histórico (reservas sobre todo).
+  const socioShare = socio ? Number(socio.share) : 0;
+  const fundShare = 1 - socioShare;
+  const partnerCommissionOwed = socio ? roundCop(commissionPool * socioShare) : 0;
+
+  let reinvestAmount, taxAmount, profitToDistribute, partnerProfit;
+  if (!socio) {
+    reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * afterCommission);
+    taxAmount = roundCop((Number(cfg.taxPct) / 100) * afterCommission);
+    profitToDistribute = afterCommission - reinvestAmount - taxAmount;
+    partnerProfit = 0;
+  } else if (socio.isInvestor) {
+    // Inversionista 100%: reservas sobre todo, el socio se queda el resto, fondo 0.
+    reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * afterCommission);
+    taxAmount = roundCop((Number(cfg.taxPct) / 100) * afterCommission);
+    partnerProfit = grossProfit - reinvestAmount - taxAmount;
+    profitToDistribute = 0;
+  } else {
+    // Externo parcial: reservas solo sobre la parte del fondo; socio sin reservas.
+    const fundAfterCommission = fundShare * afterCommission;
+    reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * fundAfterCommission);
+    taxAmount = roundCop((Number(cfg.taxPct) / 100) * fundAfterCommission);
+    profitToDistribute = roundCop(fundAfterCommission) - reinvestAmount - taxAmount;
+    partnerProfit = roundCop(socioShare * grossProfit);
+  }
 
   // Reparte `pool` entre `rows` por sharePct; el sobrante de redondeo va a la fila `anchorId`
   // (o a la primera fila si no está), garantizando Σ amount === pool.
@@ -335,11 +361,18 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [] 
     return out;
   };
 
+  // Con profitToDistribute === 0 (inversionista 100%), no se crean filas en 0
+  // para evitar CxP PROFIT_SHARE vacías aguas abajo.
+  const investorRows = profitToDistribute === 0 ? [] : split(investors, profitToDistribute, 'owner-self');
+
   return {
     grossProfit, skip: false, commissionPool, afterCommission,
     reinvestAmount, taxAmount, profitToDistribute,
     sellerRows: split(sellers, commissionPool, sellers[0]?.thirdPartyId),
-    investorRows: split(investors, profitToDistribute, 'owner-self'),
+    investorRows,
+    partnerProfit, partnerCommissionOwed, socioShare,
+    socioIsInvestor: !!(socio && socio.isInvestor),
+    partnerThirdPartyId: socio ? socio.thirdPartyId : null,
   };
 }
 
