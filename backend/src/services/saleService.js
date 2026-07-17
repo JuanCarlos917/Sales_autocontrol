@@ -222,7 +222,8 @@ const registerSale = async (vehicleId, saleData, userId) => {
     const cfg = await commissionService.loadCommissionConfig(tx);
     const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
     const investors = await commissionService.resolveInvestors(tx, cfg);
-    const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors });
+    const socio = await commissionService.resolveSocio(tx, vehicle, cfg);
+    const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
 
     if (!dist.skip) {
       // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
@@ -264,6 +265,38 @@ const registerSale = async (vehicleId, saleData, userId) => {
       for (const r of dist.sellerRows) sellerResults.push(await mkPayable('COMMISSION', r, 'Comisión'));
       const investorResults = [];
       for (const r of dist.investorRows) investorResults.push(await mkPayable('PROFIT_SHARE', r, 'Ganancia'));
+
+      // 5a-bis. Socio del vehículo (partnerId/participation): su ganancia bruta va como
+      // CxP PARTNER_SHARE y su parte de la comisión (que adeuda al fondo) como CxC
+      // RECEIVABLE. Sólo cuando hay socio efectivo y montos positivos.
+      if (socio && dist.partnerProfit > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'PARTNER_SHARE',
+            status: 'PENDING',
+            totalAmount: dist.partnerProfit,
+            paidAmount: 0,
+            description: `Ganancia socio venta ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
+      if (socio && dist.partnerCommissionOwed > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'RECEIVABLE',
+            status: 'PENDING',
+            totalAmount: dist.partnerCommissionOwed,
+            paidAmount: 0,
+            description: `Comisión socio venta ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
 
       // 5b. Reservas: transfers a reinversión / impuestos proporcionales al efectivo
       // recibido (mismo cashRatio que el flujo anterior). Las CxP se crean por el
@@ -351,6 +384,9 @@ const registerSale = async (vehicleId, saleData, userId) => {
         taxAmount: dist.taxAmount,
         profitToDistribute: dist.profitToDistribute,
         cashRatioApplied: cashRatio,
+        partnerProfit: dist.partnerProfit,
+        partnerCommissionOwed: dist.partnerCommissionOwed,
+        socioShare: dist.socioShare,
         sellers: sellerResults,
         investors: investorResults,
         transfers: transferResults,

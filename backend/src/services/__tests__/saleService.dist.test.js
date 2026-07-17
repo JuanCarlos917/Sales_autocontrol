@@ -180,6 +180,54 @@ test('registerSale: venta sin utilidad (skip) → sin CxP de reparto ni reservas
   assert.equal(ctx.created.saleParticipants.length, 0);
 });
 
+// ── Escenario con socio externo: partnerId 'ext', participation 0.6 ──────
+// Venta 30M / costo 20M → grossProfit 10M. Socio share = 1 - 0.6 = 0.4.
+//   commissionPool = 10% * 10M = 1M; partnerCommissionOwed = 0.4 * 1M = 400k.
+//   afterCommission = 9M; fundAfterCommission = 0.6 * 9M = 5.4M.
+//   reinvest 30% = 1.62M; tax 10% = 540k; profitToDistribute (fondo) = 3.24M.
+//   partnerProfit = 0.4 * 10M = 4M (PARTNER_SHARE).
+test('registerSale: socio externo → PARTNER_SHARE 4M + CxC comisión 400k; PROFIT_SHARE fondo 3.24M', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle({ partnerId: 'ext', participation: 0.6, purchasePrice: 20_000_000 }) });
+  const res = await saleService.registerSale('veh-1', {
+    salePrice: 30_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 30_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'u-1');
+
+  const { payablesByType } = ctx.created;
+  assert.equal(payablesByType.PARTNER_SHARE.length, 1);
+  assert.equal(payablesByType.PARTNER_SHARE[0].totalAmount, 4_000_000);
+  assert.equal(payablesByType.PARTNER_SHARE[0].thirdPartyId, 'ext');
+
+  const socioRec = payablesByType.RECEIVABLE.find((p) => /Comisión socio/.test(p.description));
+  assert.ok(socioRec, 'debe existir una CxC de comisión del socio');
+  assert.equal(socioRec.totalAmount, 400_000);
+  assert.equal(socioRec.thirdPartyId, 'ext');
+
+  assert.equal(sum(payablesByType.PROFIT_SHARE, 'totalAmount'), 3_240_000);
+
+  // Summary del socio expuesto
+  assert.equal(res.summary.partnerProfit, 4_000_000);
+  assert.equal(res.summary.partnerCommissionOwed, 400_000);
+  assert.equal(res.summary.socioShare, 0.4);
+});
+
+// ── Regresión: venta sin socio no crea ningún PARTNER_SHARE ──────────────
+test('registerSale: sin socio → 0 PARTNER_SHARE', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle() });
+  await saleService.registerSale('veh-1', {
+    salePrice: 20_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 20_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'u-1');
+
+  assert.equal((ctx.created.payablesByType.PARTNER_SHARE || []).length, 0);
+});
+
 test('registerSale: sin vendedores → 0 COMMISSION, 3 PROFIT_SHARE por 3M', async () => {
   ctx = makeCtx({ vehicle: baseVehicle() });
   await saleService.registerSale('veh-1', {
