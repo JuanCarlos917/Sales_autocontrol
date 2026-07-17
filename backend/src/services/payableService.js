@@ -195,17 +195,21 @@ const addPayment = async (payableId, paymentData, userId) => {
     }
     const isCommission = payable.type === 'COMMISSION';
     const isProfitShare = payable.type === 'PROFIT_SHARE';
+    const isPartnerShare = payable.type === 'PARTNER_SHARE';
     const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-    // COMMISSION y PROFIT_SHARE son PAYABLE pero categorizan distinto: no son
-    // VEHICLE_PURCHASE (contaminarían el costo del vehículo). COMMISSION es egreso
-    // por comisión al vendedor; PROFIT_SHARE es reparto de ganancia al inversionista.
+    // COMMISSION, PROFIT_SHARE y PARTNER_SHARE son PAYABLE pero categorizan distinto:
+    // no son VEHICLE_PURCHASE (contaminarían el costo del vehículo). COMMISSION es
+    // egreso por comisión al vendedor; PROFIT_SHARE es reparto de ganancia al
+    // inversionista; PARTNER_SHARE es la ganancia que se le paga al socio del carro.
     const transactionCategory = isReceivable
       ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
       : isCommission
         ? 'COMMISSION'
         : isProfitShare
           ? 'PROFIT_SHARE'
-          : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+          : isPartnerShare
+            ? 'PARTNER_SHARE'
+            : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
     // 1. Crear la transaccion de tesoreria
     const transaction = await tx.transaction.create({
