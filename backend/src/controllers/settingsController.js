@@ -149,12 +149,10 @@ const updateCommissionConfig = async (req, res, next) => {
       });
     }
 
-    // 3b) Equipo de reparto (opcional): sin owner-self, sin duplicados,
-    // suma ≤ 100, terceros existentes (mismo contrato que resolveParticipants).
+    // 3b) Equipo de reparto de VENDEDORES (opcional): sin duplicados, suma ≤ 100,
+    // terceros existentes. El dueño (owner-self) SÍ puede ir como vendedor (cobra
+    // comisión por vender, aparte de su ganancia como inversionista).
     const team = Array.isArray(data.commission_default_team) ? data.commission_default_team : [];
-    if (team.some((p) => p.thirdPartyId === 'owner-self')) {
-      return res.status(400).json({ error: 'El dueño no va en el equipo: su parte es el resto automático' });
-    }
     const teamIds = team.map((p) => p.thirdPartyId);
     if (new Set(teamIds).size !== teamIds.length) {
       return res.status(400).json({ error: 'Hay personas repetidas en el equipo de reparto' });

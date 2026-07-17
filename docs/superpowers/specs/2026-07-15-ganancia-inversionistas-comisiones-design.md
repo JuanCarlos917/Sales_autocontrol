@@ -121,10 +121,15 @@ calculateSaleDistribution(vehicle, cfg, { sellers, investors }) → {
 - Origen: `saleData.participants` (edición por venta) o `commission_default_team` (Settings).
 - Reglas: máx 5, sin duplicados, `sharePct > 0`, terceros existentes.
 - **Cambio:** los % de vendedores deben **sumar exactamente 100** (reparten el pool completo).
-  Un solo vendedor → 100%. **Se elimina el resto a `owner-self`** (el dueño ya no comisiona).
-- **Venta sin vendedor** (la vendió el dueño directo): no es error — `commissionPool = 0`, no se crea
-  ninguna CxP `COMMISSION`, y `afterCommission = grossProfit` (toda la ganancia fluye a reservas +
-  inversionistas). El % de comisión solo se carva si hay al menos un vendedor.
+  Un solo vendedor → 100%. Ya **no hay "resto automático al dueño"** (era del modelo viejo).
+- **El dueño (`owner-self`) SÍ puede ir como vendedor** (revisión post-pruebas, 2026-07-17): si él
+  hizo el trabajo de venta, cobra comisión por ello con su rol y % explícito, **aparte** de su
+  ganancia como inversionista. Son dos rubros distintos y no hay doble conteo (la comisión se
+  descuenta del bruto antes de repartir la ganancia). Se permite `owner-self` tanto en los
+  `participants` por venta como en el `commission_default_team` de Settings.
+- **Venta sin vendedor**: no es error — `commissionPool = 0`, no se crea ninguna CxP `COMMISSION`,
+  y `afterCommission = grossProfit` (toda la ganancia fluye a reservas + inversionistas). El % de
+  comisión solo se cobra si hay al menos un vendedor.
 
 **Inversionistas (`resolveInvestors`, nuevo):**
 - Origen: setting `investor_team` (JSON `[{thirdPartyId, sharePct}]`). **No** editable por venta.

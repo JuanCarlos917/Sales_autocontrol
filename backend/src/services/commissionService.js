@@ -184,7 +184,8 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
  * (`calculateSaleDistribution`). A diferencia de `resolveParticipants`, NO
  * genera fila de "resto al dueño": si no suman 100 exacto, es un error del
  * usuario. Sin vendedores → [] (venta sin comisión, todo el gross profit
- * pasa a repartirse entre inversionistas).
+ * pasa a repartirse entre inversionistas). El dueño (owner-self) PUEDE ir como
+ * vendedor y cobrar comisión por el trabajo de venta que hizo.
  */
 async function resolveSellers(prismaOrTx, saleParticipants, cfg) {
   const explicit = Array.isArray(saleParticipants) && saleParticipants.length > 0;
@@ -192,7 +193,9 @@ async function resolveSellers(prismaOrTx, saleParticipants, cfg) {
   if (!team || team.length === 0) return []; // venta sin vendedor → sin comisión
 
   if (team.length > MAX_PARTICIPANTS) throw new AppError(`Máximo ${MAX_PARTICIPANTS} vendedores`, 400);
-  if (team.some((p) => p.thirdPartyId === OWNER_ID)) throw new AppError('El dueño no comisiona', 400);
+  // El dueño (owner-self) SÍ puede comisionar: si hace el trabajo de venta, cobra
+  // comisión por ello, aparte de su ganancia como inversionista (dos rubros
+  // distintos; la comisión se descuenta del bruto antes de repartir la ganancia).
   if (team.some((p) => !(Number(p.sharePct) > 0))) throw new AppError('Cada vendedor debe tener % > 0', 400);
   const ids = team.map((p) => p.thirdPartyId);
   if (new Set(ids).size !== ids.length) throw new AppError('Vendedores repetidos', 400);

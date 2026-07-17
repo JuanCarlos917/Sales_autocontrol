@@ -367,6 +367,25 @@ test('resolveSellers: no suman 100 → 400', async () => {
   );
 });
 
+test('resolveSellers: el dueño SÍ puede comisionar (owner-self como vendedor)', async () => {
+  // El dueño puede hacer el trabajo de venta y cobrar comisión por ello, aparte
+  // de su ganancia como inversionista. owner-self permitido en el reparto de vendedores.
+  const out = await resolveSellers(mkTx(), [
+    { thirdPartyId: 'owner-self', role: 'CAPTADOR', sharePct: 60 },
+    { thirdPartyId: 'tp-hermano', role: 'CERRADOR', sharePct: 40 },
+  ], {});
+  assert.equal(out.length, 2);
+  const owner = out.find((p) => p.thirdPartyId === 'owner-self');
+  assert.equal(owner.role, 'CAPTADOR');
+  assert.equal(owner.sharePct, 60);
+});
+
+test('resolveSellers: owner-self como único vendedor 100%', async () => {
+  const out = await resolveSellers(mkTx(), [{ thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: 100 }], {});
+  assert.equal(out.length, 1);
+  assert.equal(out[0].thirdPartyId, 'owner-self');
+});
+
 test('resolveInvestors: team válido → filas INVESTOR que suman 100', async () => {
   const out = await resolveInvestors(mkTx(), CFG_DIST);
   assert.equal(out.length, 3);

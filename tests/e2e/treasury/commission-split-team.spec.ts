@@ -60,8 +60,9 @@ test.describe('Comisiones — equipo de reparto + métricas', () => {
 
   // Contrato nuevo (resolveSellers, Task 4 de ganancia-inversionistas): el pool de
   // comisión ya no es el 60% legacy sino 10% del gross (Settings commission_gross_pct),
-  // y los vendedores YA NO generan fila de "resto al dueño" — deben sumar 100 exacto
-  // y owner-self no puede figurar entre ellos (su parte ahora es la de inversionista).
+  // y los vendedores YA NO generan fila de "resto al dueño" — deben sumar 100 exacto.
+  // owner-self SÍ puede figurar entre los vendedores (cobra comisión por vender,
+  // aparte de su ganancia como inversionista); estos tests usan equipos sin el dueño.
   test('venta sin tocar aplica el equipo default (vendedores deben sumar 100 exacto)', async () => {
     const token = await apiPinLogin();
     await setTeam(token, [
