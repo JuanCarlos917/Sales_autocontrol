@@ -210,6 +210,11 @@ export interface ConfirmPurchasePayload {
     purchasePrice: number;
     supplierId?: string | null;
     listedPrice?: number | null;
+    // Socio del vehículo (Task 1/2 aporte del socio): partnerContribution es
+    // el aporte en $; participation (fondo, 0-1) se auto-calcula si se omite.
+    partnerId?: string | null;
+    partnerContribution?: number | null;
+    participation?: number | null;
   };
   payment: {
     accountId?: string | null;
@@ -217,6 +222,9 @@ export interface ConfirmPurchasePayload {
     payments?: PurchasePaymentLine[];
     thirdPartyId?: string | null;
     dueDate?: string | null;
+    // Cuenta por la que entra el aporte del socio (INCOME CAPITAL_CONTRIBUTION
+    // + EXPENSE VEHICLE_PURCHASE, neto $0 en esa cuenta).
+    partnerAccountId?: string | null;
   };
 }
 
@@ -585,6 +593,7 @@ export interface TransactionRaw {
   description: string | null;
   expenseId: string | null;
   vehicleId: string | null;
+  thirdPartyId: string | null;
   debtId: string | null;
   reversesTransactionId: string | null;
   date: string;
@@ -604,9 +613,13 @@ export async function apiCreateTreasuryExpense(
   return postJson('/treasury/transactions/expense', { category: 'OTHER_EXPENSE', ...data }, token);
 }
 
-export async function apiListTransactions(token: string, params: { accountId?: string } = {}): Promise<TransactionRaw[]> {
-  const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
-  const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
+export async function apiListTransactions(
+  token: string,
+  params: { accountId?: string; vehicleId?: string; thirdPartyId?: string } = {},
+): Promise<TransactionRaw[]> {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][];
+  const qs = new URLSearchParams(entries).toString();
+  const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs ? `?${qs}` : ''}`, token);
   return Array.isArray(res) ? res : res.transactions;
 }
 
