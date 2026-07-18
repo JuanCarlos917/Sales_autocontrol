@@ -139,6 +139,7 @@ const vehiclePurchaseSchema = Joi.object({
       method: Joi.string().valid('CASH', 'TRANSFER').optional(),
     })).optional(),
     thirdPartyId: Joi.string().allow(null),
+    partnerAccountId: Joi.string().allow(null), // cuenta por la que entra el aporte del socio
     date: Joi.date().allow(null),
     dueDate: Joi.date().allow(null),
   }).allow(null),
@@ -167,6 +168,7 @@ const vehicleConfirmPurchaseSchema = Joi.object({
       method: Joi.string().valid('CASH', 'TRANSFER').optional(),
     })).optional(),
     thirdPartyId: Joi.string().allow(null),
+    partnerAccountId: Joi.string().allow(null), // cuenta por la que entra el aporte del socio
     date: Joi.date().allow(null),
     dueDate: Joi.date().allow(null),
   }).allow(null),
