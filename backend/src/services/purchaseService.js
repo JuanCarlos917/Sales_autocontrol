@@ -189,7 +189,6 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
 
   // Mi deuda efectiva al proveedor (descuenta el aporte del socio si existe)
   const partnerAmount = Number(partnerContribution || 0);
-  const myOwedAmount = Math.max(0, Number(purchasePrice) - partnerAmount);
 
   // Transacción atómica para crear vehículo + CxP + pago opcional
   const result = await prisma.$transaction(async (tx) => {
@@ -430,7 +429,6 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
   const participation = (vehicleData?.participation !== undefined && vehicleData?.participation !== null)
     ? Number(vehicleData.participation)
     : calculateParticipation(purchasePrice, partnerAmount);
-  const myOwedAmount = Math.max(0, purchasePrice - partnerAmount);
   const supplierId = vehicleData?.supplierId || existing.supplierId || paymentData?.thirdPartyId || null;
 
   const result = await prisma.$transaction(async (tx) => {
