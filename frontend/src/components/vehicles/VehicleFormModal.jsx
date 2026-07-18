@@ -145,6 +145,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     return { myCapital: myCap, suggestedPercent: suggested };
   }, [f.purchasePrice, f.partnerContribution]);
 
+  // participation reactiva: recalcular siempre que cambie el precio o el aporte del socio,
+  // no solo cuando el usuario toca el campo de aporte (bug: quedaba stale si el precio cambiaba después).
+  useEffect(() => {
+    if (!f.partnerId) return;
+    setF(prev => (prev.participation === suggestedPercent ? prev : { ...prev, participation: suggestedPercent }));
+  }, [f.partnerId, suggestedPercent]);
+
   // Validación en vivo: socio inversionista (equipo de inversionistas u owner-self) debe
   // aportar el 100% del precio de compra; socio externo debe aportar solo una parte.
   const isPartnerInvestor = f.partnerId === 'owner-self' || investorTeamIds.includes(f.partnerId);
@@ -251,14 +258,22 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
         return;
       }
+      if (partnerAmt > 0 && !cashAccountId && !accounts[0]?.id) {
+        setSaveError('Selecciona una cuenta para registrar el aporte del socio');
+        return;
+      }
     }
     setLoading(true);
     setSaveError(null);
     try {
-      const participationDecimal = (parseFloat(f.participation) || 100) / 100;
+      // Calculado en fresco a partir de precio + aporte actuales (NO de f.participation,
+      // que puede quedar stale si el precio cambia sin tocar el campo de aporte).
+      const participationDecimal = price > 0 ? Math.max(0, Math.min(1, (price - partnerAmt) / price)) : 1;
       const partnerContribValue = f.partnerId && parseFloat(f.partnerContribution) > 0
         ? parseFloat(f.partnerContribution)
         : null;
+      // Cuenta por la que entra/sale el aporte del socio (INCOME+EXPENSE de neto $0 en tesorería).
+      const partnerAccountId = partnerAmt > 0 ? (cashAccountId || accounts[0]?.id || null) : null;
 
       // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP)
       const purchasePayments = [];
@@ -283,6 +298,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           payments: purchasePayments,
           thirdPartyId: f.supplierId || null,
           dueDate: dueDate || null,
+          partnerAccountId,
         };
 
         await vehicleTreasuryApi.confirmPurchase(vehicle.id, {
@@ -321,6 +337,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           payments: purchasePayments,
           thirdPartyId: f.supplierId,
           dueDate: dueDate || null,
+          partnerAccountId,
         };
 
         await vehicleTreasuryApi.createWithPurchase({
@@ -579,9 +596,18 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           )}
           {price > 0 && (
             <div className="mt-3 text-xs text-[#8B949E] grid grid-cols-2 gap-2">
-              <div>Tu aporte efectivo: <span className="text-[#E6EDF3] font-semibold">{formatCurrency(myCapital)}</span></div>
-              <div>Solo tu parte se descuenta de tesorería al comprar.</div>
+              <div>Aporte del socio: <span className="text-sky-400 font-semibold" data-testid="vehicle-form-partner-contribution">{formatCurrency(parseFloat(f.partnerContribution) || 0)}</span></div>
+              <div>Tu parte: <span className="text-[#E6EDF3] font-semibold" data-testid="vehicle-form-my-part">{formatCurrency(myCapital)}</span></div>
             </div>
+          )}
+          {price > 0 && (
+            myCapital === 0 ? (
+              <div className="mt-2 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1.5 flex items-start gap-1.5">
+                <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>El socio aporta el 100% del precio: tu parte es $0. El aporte del socio salda la compra por completo, no se descuenta nada de tu tesorería.</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-[#6E7681]">Solo tu parte se descuenta de tesorería al comprar.</div>
+            )
           )}
           <div className="mt-3">
             <Checkbox
