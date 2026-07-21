@@ -4,6 +4,7 @@ import { useApp } from '@/contexts/AppContext';
 import { STAGES, EXPENSE_CATEGORIES, formatCurrency, formatPercent } from '@/lib/constants';
 import api from '@/lib/api';
 import { commissionsApi, investorsApi } from '@/lib/payablesApi';
+import { SocioPendingWidget } from '@/components/treasury';
 import AlertsPanel from '@/components/shared/AlertsPanel';
 import { TrendingUp } from 'lucide-react';
 
@@ -129,6 +130,8 @@ export default function DashboardPage() {
           )}
         </div>
       )}
+
+      <SocioPendingWidget />
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Pipeline Distribution */}
