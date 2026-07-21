@@ -17,6 +17,8 @@ export default function PaymentModal({
   paidAmount = 0,
   defaultDescription = '',
   loading = false,
+  payableType = null,
+  thirdPartyId = null,
 }) {
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState({
@@ -29,6 +31,15 @@ export default function PaymentModal({
 
   const pendingAmount = totalAmount - paidAmount;
   const isIncome = type === 'income';
+
+  // FASE B: si esta CxP es ganancia/comisión de un socio con cuenta SOCIO
+  // activa, el pago entra a esa cuenta. El origen se limita a cuentas de la
+  // empresa (se ocultan las SOCIO del selector).
+  const routesToSocio = !isIncome && (payableType === 'PARTNER_SHARE' || payableType === 'COMMISSION');
+  const socioDestAccount = routesToSocio
+    ? accounts.find((a) => a.type === 'SOCIO' && a.thirdPartyId === thirdPartyId && a.isActive)
+    : null;
+  const originAccounts = socioDestAccount ? accounts.filter((a) => a.type !== 'SOCIO') : accounts;
 
   useEffect(() => {
     if (isOpen) {
@@ -151,12 +162,17 @@ export default function PaymentModal({
             data-testid="payment-modal-account"
           >
             <option value="">Seleccionar cuenta</option>
-            {accounts.map((a) => (
+            {originAccounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name} ({formatCurrency(a.currentBalance)})
               </option>
             ))}
           </select>
+          {socioDestAccount && (
+            <p className="mt-1 text-xs text-green-400" data-testid="payment-modal-socio-dest">
+              Entra a: {socioDestAccount.name}
+            </p>
+          )}
         </div>
 
         {/* Monto */}
