@@ -19,6 +19,26 @@ function assertThirdPartyDeletable(id) {
   }
 }
 
+// Crea la cuenta SOCIO del tercero si aún no existe (idempotente). No aplica
+// si el tercero no es PARTNER. Recibe prisma o una tx para poder encadenarse
+// en operaciones transaccionales futuras.
+async function ensureSocioAccount(prismaOrTx, thirdParty) {
+  if (!thirdParty || thirdParty.type !== 'PARTNER') return null;
+  const existing = await prismaOrTx.account.findFirst({
+    where: { type: 'SOCIO', thirdPartyId: thirdParty.id },
+  });
+  if (existing) return existing;
+  return prismaOrTx.account.create({
+    data: {
+      name: `Cuenta Socio — ${thirdParty.name}`,
+      type: 'SOCIO',
+      initialBalance: 0,
+      isActive: true,
+      thirdPartyId: thirdParty.id,
+    },
+  });
+}
+
 // Lee los thirdPartyId del equipo de inversionistas (investor_team) de forma
 // defensiva, sin exigir las demás keys de comisiones (a diferencia de
 // loadCommissionConfig). Devuelve un Set; investor_team corrupto/ausente → vacío.
@@ -63,14 +83,18 @@ class ThirdPartyService {
   }
 
   async create(data) {
-    return prisma.thirdParty.create({ data });
+    const created = await prisma.thirdParty.create({ data });
+    if (created.type === 'PARTNER') await ensureSocioAccount(prisma, created);
+    return created;
   }
 
   async update(id, data) {
     const existing = await prisma.thirdParty.findUnique({ where: { id } });
     if (!existing) throw new AppError('Tercero no encontrado', 404);
 
-    return prisma.thirdParty.update({ where: { id }, data });
+    const updated = await prisma.thirdParty.update({ where: { id }, data });
+    if (updated.type === 'PARTNER') await ensureSocioAccount(prisma, updated);
+    return updated;
   }
 
   async delete(id, userId) {
@@ -139,3 +163,4 @@ class ThirdPartyService {
 module.exports = new ThirdPartyService();
 module.exports.assertThirdPartyDeletable = assertThirdPartyDeletable;
 module.exports.SYSTEM_THIRD_PARTY_IDS = SYSTEM_THIRD_PARTY_IDS;
+module.exports.ensureSocioAccount = ensureSocioAccount;
