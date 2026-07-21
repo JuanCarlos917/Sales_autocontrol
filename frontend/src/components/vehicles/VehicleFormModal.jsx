@@ -224,6 +224,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const transferAccount = accounts.find(a => a.id === transferAccountId);
   const cashWarning = cashPay > 0 && cashAccount && cashPay > parseFloat(cashAccount.currentBalance);
   const transferWarning = transferPay > 0 && transferAccount && transferPay > parseFloat(transferAccount.currentBalance);
+  // Cuenta SOCIO del tercero seleccionado: de ahí sale su aporte (la resuelve el backend por partnerId).
+  const socioAccount = f.partnerId ? accounts.find(a => a.type === 'SOCIO' && a.thirdPartyId === f.partnerId) : null;
 
   const handleSave = async () => {
     if (!f.plate && !f.brand) {
@@ -258,8 +260,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
         return;
       }
-      if (partnerAmt > 0 && !cashAccountId && !accounts[0]?.id) {
-        setSaveError('Selecciona una cuenta para registrar el aporte del socio');
+      if (partnerAmt > 0 && f.partnerId && !socioAccount) {
+        setSaveError('El socio no tiene una cuenta activa para registrar su aporte');
         return;
       }
     }
@@ -272,9 +274,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       const partnerContribValue = f.partnerId && parseFloat(f.partnerContribution) > 0
         ? parseFloat(f.partnerContribution)
         : null;
-      // Cuenta por la que entra/sale el aporte del socio (INCOME+EXPENSE de neto $0 en tesorería).
-      const partnerAccountId = partnerAmt > 0 ? (cashAccountId || accounts[0]?.id || null) : null;
-
       // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP)
       const purchasePayments = [];
       if (cashPay > 0 && cashAccountId) purchasePayments.push({ accountId: cashAccountId, amount: cashPay, method: 'CASH' });
@@ -298,7 +297,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           payments: purchasePayments,
           thirdPartyId: f.supplierId || null,
           dueDate: dueDate || null,
-          partnerAccountId,
         };
 
         await vehicleTreasuryApi.confirmPurchase(vehicle.id, {
@@ -337,7 +335,6 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           payments: purchasePayments,
           thirdPartyId: f.supplierId,
           dueDate: dueDate || null,
-          partnerAccountId,
         };
 
         await vehicleTreasuryApi.createWithPurchase({
@@ -567,9 +564,16 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
           <div className="text-sm font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-1.5"><Handshake className="w-4 h-4" /> Aporte del socio</div>
           <p className="text-[11px] text-[#6E7681] mb-3">
-            El aporte del socio NO descuenta de tu tesorería — solo se registra como dato.
-            Tu participación se calcula automáticamente a partir del aporte.
+            {socioAccount
+              ? `El aporte del socio sale de su cuenta: ${socioAccount.name}.`
+              : 'El aporte del socio sale de su propia cuenta (no de tu tesorería).'}
+            {' '}Tu participación se calcula automáticamente a partir del aporte.
           </p>
+          {partnerAmt > 0 && f.partnerId && !socioAccount && (
+            <div className="text-xs text-amber-400 mb-2 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Este socio no tiene una cuenta activa registrada.</span>
+            </div>
+          )}
           <div className="text-[11px] text-[#8B949E] mb-2">
             {isPartnerInvestor
               ? 'Socio inversionista: debe aportar el 100% del precio de compra.'
