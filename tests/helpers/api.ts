@@ -54,12 +54,19 @@ async function getJson<T>(path: string, token: string): Promise<T> {
 export interface Account {
   id: string;
   name: string;
+  type: 'CASH' | 'BANK' | 'BUDGET' | 'SOCIO';
   currentBalance: string | number;
   isActive: boolean;
+  thirdPartyId: string | null;
 }
 
 export async function apiGetAccount(token: string, id: string): Promise<Account> {
   return getJson(`/treasury/accounts/${id}`, token);
+}
+
+export async function apiListAccounts(token: string, params: { isActive?: boolean } = {}): Promise<Account[]> {
+  const qs = params.isActive !== undefined ? `?isActive=${params.isActive}` : '';
+  return getJson(`/treasury/accounts${qs}`, token);
 }
 
 export async function apiCreateAccount(
@@ -222,9 +229,10 @@ export interface ConfirmPurchasePayload {
     payments?: PurchasePaymentLine[];
     thirdPartyId?: string | null;
     dueDate?: string | null;
-    // Cuenta por la que entra el aporte del socio (INCOME CAPITAL_CONTRIBUTION
-    // + EXPENSE VEHICLE_PURCHASE, neto $0 en esa cuenta).
-    partnerAccountId?: string | null;
+    // NOTA: ya no existe `partnerAccountId`. El aporte del socio
+    // (`vehicle.partnerContribution`) sale como un único EXPENSE de la
+    // cuenta SOCIO dedicada del tercero `vehicle.partnerId` (resuelta por
+    // servidor); si no tiene una cuenta SOCIO activa, la API responde 400.
   };
 }
 

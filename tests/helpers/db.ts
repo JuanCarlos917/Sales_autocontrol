@@ -50,6 +50,16 @@ async function seedAccountsAndParties(client: Client) {
        ($4, 'Socio Test', 'PARTNER', true, NOW(), NOW())`,
     [TEST_SEED_IDS.supplier, TEST_SEED_IDS.buyer, TEST_SEED_IDS.employee, TEST_SEED_IDS.partner],
   );
+
+  // Cuenta SOCIO de 'Socio Test' (test-tp-partner). En producción la crea
+  // ensureSocioAccount al crear/editar el tercero como PARTNER; el insert de
+  // arriba es SQL crudo y no pasa por el service, así que se siembra aquí a
+  // mano con el mismo shape (initialBalance 0, activa).
+  await client.query(
+    `INSERT INTO accounts (id, name, type, "initialBalance", "isActive", "thirdPartyId", "createdAt", "updatedAt")
+     VALUES ($1, 'Cuenta Socio — Socio Test', 'SOCIO', 0, true, $2, NOW(), NOW())`,
+    [TEST_SEED_IDS.partnerAccount, TEST_SEED_IDS.partner],
+  );
 }
 
 async function seedInitialCashTransaction(client: Client) {
