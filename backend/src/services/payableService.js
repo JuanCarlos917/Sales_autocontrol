@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 const { lockRow } = require('../utils/txLocks');
+const { buildPaymentTransactions } = require('./payablePaymentEntries');
 
 const PAYABLE_AUDIT_FIELDS = [
   'id', 'type', 'vehicleId', 'thirdPartyId', 'totalAmount', 'paidAmount',
@@ -211,20 +212,37 @@ const addPayment = async (payableId, paymentData, userId) => {
             ? 'PARTNER_SHARE'
             : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
-    // 1. Crear la transaccion de tesoreria
-    const transaction = await tx.transaction.create({
-      data: {
-        accountId,
-        type: transactionType,
-        category: transactionCategory,
-        amount: paymentAmount,
-        description: description || `Pago ${isReceivable ? 'recibido' : 'realizado'}: ${payable.description || ''}`,
-        date: parseLocalDate(date),
-        vehicleId: payable.vehicleId,
-        thirdPartyId: payable.thirdPartyId,
-        createdBy: userId
-      }
+    // Enrutamiento FASE B: si la CxP no es RECEIVABLE y el tercero tiene una
+    // cuenta SOCIO activa, el pago sale de la cuenta de la empresa y entra a
+    // la cuenta del socio, preservando la categoría en ambos asientos.
+    const socioAccount = (!isReceivable && payable.thirdPartyId)
+      ? await tx.account.findFirst({
+          where: { type: 'SOCIO', thirdPartyId: payable.thirdPartyId, isActive: true },
+        })
+      : null;
+
+    const { entries, paymentTransactionIndex } = buildPaymentTransactions({
+      transactionType,
+      transactionCategory,
+      accountId,
+      socioAccount,
+      isReceivable,
+      paymentAmount,
+      description,
+      payableDescription: payable.description,
+      date: parseLocalDate(date),
+      vehicleId: payable.vehicleId,
+      thirdPartyId: payable.thirdPartyId,
+      userId,
     });
+
+    // 1. Crear la(s) transaccion(es) de tesoreria
+    const createdTransactions = [];
+    for (const data of entries) {
+      createdTransactions.push(await tx.transaction.create({ data }));
+    }
+    // La transacción que salda la CxP (egreso/único asiento) liga el pago.
+    const transaction = createdTransactions[paymentTransactionIndex];
 
     // 2. Crear el registro de pago
     const payment = await tx.payablePayment.create({
