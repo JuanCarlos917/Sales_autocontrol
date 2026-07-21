@@ -46,10 +46,10 @@ async function computeAccountBalance(tx, accountId) {
  * Aplica el aporte del socio (si existe) y las líneas de pago propias contra la CxP
  * de compra, que ahora representa el PRECIO TOTAL del vehículo.
  *
- * El aporte del socio se contabiliza como un par neto $0 por su cuenta:
- *   - INCOME (CAPITAL_CONTRIBUTION) → entra el dinero del socio a la cuenta.
- *   - EXPENSE (VEHICLE_PURCHASE) → sale de esa misma cuenta hacia el proveedor.
- * Ambos generan un PayablePayment que abona la CxP.
+ * El aporte del socio sale directamente de su cuenta dedicada `SOCIO`
+ * (resuelta por `socioThirdPartyId`) como un único egreso:
+ *   - EXPENSE (VEHICLE_PURCHASE) → sale de la cuenta del socio hacia el proveedor.
+ * Genera un PayablePayment que abona la CxP.
  *
  * Luego crea una Transaction de egreso + PayablePayment por cada pago propio, valida
  * que aporte + pagos no excedan `totalDue` y actualiza paidAmount/status del payable.
@@ -57,7 +57,7 @@ async function computeAccountBalance(tx, accountId) {
  */
 async function applyPurchasePayments(tx, {
   payable, payments, vehicle, thirdPartyId, date, userId,
-  totalDue, partnerContribution = 0, partnerAccountId = null, socioThirdPartyId = null,
+  totalDue, partnerContribution = 0, socioThirdPartyId = null,
 }) {
   const partnerAmt = Number(partnerContribution || 0);
   const owedByMe = payments || [];
@@ -73,35 +73,33 @@ async function applyPurchasePayments(tx, {
       400
     );
   }
-  if (partnerAmt > 0 && !partnerAccountId) {
-    throw new AppError('Selecciona la cuenta por la que entra el aporte del socio', 400);
-  }
 
   const transactions = [];
   const warnings = [];
   const paymentDate = new Date(); // fecha de contabilización = instante de registro
   const methodLabel = { CASH: ' (efectivo)', TRANSFER: ' (transferencia)' };
 
-  // Aporte del socio: entra (INCOME) y sale al proveedor (EXPENSE), neto $0.
+  // Aporte del socio: UN egreso desde su cuenta SOCIO hacia el proveedor.
   if (partnerAmt > 0) {
-    const incomeTx = await tx.transaction.create({
-      data: {
-        accountId: partnerAccountId,
-        type: 'INCOME',
-        category: 'CAPITAL_CONTRIBUTION',
-        amount: partnerAmt,
-        description: `Aporte socio compra ${vehicle.plate}`,
-        date: paymentDate,
-        vehicleId: vehicle.id,
-        thirdPartyId: socioThirdPartyId || null,
-        createdBy: userId,
-      },
+    const socioAccount = await tx.account.findFirst({
+      where: { type: 'SOCIO', thirdPartyId: socioThirdPartyId, isActive: true },
     });
-    transactions.push(incomeTx);
-
+    if (!socioAccount) {
+      throw new AppError('El socio no tiene una cuenta activa; créala o actívala en Cuentas', 400);
+    }
+    const info = await computeAccountBalance(tx, socioAccount.id);
+    if (info && info.balance - partnerAmt < 0) {
+      warnings.push({
+        type: 'NEGATIVE_BALANCE',
+        message: `La cuenta "${info.account.name}" quedará con saldo negativo después del aporte`,
+        accountId: socioAccount.id,
+        currentBalance: info.balance,
+        newBalance: info.balance - partnerAmt,
+      });
+    }
     const outTx = await tx.transaction.create({
       data: {
-        accountId: partnerAccountId,
+        accountId: socioAccount.id,
         type: 'EXPENSE',
         category: 'VEHICLE_PURCHASE',
         amount: partnerAmt,
@@ -222,7 +220,7 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
       }
     });
 
-    // 3. Aplicar aporte del socio (entra+sale por tu cuenta) + tus pago(s).
+    // 3. Aplicar aporte del socio (egreso desde su cuenta SOCIO) + tus pago(s).
     const payments = normalizePayments(paymentData);
     const { transactions, warnings } = await applyPurchasePayments(tx, {
       payable,
@@ -233,7 +231,6 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
       userId,
       totalDue: Number(purchasePrice),
       partnerContribution: partnerAmount,
-      partnerAccountId: paymentData?.partnerAccountId || null,
       socioThirdPartyId: vehicle.partnerId || null,
     });
 
@@ -463,7 +460,7 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
       },
     });
 
-    // Aporte del socio (entra+sale por tu cuenta) + tus pago(s); salda contra el precio total.
+    // Aporte del socio (egreso desde su cuenta SOCIO) + tus pago(s); salda contra el precio total.
     const payments = normalizePayments(paymentData);
     const { transactions, warnings } = await applyPurchasePayments(tx, {
       payable,
@@ -474,7 +471,6 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
       userId,
       totalDue: Number(purchasePrice),
       partnerContribution: partnerAmount,
-      partnerAccountId: paymentData?.partnerAccountId || null,
       socioThirdPartyId: vehicle.partnerId || null,
     });
 
