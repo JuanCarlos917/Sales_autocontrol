@@ -206,6 +206,9 @@ class TransactionService {
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
+    // Vista agregada (sin cuenta específica): excluir capital del socio, igual
+    // que el dashboard/cashflow. Si se pide una cuenta puntual, se respeta.
+    if (!accountId) where.account = { type: { not: 'SOCIO' } };
 
     const transactions = await prisma.transaction.findMany({
       where,

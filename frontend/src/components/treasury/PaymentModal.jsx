@@ -17,7 +17,6 @@ export default function PaymentModal({
   paidAmount = 0,
   defaultDescription = '',
   loading = false,
-  payableType = null,
   thirdPartyId = null,
 }) {
   const [accounts, setAccounts] = useState([]);
@@ -32,11 +31,11 @@ export default function PaymentModal({
   const pendingAmount = totalAmount - paidAmount;
   const isIncome = type === 'income';
 
-  // FASE B: si esta CxP es ganancia/comisión de un socio con cuenta SOCIO
-  // activa, el pago entra a esa cuenta. El origen se limita a cuentas de la
+  // FASE B: si este pago es un egreso a un tercero con cuenta SOCIO activa,
+  // el dinero entra a esa cuenta (igual que enruta el backend para toda CxP
+  // no-RECEIVABLE con cuenta socio). El origen se limita a cuentas de la
   // empresa (se ocultan las SOCIO del selector).
-  const routesToSocio = !isIncome && (payableType === 'PARTNER_SHARE' || payableType === 'COMMISSION');
-  const socioDestAccount = routesToSocio
+  const socioDestAccount = !isIncome
     ? accounts.find((a) => a.type === 'SOCIO' && a.thirdPartyId === thirdPartyId && a.isActive)
     : null;
   const originAccounts = socioDestAccount ? accounts.filter((a) => a.type !== 'SOCIO') : accounts;

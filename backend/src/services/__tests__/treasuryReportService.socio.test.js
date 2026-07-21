@@ -15,7 +15,10 @@ const fakePrisma = {
     findMany: async ({ where }) => { findManyWhere = where; return []; },
   },
   setting: { findUnique: async () => null },
-  vehicle: { findMany: async () => [] },
+  vehicle: {
+    findMany: async () => [],
+    findUnique: async () => ({ id: 'veh-1', plate: 'ABC123', brand: 'Test', model: 'X', purchasePrice: 0, salePrice: 0 }),
+  },
   expense: { aggregate: async () => ({ _sum: { amount: 0 } }) },
 };
 
@@ -39,4 +42,10 @@ test('getDashboard: el groupBy mensual excluye cuentas type SOCIO', async () => 
 test('getCashFlow: el findMany del período excluye cuentas type SOCIO', async () => {
   await svc.getCashFlow({ period: 'week' });
   assert.deepEqual(findManyWhere.account, { type: { not: 'SOCIO' } });
+});
+
+test('getVehicleTransactions: el findMany por vehículo excluye cuentas type SOCIO', async () => {
+  await svc.getVehicleTransactions('veh-1');
+  assert.deepEqual(findManyWhere.account, { type: { not: 'SOCIO' } });
+  assert.equal(findManyWhere.vehicleId, 'veh-1');
 });

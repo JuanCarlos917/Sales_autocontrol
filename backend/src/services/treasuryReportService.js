@@ -220,7 +220,12 @@ class TreasuryReportService {
     if (!vehicle) return null;
 
     const transactions = await prisma.transaction.findMany({
-      where: { vehicleId },
+      where: {
+        vehicleId,
+        // Excluir capital del socio: el ingreso a su cuenta no es dinero
+        // recibido POR el vehículo (evita inflar totalReceived/netResult).
+        account: { type: { not: 'SOCIO' } },
+      },
       include: { account: { select: { name: true } } },
       orderBy: { date: 'desc' },
     });
