@@ -8,6 +8,8 @@ import {
   apiGetPayablesSummary,
   apiGetVehiclePaymentStatus,
   apiRequestRaw,
+  apiGetAccount,
+  apiListTransactions,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
@@ -215,5 +217,45 @@ test.describe('Socio del vehículo (partnerId/participation) en la cascada de ve
     });
     expect(res.status).toBe(400);
     expect(res.body?.error).toMatch(/100%/);
+  });
+
+  test('FASE B: pagar la ganancia del socio ENTRA a su cuenta SOCIO (egreso empresa + ingreso socio)', async () => {
+    const token = await apiPinLogin();
+    const v = await buyVehicleWithSocio(token, plate('SOB'), {
+      partnerId: TEST_SEED_IDS.partner,
+      participation: 0.6,
+    });
+    await sellSocioVehicleCash(token, v.id);
+
+    const payables = await apiListPayables(token, { vehicleId: v.id, type: 'PARTNER_SHARE' });
+    expect(payables).toHaveLength(1);
+    const partnerShare = payables[0];
+    const amount = Number(partnerShare.totalAmount);
+
+    const socioBefore = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+    const balBefore = Number(socioBefore.currentBalance);
+
+    const pay = await apiRequestRaw('POST', `/payables/${partnerShare.id}/payments`, token, {
+      accountId: TEST_SEED_IDS.accountCash, // cuenta empresa (origen ≠ cuenta socio)
+      amount,
+      description: 'Pago ganancia socio FASE B',
+    });
+    expect(pay.status).toBe(201);
+
+    // La transacción que salda la CxP sigue siendo el EGRESO categorizado.
+    const body = pay.body as { transaction?: { category?: string; type?: string } };
+    expect(body.transaction?.category).toBe('PARTNER_SHARE');
+    expect(body.transaction?.type).toBe('EXPENSE');
+
+    // La cuenta SOCIO subió por el monto pagado.
+    const socioAfter = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+    expect(Number(socioAfter.currentBalance)).toBe(balBefore + amount);
+
+    // Y existe un INGRESO a la cuenta socio con categoría PARTNER_SHARE.
+    const socioTxs = await apiListTransactions(token, { accountId: TEST_SEED_IDS.partnerAccount });
+    const ingreso = socioTxs.find(
+      (t) => t.type === 'INCOME' && t.category === 'PARTNER_SHARE' && Number(t.amount) === amount,
+    );
+    expect(ingreso).toBeTruthy();
   });
 });
