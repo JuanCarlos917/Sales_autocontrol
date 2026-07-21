@@ -14,6 +14,10 @@ const PAYABLE_AUDIT_FIELDS = [
   'status', 'description', 'dueDate', 'createdAt',
 ];
 
+// Prefijo de la CxC de comisión que el socio adeuda al fondo. Distingue esta
+// RECEIVABLE de la CxC de venta ("Venta vehículo …"), igual que isSaleReceivable.
+const SOCIO_COMMISSION_PREFIX = 'Comisión socio venta';
+
 // Parsea una fecha string (YYYY-MM-DD) a Date en zona horaria de Colombia
 // Evita el problema de que new Date("2026-04-19") se interprete como UTC
 const parseLocalDate = (dateStr) => {
@@ -425,6 +429,58 @@ const getUpcoming = async (days = 7) => {
   return upcoming;
 };
 
+/**
+ * Pendientes de socio: ganancia por pagar (PARTNER_SHARE) y comisión por
+ * cobrar (RECEIVABLE "Comisión socio venta"), agrupadas por vehículo.
+ */
+const getSocioPending = async () => {
+  const PENDING = { in: ['PENDING', 'PARTIAL'] };
+  const include = {
+    vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+    thirdParty: { select: { id: true, name: true } },
+  };
+
+  const [profitRows, commissionRows] = await Promise.all([
+    prisma.payable.findMany({
+      where: { type: 'PARTNER_SHARE', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.payable.findMany({
+      where: {
+        type: 'RECEIVABLE',
+        status: PENDING,
+        description: { startsWith: SOCIO_COMMISSION_PREFIX },
+      },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+  ]);
+
+  const toBucket = (payables) => {
+    const items = payables.map((p) => {
+      const totalAmount = parseFloat(p.totalAmount);
+      const paidAmount = parseFloat(p.paidAmount);
+      return {
+        id: p.id,
+        vehicleId: p.vehicleId,
+        vehicle: p.vehicle,
+        thirdParty: p.thirdParty,
+        totalAmount,
+        paidAmount,
+        pending: totalAmount - paidAmount,
+      };
+    });
+    return {
+      total: items.reduce((sum, it) => sum + it.pending, 0),
+      count: items.length,
+      items,
+    };
+  };
+
+  return { profit: toBucket(profitRows), commission: toBucket(commissionRows) };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -432,5 +488,6 @@ module.exports = {
   addPayment,
   cancel,
   getSummary,
-  getUpcoming
+  getUpcoming,
+  getSocioPending
 };
