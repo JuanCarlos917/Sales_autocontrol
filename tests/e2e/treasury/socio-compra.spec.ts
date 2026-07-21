@@ -26,14 +26,17 @@ import { TEST_SEED_IDS } from '../../global-setup';
 // (POST /vehicles + POST /vehicles/:id/confirm-purchase, igual que
 // purchase-split-payment.spec.ts) para el socio externo parcial y el caso sin
 // socio (regresión). El caso "socio inversionista al 100%" que vivía aquí se
-// quitó: bajo el contrato nuevo, aportar dinero exige que el socio sea de
-// tipo PARTNER (para tener cuenta SOCIO) — pero ser reconocido como
-// inversionista al vender exige además pertenecer al `investor_team` (o ser
-// 'owner-self', que es EMPLOYEE y nunca tiene cuenta SOCIO). Combinar ambas
-// cosas queda fuera del alcance de esta FASE. La cascada de venta al 100%
-// inversionista (sin aporte en dinero) ya está cubierta en socio.spec.ts;
-// el aporte del 100% desde la cuenta del socio (sin venta) está cubierto en
-// cuentas-socio.spec.ts.
+// quitó en su momento con una justificación incorrecta ("estructuralmente
+// imposible" porque owner-self es EMPLOYEE). En realidad SÍ es reproducible:
+// un tercero PARTNER (con cuenta SOCIO propia) que ADEMÁS pertenece al
+// `investor_team` es tratado como inversionista por `resolveSocio`
+// (commissionService.js) sin importar su tipo. La cadena completa —
+// compra-100%-desde-cuenta-socio → venta reconoce PARTNER_SHARE — vive ahora
+// en cuentas-socio.spec.ts ("socio PARTNER en investor_team aporta el 100%
+// en la compra..."). La cascada de venta al 100% inversionista con
+// owner-self (sin aporte en dinero) sigue cubierta en socio.spec.ts; el
+// aporte del 100% desde la cuenta del socio sin venta está en
+// cuentas-socio.spec.ts (el test anterior a ese).
 
 function plate(prefix: string): string {
   return `${prefix}${Date.now().toString().slice(-6)}`;

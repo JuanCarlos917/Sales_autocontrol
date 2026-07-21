@@ -11,9 +11,24 @@ import {
   apiListPayables,
   apiListTransactions,
   apiReverseAccountRaw,
+  apiRegisterSale,
+  apiUpdateCommissionConfig,
   type Account,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
+
+// Campos legacy que el schema Joi de PUT /settings/commission-config sigue
+// exigiendo como `required()` — mismo patrón que investors.spec.ts /
+// commission-split-team.spec.ts.
+const BASE_COMMISSION_CFG = {
+  commission_share_pct: 60,
+  reinvest_share_pct: 30,
+  tax_share_pct: 10,
+  default_captador_pct: 30,
+  default_cerrador_pct: 70,
+  reinvest_account_id: 'budget-reinvest',
+  tax_reserve_account_id: 'budget-tax',
+};
 
 // Cuentas dedicadas por socio (FASE A, Tasks 1-4): marcar un tercero como
 // PARTNER crea (idempotente) una cuenta `SOCIO` propia (`ensureSocioAccount`,
@@ -259,5 +274,121 @@ test.describe('Cuentas dedicadas por socio', () => {
     });
     expect(res.status).toBe(400);
     expect((res.body as { error?: string })?.error).toMatch(/cuenta activa/i);
+  });
+
+  // Cierra el hueco identificado en la revisión de Task 5: un socio PARTNER
+  // (con cuenta SOCIO propia) que ADEMÁS pertenece al `investor_team`
+  // reproduce el caso "socio inversionista al 100%" de punta a punta —
+  // resolveSocio (commissionService) clasifica como inversionista a quien es
+  // 'owner-self' O figura en investor_team, sin importar el tipo de tercero.
+  // Antes de este test, la compra-100%-desde-cuenta-socio (cuentas-socio.spec,
+  // test anterior) y la venta-100%-inversionista (socio.spec, con owner-self)
+  // se probaban por separado; nunca la cadena completa compra real → venta.
+  test('socio PARTNER en investor_team aporta el 100% en la compra (cuenta SOCIO) y al vender cobra su ganancia como PARTNER_SHARE', async () => {
+    const token = await apiPinLogin();
+    const tp = await createThirdParty(token, { name: uniqueName('Socio Inversionista'), type: 'PARTNER' });
+    const socioAccount = (await findSocioAccount(token, tp.id))!;
+    expect(socioAccount).toBeTruthy();
+
+    const PURCHASE_PRICE = 20_000_000;
+    const SALE_PRICE = 30_000_000;
+
+    try {
+      // Pertenecer al investor_team es lo que hace que resolveSocio lo trate
+      // como inversionista (isInvestor = true) al vender, permitiendo share === 1.
+      const cfgRes = await apiUpdateCommissionConfig(token, {
+        ...BASE_COMMISSION_CFG,
+        investor_team: [{ thirdPartyId: tp.id, sharePct: 100 }],
+      });
+      expect(cfgRes.status).toBe(200);
+
+      const fund = await apiRequestRaw('POST', '/treasury/transfers', token, {
+        fromAccountId: TEST_SEED_IDS.accountCash,
+        toAccountId: socioAccount.id,
+        amount: PURCHASE_PRICE,
+      });
+      expect(fund.status).toBe(201);
+
+      const p = plate('CSI');
+      const v = await apiCreateVehicle(token, {
+        plate: p,
+        stage: 'NEGOCIANDO',
+        negotiatedValue: PURCHASE_PRICE,
+        supplierId: TEST_SEED_IDS.supplier,
+      });
+
+      // Compra: el socio aporta el 100% desde su cuenta SOCIO (partnerContribution
+      // === purchasePrice → participation se auto-calcula en 0, ver
+      // calculateParticipation en financial.js).
+      await apiConfirmPurchase(token, v.id, {
+        vehicle: {
+          purchasePrice: PURCHASE_PRICE,
+          supplierId: TEST_SEED_IDS.supplier,
+          partnerId: tp.id,
+          partnerContribution: PURCHASE_PRICE,
+        },
+        payment: {},
+      });
+
+      const status = await apiGetVehiclePaymentStatus(token, v.id);
+      expect(parseFloat(String(status.purchase!.totalAmount))).toBe(PURCHASE_PRICE);
+      expect(parseFloat(String(status.purchase!.paidAmount))).toBe(PURCHASE_PRICE);
+      expect(status.purchase!.status).toBe('PAID');
+
+      const purchasePayables = await apiListPayables(token, { vehicleId: v.id, type: 'PAYABLE' });
+      expect(purchasePayables).toHaveLength(1);
+      expect(purchasePayables[0].status).toBe('PAID');
+
+      // Un único EXPENSE, desde la cuenta SOCIO — sin pago propio.
+      const purchaseTxs = await apiListTransactions(token, { vehicleId: v.id });
+      expect(purchaseTxs).toHaveLength(1);
+      expect(purchaseTxs[0].type).toBe('EXPENSE');
+      expect(purchaseTxs[0].accountId).toBe(socioAccount.id);
+      expect(Number(purchaseTxs[0].amount)).toBe(PURCHASE_PRICE);
+      expect(parseFloat((await apiGetAccount(token, socioAccount.id)).currentBalance as string)).toBe(0);
+
+      const advanced = await apiMoveStage(token, v.id, 'ALISTAMIENTO');
+      expect(advanced.stage).toBe('ALISTAMIENTO');
+
+      // Venta: gross 10M (30M − 20M). Con socioShare === 1 (participation 0),
+      // las reservas se calculan sobre TODO el neto y el fondo no recibe nada
+      // (mismos números que socio.spec.ts "socio inversionista al 100%", ahí
+      // con owner-self; aquí con un tercero PARTNER real vía investor_team).
+      const sale = await apiRegisterSale(token, v.id, {
+        salePrice: SALE_PRICE,
+        paymentType: 'CASH',
+        buyerId: TEST_SEED_IDS.buyer,
+        cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: SALE_PRICE },
+        participants: [{ thirdPartyId: TEST_SEED_IDS.employee, role: 'CERRADOR', sharePct: 100 }],
+      });
+
+      expect(sale.summary.grossProfit).toBe(10_000_000);
+      expect(sale.summary.socioShare).toBe(1);
+      expect(sale.summary.reinvestAmount).toBe(2_700_000);
+      expect(sale.summary.taxAmount).toBe(900_000);
+      expect(sale.summary.partnerProfit).toBe(6_400_000);
+      expect(sale.summary.partnerCommissionOwed).toBe(1_000_000);
+      expect(sale.summary.profitToDistribute).toBe(0);
+
+      // La ganancia del socio (participation calculada fresca en la compra →
+      // socioShare = 1 en la cascada de venta) llega como CxP PARTNER_SHARE.
+      const payables = await apiListPayables(token, { vehicleId: v.id });
+      const partnerShare = payables.find((pb) => pb.type === 'PARTNER_SHARE');
+      expect(partnerShare).toBeTruthy();
+      expect(partnerShare!.thirdPartyId).toBe(tp.id);
+      expect(Number(partnerShare!.totalAmount)).toBe(6_400_000);
+
+      const socioReceivable = payables.find((pb) => pb.type === 'RECEIVABLE');
+      expect(socioReceivable).toBeTruthy();
+      expect(socioReceivable!.thirdPartyId).toBe(tp.id);
+      expect(Number(socioReceivable!.totalAmount)).toBe(1_000_000);
+
+      // Sin fila de PROFIT_SHARE: profitToDistribute === 0 no crea CxP vacías.
+      expect(payables.filter((pb) => pb.type === 'PROFIT_SHARE')).toHaveLength(0);
+    } finally {
+      // Restaurar investor_team para no contaminar otros specs (settings no
+      // se trunca entre tests — mismo patrón que investors.spec.ts).
+      await apiUpdateCommissionConfig(token, { ...BASE_COMMISSION_CFG, investor_team: [] });
+    }
   });
 });
