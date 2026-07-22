@@ -368,7 +368,7 @@ export interface SocioPendingItem {
 export interface SocioPendingBucket { total: number; count: number; items: SocioPendingItem[] }
 export async function apiGetSocioPending(
   token: string,
-): Promise<{ profit: SocioPendingBucket; commission: SocioPendingBucket }> {
+): Promise<{ capital: SocioPendingBucket; profit: SocioPendingBucket; commission: SocioPendingBucket }> {
   return getJson('/payables/socio-pending', token);
 }
 

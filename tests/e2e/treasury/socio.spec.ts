@@ -11,8 +11,22 @@ import {
   apiGetAccount,
   apiListTransactions,
   apiGetSocioPending,
+  apiConfirmPurchase,
+  apiUpdateCommissionConfig,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
+
+// Campos legacy que el schema Joi de PUT /settings/commission-config sigue
+// exigiendo como `required()` — mismo bloque base que cuentas-socio.spec.ts.
+const BASE_COMMISSION_CFG = {
+  commission_share_pct: 60,
+  reinvest_share_pct: 30,
+  tax_share_pct: 10,
+  default_captador_pct: 30,
+  default_cerrador_pct: 70,
+  reinvest_account_id: 'budget-reinvest',
+  tax_reserve_account_id: 'budget-tax',
+};
 
 // Cascada del socio (resolveSocio + calculateSaleDistribution, Task 2/3): un
 // vehículo comprado con socio (partnerId + participation, donde
@@ -300,5 +314,95 @@ test.describe('Socio del vehículo (partnerId/participation) en la cascada de ve
 
     const afterC = await apiGetSocioPending(token);
     expect(afterC.commission.items.some((it) => it.vehicleId === v.id)).toBe(false);
+  });
+
+  test('Modelo B: round-trip inversionista 100% — capital vuelve a la cuenta del socio', async () => {
+    const token = await apiPinLogin();
+
+    // Inversionista 100% con cuenta SOCIO real: resolveSocio (commissionService)
+    // sólo trata como inversionista a 'owner-self' o a quien esté en
+    // investor_team; owner-self (usado en "socio inversionista al 100%" arriba)
+    // no tiene cuenta SOCIO sembrada en el seed, así que aquí usamos
+    // TEST_SEED_IDS.partner (sí tiene cuenta SOCIO sembrada,
+    // TEST_SEED_IDS.partnerAccount) y lo incorporamos temporalmente al
+    // investor_team — mismo patrón que cuentas-socio.spec.ts (try/finally
+    // restaura, porque settings no se trunca entre tests).
+    const cfgRes = await apiUpdateCommissionConfig(token, {
+      ...BASE_COMMISSION_CFG,
+      investor_team: [{ thirdPartyId: TEST_SEED_IDS.partner, sharePct: 100 }],
+    });
+    expect(cfgRes.status).toBe(200);
+
+    try {
+      // Fondear la cuenta SOCIO con el aporte que va a poner en la compra: la
+      // compra real (confirm-purchase) saca el aporte de esa cuenta.
+      const fund = await apiRequestRaw('POST', '/treasury/transfers', token, {
+        fromAccountId: TEST_SEED_IDS.accountCash,
+        toAccountId: TEST_SEED_IDS.partnerAccount,
+        amount: SOCIO_PURCHASE_PRICE,
+      });
+      expect(fund.status).toBe(201);
+
+      const p = plate('MB');
+      const v = await apiCreateVehicle(token, {
+        plate: p,
+        stage: 'NEGOCIANDO',
+        negotiatedValue: SOCIO_PURCHASE_PRICE,
+        supplierId: TEST_SEED_IDS.supplier,
+      });
+
+      // Compra: el socio aporta el 100% desde su cuenta SOCIO
+      // (partnerContribution === purchasePrice → participation se
+      // auto-calcula en 0 → socioShare 1 en la cascada de venta).
+      await apiConfirmPurchase(token, v.id, {
+        vehicle: {
+          purchasePrice: SOCIO_PURCHASE_PRICE,
+          supplierId: TEST_SEED_IDS.supplier,
+          partnerId: TEST_SEED_IDS.partner,
+          partnerContribution: SOCIO_PURCHASE_PRICE,
+        },
+        payment: {},
+      });
+
+      const sale = await apiRegisterSale(token, v.id, {
+        salePrice: SOCIO_SALE_PRICE,
+        paymentType: 'CASH',
+        buyerId: TEST_SEED_IDS.buyer,
+        cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: SOCIO_SALE_PRICE },
+        participants: saleParticipants(),
+      });
+      expect(sale.summary.socioShare).toBe(1);
+
+      const pend = await apiGetSocioPending(token);
+      const cap = pend.capital.items.find((it) => it.vehicleId === v.id);
+      const prof = pend.profit.items.find((it) => it.vehicleId === v.id);
+      expect(cap).toBeTruthy();
+      expect(prof).toBeTruthy();
+      expect(cap!.pending).toBe(SOCIO_PURCHASE_PRICE); // capital = aporte del socio
+
+      // Pagar la devolución de capital desde una cuenta de empresa → entra a
+      // la cuenta socio (enrutamiento FASE B, igual que PARTNER_SHARE).
+      const socioBefore = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+      const payCap = await apiRequestRaw('POST', `/payables/${cap!.id}/payments`, token, {
+        accountId: TEST_SEED_IDS.accountCash,
+        amount: cap!.pending,
+        description: 'Devolución capital (round-trip)',
+      });
+      expect(payCap.status).toBe(201);
+      const body = payCap.body as { transaction?: { category?: string; type?: string } };
+      expect(body.transaction?.category).toBe('CAPITAL_RETURN');
+      expect(body.transaction?.type).toBe('EXPENSE');
+
+      const socioAfter = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+      expect(Number(socioAfter.currentBalance)).toBe(Number(socioBefore.currentBalance) + SOCIO_PURCHASE_PRICE);
+
+      // Ya no aparece en el bucket capital.
+      const pend2 = await apiGetSocioPending(token);
+      expect(pend2.capital.items.some((it) => it.vehicleId === v.id)).toBe(false);
+    } finally {
+      // Restaurar investor_team para no contaminar otros tests del archivo
+      // (settings no se trunca entre tests).
+      await apiUpdateCommissionConfig(token, { ...BASE_COMMISSION_CFG, investor_team: [] });
+    }
   });
 });
