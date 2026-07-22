@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateParticipation } = require('../utils/financial');
+const { isSaleReceivable } = require('./saleService');
 
 /**
  * Normaliza el payload de pago a una lista de líneas { accountId, amount, method }.
@@ -42,20 +43,33 @@ async function computeAccountBalance(tx, accountId) {
 }
 
 /**
- * Aplica una o varias líneas de pago (efectivo/transferencia) contra la CxP de compra.
- * Crea una Transaction de egreso + PayablePayment por línea, valida que la suma no
- * exceda lo adeudado y actualiza paidAmount/status del payable. Devuelve avisos de
- * saldo negativo (no bloqueantes).
+ * Aplica el aporte del socio (si existe) y las líneas de pago propias contra la CxP
+ * de compra, que ahora representa el PRECIO TOTAL del vehículo.
+ *
+ * El aporte del socio sale directamente de su cuenta dedicada `SOCIO`
+ * (resuelta por `socioThirdPartyId`) como un único egreso:
+ *   - EXPENSE (VEHICLE_PURCHASE) → sale de la cuenta del socio hacia el proveedor.
+ * Genera un PayablePayment que abona la CxP.
+ *
+ * Luego crea una Transaction de egreso + PayablePayment por cada pago propio, valida
+ * que aporte + pagos no excedan `totalDue` y actualiza paidAmount/status del payable.
+ * Devuelve avisos de saldo negativo (no bloqueantes).
  */
-async function applyPurchasePayments(tx, { payable, payments, vehicle, thirdPartyId, date, userId, owedAmount }) {
-  if (!payments || payments.length === 0) {
+async function applyPurchasePayments(tx, {
+  payable, payments, vehicle, thirdPartyId, date, userId,
+  totalDue, partnerContribution = 0, socioThirdPartyId = null,
+}) {
+  const partnerAmt = Number(partnerContribution || 0);
+  const owedByMe = payments || [];
+  if (owedByMe.length === 0 && partnerAmt <= 0) {
     return { totalPaid: 0, transactions: [], warnings: [] };
   }
 
-  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-  if (totalPaid > owedAmount + 0.0001) {
+  const myTotal = owedByMe.reduce((s, p) => s + p.amount, 0);
+  const totalPaid = myTotal + partnerAmt;
+  if (totalPaid > Number(totalDue) + 0.0001) {
     throw new AppError(
-      `El total de pagos (${totalPaid}) excede tu parte a pagar (${owedAmount})`,
+      `El total (aporte socio ${partnerAmt} + tus pagos ${myTotal}) excede el precio de compra (${totalDue})`,
       400
     );
   }
@@ -65,7 +79,45 @@ async function applyPurchasePayments(tx, { payable, payments, vehicle, thirdPart
   const paymentDate = new Date(); // fecha de contabilización = instante de registro
   const methodLabel = { CASH: ' (efectivo)', TRANSFER: ' (transferencia)' };
 
-  for (const p of payments) {
+  // Aporte del socio: UN egreso desde su cuenta SOCIO hacia el proveedor.
+  if (partnerAmt > 0) {
+    const socioAccount = await tx.account.findFirst({
+      where: { type: 'SOCIO', thirdPartyId: socioThirdPartyId, isActive: true },
+    });
+    if (!socioAccount) {
+      throw new AppError('El socio no tiene una cuenta activa; créala o actívala en Cuentas', 400);
+    }
+    const info = await computeAccountBalance(tx, socioAccount.id);
+    if (info && info.balance - partnerAmt < 0) {
+      warnings.push({
+        type: 'NEGATIVE_BALANCE',
+        message: `La cuenta "${info.account.name}" quedará con saldo negativo después del aporte`,
+        accountId: socioAccount.id,
+        currentBalance: info.balance,
+        newBalance: info.balance - partnerAmt,
+      });
+    }
+    const outTx = await tx.transaction.create({
+      data: {
+        accountId: socioAccount.id,
+        type: 'EXPENSE',
+        category: 'VEHICLE_PURCHASE',
+        amount: partnerAmt,
+        description: `Pago compra ${vehicle.plate} (aporte socio)`,
+        date: paymentDate,
+        vehicleId: vehicle.id,
+        thirdPartyId: thirdPartyId || null,
+        createdBy: userId,
+      },
+    });
+    transactions.push(outTx);
+    await tx.payablePayment.create({
+      data: { payableId: payable.id, transactionId: outTx.id, amount: partnerAmt },
+    });
+  }
+
+  // Tus pagos (como hoy).
+  for (const p of owedByMe) {
     const info = await computeAccountBalance(tx, p.accountId);
     if (!info) throw new AppError('La cuenta seleccionada no existe', 400);
     if (info.balance - p.amount < 0) {
@@ -99,7 +151,7 @@ async function applyPurchasePayments(tx, { payable, payments, vehicle, thirdPart
 
   await tx.payable.update({
     where: { id: payable.id },
-    data: { paidAmount: totalPaid, status: totalPaid >= owedAmount ? 'PAID' : 'PARTIAL' },
+    data: { paidAmount: totalPaid, status: totalPaid >= Number(totalDue) ? 'PAID' : 'PARTIAL' },
   });
 
   return { totalPaid, transactions, warnings };
@@ -135,7 +187,6 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
 
   // Mi deuda efectiva al proveedor (descuenta el aporte del socio si existe)
   const partnerAmount = Number(partnerContribution || 0);
-  const myOwedAmount = Math.max(0, Number(purchasePrice) - partnerAmount);
 
   // Transacción atómica para crear vehículo + CxP + pago opcional
   const result = await prisma.$transaction(async (tx) => {
@@ -153,16 +204,15 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
       include: { expenses: true, documents: true }
     });
 
-    // 2. Crear la cuenta por pagar (CxP) — solo por MI parte
+    // 2. Crear la cuenta por pagar (CxP) — por el PRECIO TOTAL. Se salda con el
+    //    aporte del socio (si hay) + tu parte.
     const payable = await tx.payable.create({
       data: {
         type: 'PAYABLE',
         status: 'PENDING',
-        totalAmount: myOwedAmount,
+        totalAmount: Number(purchasePrice),
         paidAmount: 0,
-        description: partnerAmount > 0
-          ? `Compra vehículo ${vehicle.plate} (mi parte)`
-          : `Compra vehículo ${vehicle.plate}`,
+        description: `Compra vehículo ${vehicle.plate}`,
         vehicleId: vehicle.id,
         thirdPartyId: paymentData?.thirdPartyId || null,
         dueDate: paymentData?.dueDate ? new Date(paymentData.dueDate) : null,
@@ -170,7 +220,7 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
       }
     });
 
-    // 3. Aplicar pago(s): efectivo y/o transferencia (o ninguno → todo a CxP)
+    // 3. Aplicar aporte del socio (egreso desde su cuenta SOCIO) + tus pago(s).
     const payments = normalizePayments(paymentData);
     const { transactions, warnings } = await applyPurchasePayments(tx, {
       payable,
@@ -179,7 +229,9 @@ const createVehicleWithPurchase = async (vehicleData, paymentData, userId) => {
       thirdPartyId: paymentData?.thirdPartyId || null,
       date: paymentData?.date,
       userId,
-      owedAmount: myOwedAmount,
+      totalDue: Number(purchasePrice),
+      partnerContribution: partnerAmount,
+      socioThirdPartyId: vehicle.partnerId || null,
     });
 
     return { vehicle, payable, transaction: transactions[0] || null, transactions, warning: warnings[0] || null, warnings };
@@ -328,7 +380,8 @@ const getVehiclePaymentStatus = async (vehicleId) => {
   });
 
   const purchase = payables.find(p => p.type === 'PAYABLE');
-  const sale = payables.find(p => p.type === 'RECEIVABLE');
+  // Solo la CxC de la venta, no la de comisión del socio (mismo tipo RECEIVABLE).
+  const sale = payables.find(isSaleReceivable);
 
   return {
     purchase: purchase ? {
@@ -373,7 +426,6 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
   const participation = (vehicleData?.participation !== undefined && vehicleData?.participation !== null)
     ? Number(vehicleData.participation)
     : calculateParticipation(purchasePrice, partnerAmount);
-  const myOwedAmount = Math.max(0, purchasePrice - partnerAmount);
   const supplierId = vehicleData?.supplierId || existing.supplierId || paymentData?.thirdPartyId || null;
 
   const result = await prisma.$transaction(async (tx) => {
@@ -398,11 +450,9 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
       data: {
         type: 'PAYABLE',
         status: 'PENDING',
-        totalAmount: myOwedAmount,
+        totalAmount: Number(purchasePrice),
         paidAmount: 0,
-        description: partnerAmount > 0
-          ? `Compra vehículo ${vehicle.plate} (mi parte)`
-          : `Compra vehículo ${vehicle.plate}`,
+        description: `Compra vehículo ${vehicle.plate}`,
         vehicleId: vehicle.id,
         thirdPartyId: supplierId,
         dueDate: paymentData?.dueDate ? new Date(paymentData.dueDate) : null,
@@ -410,7 +460,7 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
       },
     });
 
-    // Aplicar pago(s): efectivo y/o transferencia (o ninguno → todo a CxP)
+    // Aporte del socio (egreso desde su cuenta SOCIO) + tus pago(s); salda contra el precio total.
     const payments = normalizePayments(paymentData);
     const { transactions, warnings } = await applyPurchasePayments(tx, {
       payable,
@@ -419,7 +469,9 @@ const confirmPurchase = async (vehicleId, vehicleData, paymentData, userId) => {
       thirdPartyId: supplierId,
       date: paymentData?.date,
       userId,
-      owedAmount: myOwedAmount,
+      totalDue: Number(purchasePrice),
+      partnerContribution: partnerAmount,
+      socioThirdPartyId: vehicle.partnerId || null,
     });
 
     return { vehicle, payable, transaction: transactions[0] || null, transactions, warning: warnings[0] || null, warnings };
@@ -433,4 +485,5 @@ module.exports = {
   addPurchasePayment,
   getVehiclePaymentStatus,
   confirmPurchase,
+  applyPurchasePayments,
 };

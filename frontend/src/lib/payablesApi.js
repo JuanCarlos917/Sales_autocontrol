@@ -84,4 +84,13 @@ export const commissionsApi = {
   getSummary: () => api.get('/commissions/summary'),
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Ganancia por inversionista (participación en la venta)
+// ═══════════════════════════════════════════════════════════════
+
+export const investorsApi = {
+  getAll: (params = {}) => api.get('/investors', { params }),
+  getSummary: () => api.get('/investors/summary'),
+};
+
 export default payablesApi;

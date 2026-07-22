@@ -193,7 +193,7 @@ export default function SalePaymentModal({
         const ids = clean.map((r) => r.thirdPartyId);
         const sum = clean.reduce((s, r) => s + parseFloat(r.sharePct), 0);
         if (new Set(ids).size !== ids.length) newErrors.commission = 'Hay personas repetidas en el reparto';
-        else if (sum > 100.001) newErrors.commission = `El reparto suma ${sum}% (máximo 100; tu parte es el resto)`;
+        else if (clean.length > 0 && Math.abs(sum - 100) > 0.001) newErrors.commission = `El reparto suma ${sum}% (los vendedores deben sumar 100)`;
       }
     }
 

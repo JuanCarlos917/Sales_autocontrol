@@ -30,7 +30,14 @@ test.describe('Comisiones — página dedicada', () => {
   test('venta genera card con cascada y 2 roles; pagar CAPTADOR lo deja PAGADO con movimiento ligado a la placa', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const p = plate('COM');
-    await sellVehicle(token, p);
+    // Contrato nuevo (resolveSellers): sin equipo default configurado, una venta
+    // sin `participants` explícitos no genera comisión (sellers = []). Para tener
+    // los 2 roles CAPTADOR/CERRADOR que el test ejercita, pasamos un equipo
+    // explícito que suma 100 exacto (el dueño no puede comisionar).
+    await sellVehicle(token, p, [
+      { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+      { thirdPartyId: TEST_SEED_IDS.partner, role: 'CERRADOR', sharePct: 70 },
+    ]);
 
     await page.goto('/treasury/commissions');
     await expect(page.getByTestId('commissions-page')).toBeVisible();
@@ -61,10 +68,13 @@ test.describe('Comisiones — página dedicada', () => {
   test('venta con participantes custom crea CxPs a nombre del tercero con esos %', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const p = plate('CUS');
-    // Contrato de equipo de reparto: el dueño NO va en las filas — su 60%
-    // llega como resto automático.
+    // Contrato nuevo (resolveSellers): los vendedores deben sumar 100 exacto —
+    // ya no hay fila de "resto al dueño" para comisión (el dueño no comisiona;
+    // su parte, si aplica, es la de inversionista vía PROFIT_SHARE, fuera de
+    // este endpoint que solo reporta CxP COMMISSION).
     await sellVehicle(token, p, [
       { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 40 },
+      { thirdPartyId: TEST_SEED_IDS.partner, role: 'CERRADOR', sharePct: 60 },
     ]);
 
     const items = await apiListCommissions(token);
@@ -74,8 +84,8 @@ test.describe('Comisiones — página dedicada', () => {
     const captador = item!.roles.find((r) => r.role === 'CAPTADOR');
     expect(captador?.thirdParty.id).toBe(TEST_SEED_IDS.employee);
     expect(captador?.sharePct).toBe(40);
-    const owner = item!.roles.find((r) => r.thirdParty.id === 'owner-self');
-    expect(owner?.sharePct).toBe(60); // resto automático
+    expect(item!.roles.some((r) => r.thirdParty.id === 'owner-self')).toBe(false);
+    expect(item!.roles.length).toBe(2);
 
     // Y la UI lo refleja
     await page.goto('/treasury/commissions');

@@ -143,6 +143,9 @@ export default function TreasuryPage() {
           <Link to="/treasury/commissions" className="btn-ghost text-sm" data-testid="treasury-commissions-link">
             Comisiones
           </Link>
+          <Link to="/treasury/investors" className="btn-ghost text-sm" data-testid="treasury-investors-link">
+            Inversionistas
+          </Link>
         </div>
       </div>
 

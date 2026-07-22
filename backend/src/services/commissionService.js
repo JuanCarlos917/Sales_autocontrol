@@ -24,7 +24,11 @@ const COMMISSION_CONFIG_KEYS = [
   'default_cerrador_pct',
   'reinvest_account_id',
   'tax_reserve_account_id',
+  'commission_gross_pct',
+  'reinvest_pct',
+  'tax_pct',
 ];
+const INVESTOR_TEAM_KEY = 'investor_team';
 
 /**
  * Lee Settings por key y devuelve un objeto {key: numericOrString}.
@@ -33,7 +37,7 @@ const COMMISSION_CONFIG_KEYS = [
  */
 async function loadCommissionConfig(prismaOrTx) {
   const rows = await prismaOrTx.setting.findMany({
-    where: { key: { in: [...COMMISSION_CONFIG_KEYS, DEFAULT_TEAM_KEY] } },
+    where: { key: { in: [...COMMISSION_CONFIG_KEYS, DEFAULT_TEAM_KEY, INVESTOR_TEAM_KEY] } },
   });
   const cfg = {};
   rows.forEach(r => { cfg[r.key] = r.value; });
@@ -51,7 +55,19 @@ async function loadCommissionConfig(prismaOrTx) {
       console.warn('[commissionService] commission_default_team corrupto; se ignora (fallback legacy)');
     }
   }
+  let investorTeam = [];
+  if (cfg[INVESTOR_TEAM_KEY]) {
+    try {
+      const parsed = JSON.parse(cfg[INVESTOR_TEAM_KEY]);
+      if (Array.isArray(parsed)) investorTeam = parsed;
+    } catch {
+      // eslint-disable-next-line no-console
+      console.warn('[commissionService] investor_team corrupto; se ignora (fallback [])');
+    }
+  }
   return {
+    // Legacy pool config (consumido por calculatePools/saleService — NO tocar
+    // hasta que Task 4 rewire el flujo de venta a la cascada nueva).
     commissionPct:        Number(cfg.commission_share_pct),
     reinvestPct:          Number(cfg.reinvest_share_pct),
     taxPct:               Number(cfg.tax_share_pct),
@@ -60,6 +76,16 @@ async function loadCommissionConfig(prismaOrTx) {
     reinvestAccountId:    cfg.reinvest_account_id,
     taxReserveAccountId:  cfg.tax_reserve_account_id,
     defaultTeam,
+    sellerTeam:           defaultTeam,
+    investorTeam,
+    // Config de la cascada ganancia vs comisión (calculateSaleDistribution,
+    // Task 4). Deliberadamente separada de los campos legacy de arriba para
+    // no repointear el flujo de venta actual antes de que esté migrado.
+    distributionCfg: {
+      commissionGrossPct: Number(cfg.commission_gross_pct),
+      reinvestPct:         Number(cfg.reinvest_pct),
+      taxPct:              Number(cfg.tax_pct),
+    },
   };
 }
 
@@ -154,6 +180,94 @@ async function resolveParticipants(prismaOrTx, saleParticipants, cfg) {
 }
 
 /**
+ * Resuelve la lista de VENDEDORES para la cascada ganancia vs comisión
+ * (`calculateSaleDistribution`). A diferencia de `resolveParticipants`, NO
+ * genera fila de "resto al dueño": si no suman 100 exacto, es un error del
+ * usuario. Sin vendedores → [] (venta sin comisión, todo el gross profit
+ * pasa a repartirse entre inversionistas). El dueño (owner-self) PUEDE ir como
+ * vendedor y cobrar comisión por el trabajo de venta que hizo.
+ */
+async function resolveSellers(prismaOrTx, saleParticipants, cfg) {
+  const explicit = Array.isArray(saleParticipants) && saleParticipants.length > 0;
+  const team = explicit ? saleParticipants : (cfg?.sellerTeam || null);
+  if (!team || team.length === 0) return []; // venta sin vendedor → sin comisión
+
+  if (team.length > MAX_PARTICIPANTS) throw new AppError(`Máximo ${MAX_PARTICIPANTS} vendedores`, 400);
+  // El dueño (owner-self) SÍ puede comisionar: si hace el trabajo de venta, cobra
+  // comisión por ello, aparte de su ganancia como inversionista (dos rubros
+  // distintos; la comisión se descuenta del bruto antes de repartir la ganancia).
+  if (team.some((p) => !(Number(p.sharePct) > 0))) throw new AppError('Cada vendedor debe tener % > 0', 400);
+  const ids = team.map((p) => p.thirdPartyId);
+  if (new Set(ids).size !== ids.length) throw new AppError('Vendedores repetidos', 400);
+  const sum = Math.round(team.reduce((s, p) => s + Number(p.sharePct), 0) * 100) / 100;
+  if (sum !== 100) throw new AppError(`Los % de vendedores deben sumar 100 (suman ${sum})`, 400);
+
+  const found = await prismaOrTx.thirdParty.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  const foundIds = new Set(found.map((f) => f.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) throw new AppError(`Vendedores no encontrados: ${missing.join(', ')}`, 400);
+
+  return team.map((p) => ({
+    thirdPartyId: p.thirdPartyId, role: p.role || 'OTHER',
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
+  }));
+}
+
+/**
+ * Resuelve la lista de INVERSIONISTAS para la cascada ganancia vs comisión.
+ * Sin equipo configurado → fallback owner-self 100% (comportamiento pre-equipo).
+ * Con equipo → debe sumar 100 exacto y todos los terceros deben existir.
+ */
+async function resolveInvestors(prismaOrTx, cfg) {
+  const team = Array.isArray(cfg?.investorTeam) ? cfg.investorTeam : [];
+  if (team.length === 0) {
+    await ensureOwnerExists(prismaOrTx);
+    return [{ thirdPartyId: OWNER_ID, role: 'INVESTOR', sharePct: 100 }];
+  }
+  if (team.some((p) => !(Number(p.sharePct) > 0))) throw new AppError('Cada inversionista debe tener % > 0', 400);
+  const ids = team.map((p) => p.thirdPartyId);
+  if (new Set(ids).size !== ids.length) throw new AppError('Inversionistas repetidos en el equipo', 400);
+  const sum = Math.round(team.reduce((s, p) => s + Number(p.sharePct), 0) * 100) / 100;
+  if (sum !== 100) throw new AppError(`Los % de capital deben sumar 100 (suman ${sum})`, 400);
+
+  const found = await prismaOrTx.thirdParty.findMany({ where: { id: { in: ids } }, select: { id: true } });
+  const foundIds = new Set(found.map((f) => f.id));
+  const missing = ids.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    throw new AppError(`El equipo de inversionistas referencia terceros que ya no existen (${missing.join(', ')}); actualízalo en Configuración`, 400);
+  }
+  if (ids.includes(OWNER_ID)) await ensureOwnerExists(prismaOrTx);
+  return team.map((p) => ({
+    thirdPartyId: p.thirdPartyId, role: 'INVESTOR',
+    sharePct: Math.round(Number(p.sharePct) * 100) / 100,
+  }));
+}
+
+/**
+ * Resuelve el SOCIO del vehículo (partnerId) para la cascada ganancia vs
+ * comisión: `share` es la porción de la ganancia que le corresponde
+ * (1 − participation, la parte del dueño/equipo). Sin partnerId → sin socio
+ * (null). isInvestor detecta si el socio es owner-self o pertenece al equipo
+ * de inversionistas configurado (cfg.investorTeam); un inversionista debe
+ * poner el 100% del vehículo (share === 1) y un socio externo NO puede poner
+ * el 100% (debe ser inversionista) — ambas violaciones son error 400.
+ */
+async function resolveSocio(prismaOrTx, vehicle, cfg) {
+  if (!vehicle.partnerId) return null;
+  const share = Math.round((1 - Number(vehicle.participation ?? 1)) * 10000) / 10000;
+  if (share <= 0) return null; // participation 1 = sin socio efectivo
+  const team = Array.isArray(cfg?.investorTeam) ? cfg.investorTeam : [];
+  const isInvestor = vehicle.partnerId === OWNER_ID || team.some((i) => i.thirdPartyId === vehicle.partnerId);
+  if (isInvestor && share !== 1) {
+    throw new AppError('Un socio inversionista debe poner el 100% del vehículo', 400);
+  }
+  if (!isInvestor && share === 1) {
+    throw new AppError('Un socio externo no puede poner el 100%; debe ser un inversionista', 400);
+  }
+  return { thirdPartyId: vehicle.partnerId, share, isInvestor };
+}
+
+/**
  * Calcula los tres "pools" (montos absolutos) a partir de la base de comisión.
  */
 function calculatePools(commissionBase, cfg) {
@@ -173,6 +287,36 @@ function calculateCashRatio(totalReceived, cashReceived) {
 }
 
 const ROLE_ORDER = { CAPTADOR: 0, CERRADOR: 1, OTHER: 2 };
+
+/**
+ * Arma las filas de "roles" (una por Payable) compartidas entre la cascada de
+ * comisión y la de ganancia: sharePct del SaleParticipant o derivado de
+ * montos (total/pool) para data legacy sin participante.
+ */
+function buildPayableRoles(payables, pool) {
+  return payables.map((p) => {
+    const total = Number(p.totalAmount || 0);
+    const paid = Number(p.paidAmount || 0);
+    const sharePct = p.saleParticipant
+      ? Number(p.saleParticipant.sharePct)
+      : (pool > 0 ? Math.round((total / pool) * 100) : 0);
+    return {
+      role: p.saleParticipant?.role || 'OTHER',
+      thirdParty: { id: p.thirdParty?.id || null, name: p.thirdParty?.name || '—' },
+      sharePct,
+      total,
+      paid,
+      pending: total - paid,
+      status: p.status,
+      payableId: p.id,
+      payments: (p.payments || []).map((pp) => ({
+        date: pp.transaction?.date || null,
+        amount: Number(pp.amount),
+        accountName: pp.transaction?.account?.name || '—',
+      })),
+    };
+  }).sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+}
 
 /**
  * Arma el item de comisión de UN vehículo desde datos ya cargados (puro, sin DB).
@@ -196,28 +340,7 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
     : Number(vehicle.purchasePrice || 0);
   const commissionPool = payables.reduce((s, p) => s + Number(p.totalAmount || 0), 0);
 
-  const roles = payables.map((p) => {
-    const total = Number(p.totalAmount || 0);
-    const paid = Number(p.paidAmount || 0);
-    const sharePct = p.saleParticipant
-      ? Number(p.saleParticipant.sharePct)
-      : (commissionPool > 0 ? Math.round((total / commissionPool) * 100) : 0);
-    return {
-      role: p.saleParticipant?.role || 'OTHER',
-      thirdParty: { id: p.thirdParty?.id || null, name: p.thirdParty?.name || '—' },
-      sharePct,
-      total,
-      paid,
-      pending: total - paid,
-      status: p.status,
-      payableId: p.id,
-      payments: (p.payments || []).map((pp) => ({
-        date: pp.transaction?.date || null,
-        amount: Number(pp.amount),
-        accountName: pp.transaction?.account?.name || '—',
-      })),
-    };
-  }).sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+  const roles = buildPayableRoles(payables, commissionPool);
 
   let buckets = null;
   if (Array.isArray(bucketTransfers) && bucketTransfers.length > 0) {
@@ -249,12 +372,73 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
 }
 
 /**
+ * Arma el item de GANANCIA (inversionistas) de UN vehículo desde datos ya
+ * cargados (puro, sin DB). A diferencia de buildCommissionVehicleItem, NO usa
+ * calculateCommissionBase (esa base aplica `participation` y excluye gastos
+ * COMISION — semántica de comisión, no de ganancia de fondo). En su lugar
+ * replica la cascada real de `calculateSaleDistribution` (financial.js):
+ *   grossProfit = salePrice − purchaseCost − TODOS los gastos no borrados
+ *   commissionPool = Σ totalAmount de las CxP COMMISSION del vehículo (deducción)
+ *   reinvest/tax = reservas ya transferidas (bucketTransfers)
+ *   profitToDistribute = Σ totalAmount de las CxP PROFIT_SHARE (persistido)
+ * Invariante (venta normal): grossProfit − commissionPool − reinvest − tax
+ * === profitToDistribute (los montos persistidos ya cuadran porque salieron
+ * de calculateSaleDistribution al momento de la venta).
+ */
+function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, bucketTransfers }) {
+  const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
+  const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const purchaseCost = vehicle.fromTradeIn
+    ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
+    : Number(vehicle.purchasePrice || 0);
+  const salePrice = Number(vehicle.salePrice || 0);
+  const grossProfit = salePrice - purchaseCost - directExpenses;
+  const commissionPool = Number(commissionPayableSum || 0);
+  const profitToDistribute = payables.reduce((s, p) => s + Number(p.totalAmount || 0), 0);
+
+  let reinvest = 0;
+  let tax = 0;
+  if (Array.isArray(bucketTransfers)) {
+    for (const t of bucketTransfers) {
+      if (t.bucket === 'reinvest') reinvest += Number(t.amount || 0);
+      if (t.bucket === 'tax') tax += Number(t.amount || 0);
+    }
+  }
+
+  const roles = buildPayableRoles(payables, profitToDistribute);
+  const buckets = (Array.isArray(bucketTransfers) && bucketTransfers.length > 0) ? { reinvest, tax } : null;
+
+  return {
+    vehicle: {
+      id: vehicle.id, plate: vehicle.plate, brand: vehicle.brand,
+      model: vehicle.model, saleDate: vehicle.saleDate, salePrice,
+    },
+    cascade: {
+      salePrice,
+      purchaseCost,
+      directExpenses,
+      grossProfit,
+      commissionPool,
+      reinvest,
+      tax,
+      profitToDistribute,
+    },
+    roles,
+    buckets,
+    hasPending: roles.some((r) => r.status === 'PENDING' || r.status === 'PARTIAL'),
+  };
+}
+
+/**
  * Lista items de comisión agrupados por vehículo vendido, pendientes primero.
  * status: 'pending' | 'paid' | 'all' (default all).
+ * payableType: PayableType a agregar (default 'COMMISSION'). Nota: la ganancia a
+ * inversionistas NO pasa por aquí — investorService.listByVehicle tiene su propia
+ * query + buildInvestorVehicleItem (cascada de ganancia, no de comisión).
  */
-async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
+async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMISSION' } = {}) {
   const payables = await prismaOrTx.payable.findMany({
-    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    where: { type: payableType, vehicleId: { not: null } },
     include: {
       vehicle: { include: { expenses: true } },
       thirdParty: { select: { id: true, name: true } },
@@ -349,10 +533,12 @@ function buildPersonSummary(rows) {
 /**
  * Agregados de comisiones para Dashboard + sección "Por persona".
  * Retorna: pendingTotal, paidThisMonth (zona Bogotá), byPerson ordenado por pendiente.
+ * payableType: PayableType a agregar (default 'COMMISSION'; investorService
+ * reutiliza esto con 'PROFIT_SHARE' para el reporte de ganancia por inversionista).
  */
-async function getSummary(prismaOrTx) {
+async function getSummary(prismaOrTx, { payableType = 'COMMISSION' } = {}) {
   const payables = await prismaOrTx.payable.findMany({
-    where: { type: 'COMMISSION', vehicleId: { not: null } },
+    where: { type: payableType, vehicleId: { not: null } },
     select: {
       thirdPartyId: true,
       vehicleId: true,
@@ -380,7 +566,7 @@ async function getSummary(prismaOrTx) {
     _sum: { amount: true },
     where: {
       createdAt: { gte: monthStart },
-      payable: { type: 'COMMISSION' },
+      payable: { type: payableType },
     },
   });
 
@@ -394,10 +580,14 @@ async function getSummary(prismaOrTx) {
 module.exports = {
   loadCommissionConfig,
   resolveParticipants,
+  resolveSellers,
+  resolveInvestors,
+  resolveSocio,
   calculatePools,
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience
   buildCommissionVehicleItem,
+  buildInvestorVehicleItem,
   listByVehicle,
   buildPersonSummary,
   getSummary,

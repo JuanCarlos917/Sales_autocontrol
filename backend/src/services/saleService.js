@@ -5,7 +5,14 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const commissionService = require('./commissionService');
-const { calculateCommissionBase } = require('../utils/financial');
+const { calculateSaleDistribution } = require('../utils/financial');
+
+// Un vehículo con socio puede tener DOS CxP tipo RECEIVABLE: la de la venta
+// financiada (saldo pendiente del comprador) y la de la comisión del socio.
+// Este prefijo identifica la de la VENTA para que getSaleSummary/addSaleCollection/
+// cancelSale no la confundan con la del socio ("Comisión socio venta ...").
+const SALE_RECEIVABLE_PREFIX = 'Venta vehículo';
+const isSaleReceivable = (p) => p.type === 'RECEIVABLE' && (p.description || '').startsWith(SALE_RECEIVABLE_PREFIX);
 
 /**
  * Tipos de pago de venta
@@ -185,7 +192,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
           totalAmount: salePriceNum,
           paidAmount: totalReceived,
           dueDate: financing?.dueDate ? new Date(financing.dueDate) : null,
-          description: `Venta vehículo ${vehicle.plate}`,
+          description: `${SALE_RECEIVABLE_PREFIX} ${vehicle.plate}`,
           vehicleId: vehicleId,
           thirdPartyId: clientId || null,
           createdBy: userId
@@ -204,62 +211,103 @@ const registerSale = async (vehicleId, saleData, userId) => {
       }
     }
 
-    // ─── Paso 5: Comisiones y bolsillos ─────────────────────────────
-    // Calcula la base, resuelve participantes, crea CxP COMMISSION por
-    // participante y Transfers proporcionales al efectivo recibido.
-    let commissionSummary = null;
+    // ─── Paso 5: Distribución — comisión (vendedores) y ganancia (inversionistas) ───
+    // Cascada nueva (calculateSaleDistribution, fuente única de verdad):
+    //   grossProfit → comisión sobre bruto (vendedores) → reservas reinversión/
+    //   impuestos sobre el neto → ganancia repartida por capital (inversionistas).
+    // Se crea una CxP COMMISSION por vendedor y una CxP PROFIT_SHARE por
+    // inversionista (ambas PENDING, monto completo), más las Transfers de reservas
+    // proporcionales al efectivo recibido. Si no hay utilidad (skip) no se crea nada.
+    let distributionSummary = null;
     const vehicleForBase = {
       salePrice: salePriceNum,
       purchasePrice: vehicle.purchasePrice,
       negotiatedValue: vehicle.negotiatedValue,
       fromTradeIn: vehicle.fromTradeIn,
-      participation: vehicle.participation,
       expenses: vehicle.expenses,
     };
-    const { commissionBase, skip } = calculateCommissionBase(vehicleForBase);
+    const cfg = await commissionService.loadCommissionConfig(tx);
+    const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
+    const investors = await commissionService.resolveInvestors(tx, cfg);
+    const socio = await commissionService.resolveSocio(tx, vehicle, cfg);
+    const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
 
-    if (!skip) {
-      const cfg = await commissionService.loadCommissionConfig(tx);
-      const pools = commissionService.calculatePools(commissionBase, cfg);
-      const resolved = await commissionService.resolveParticipants(tx, saleData.participants, cfg);
-
-      // 5a. Crear SaleParticipant + Payable COMMISSION por cada uno
-      const participantResults = [];
-      for (const p of resolved) {
-        const amount = pools.commissionPool * (p.sharePct / 100);
+    if (!dist.skip) {
+      // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
+      //     PROFIT_SHARE (inversionista). totalAmount = monto completo de la fila.
+      const mkPayable = async (type, row, label) => {
         const payable = await tx.payable.create({
           data: {
-            type: 'COMMISSION',
+            type,
             status: 'PENDING',
-            totalAmount: amount,
+            totalAmount: row.amount,
             paidAmount: 0,
-            description: `Comisión venta ${vehicle.plate} — ${p.role}`,
+            description: `${label} venta ${vehicle.plate} — ${row.role}`,
             vehicleId,
-            thirdPartyId: p.thirdPartyId,
+            thirdPartyId: row.thirdPartyId,
             createdBy: userId,
           },
         });
         const sp = await tx.saleParticipant.create({
           data: {
             vehicleId,
-            thirdPartyId: p.thirdPartyId,
-            role: p.role,
-            sharePct: p.sharePct,
-            amount,
+            thirdPartyId: row.thirdPartyId,
+            role: row.role,
+            sharePct: row.sharePct,
+            amount: row.amount,
             payableId: payable.id,
           },
         });
-        participantResults.push({
+        return {
           id: sp.id,
-          thirdPartyId: p.thirdPartyId,
-          role: p.role,
-          sharePct: p.sharePct,
-          amount,
+          thirdPartyId: row.thirdPartyId,
+          role: row.role,
+          sharePct: row.sharePct,
+          amount: row.amount,
           payableId: payable.id,
+        };
+      };
+
+      const sellerResults = [];
+      for (const r of dist.sellerRows) sellerResults.push(await mkPayable('COMMISSION', r, 'Comisión'));
+      const investorResults = [];
+      for (const r of dist.investorRows) investorResults.push(await mkPayable('PROFIT_SHARE', r, 'Ganancia'));
+
+      // 5a-bis. Socio del vehículo (partnerId/participation): su ganancia bruta va como
+      // CxP PARTNER_SHARE y su parte de la comisión (que adeuda al fondo) como CxC
+      // RECEIVABLE. Sólo cuando hay socio efectivo y montos positivos.
+      if (socio && dist.partnerProfit > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'PARTNER_SHARE',
+            status: 'PENDING',
+            totalAmount: dist.partnerProfit,
+            paidAmount: 0,
+            description: `Ganancia socio venta ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
+      if (socio && dist.partnerCommissionOwed > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'RECEIVABLE',
+            status: 'PENDING',
+            totalAmount: dist.partnerCommissionOwed,
+            paidAmount: 0,
+            description: `Comisión socio venta ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
         });
       }
 
-      // 5b. Transfers proporcionales al efectivo recibido.
+      // 5b. Reservas: transfers a reinversión / impuestos proporcionales al efectivo
+      // recibido (mismo cashRatio que el flujo anterior). Las CxP se crean por el
+      // monto completo; sólo las reservas mueven efectivo real proporcional a lo cobrado.
       //
       // El patrón estándar del proyecto (transferService.create) crea 1 Transfer
       // + 2 Transactions (TRANSFER_OUT en origen, TRANSFER_IN en destino).
@@ -312,8 +360,8 @@ const registerSale = async (vehicleId, saleData, userId) => {
       };
 
       if (cashReceived > 0 && moneyPayments.length > 0) {
-        const reinvestAmt = pools.reinvestPool * cashRatio;
-        const taxAmt = pools.taxPool * cashRatio;
+        const reinvestAmt = dist.reinvestAmount * cashRatio;
+        const taxAmt = dist.taxAmount * cashRatio;
         if (reinvestAmt > 0) {
           const t = await createBucketTransfer(cfg.reinvestAccountId, reinvestAmt, 'Reinversión');
           transferResults.push({
@@ -336,13 +384,18 @@ const registerSale = async (vehicleId, saleData, userId) => {
         }
       }
 
-      commissionSummary = {
-        commissionBase,
-        commissionPool: pools.commissionPool,
-        reinvestPool: pools.reinvestPool,
-        taxPool: pools.taxPool,
+      distributionSummary = {
+        grossProfit: dist.grossProfit,
+        commissionPool: dist.commissionPool,
+        reinvestAmount: dist.reinvestAmount,
+        taxAmount: dist.taxAmount,
+        profitToDistribute: dist.profitToDistribute,
         cashRatioApplied: cashRatio,
-        participants: participantResults,
+        partnerProfit: dist.partnerProfit,
+        partnerCommissionOwed: dist.partnerCommissionOwed,
+        socioShare: dist.socioShare,
+        sellers: sellerResults,
+        investors: investorResults,
         transfers: transferResults,
       };
     }
@@ -357,7 +410,7 @@ const registerSale = async (vehicleId, saleData, userId) => {
         totalReceived,
         pendingAmount: pendingAmount > 0 ? pendingAmount : 0,
         tradeInValue: tradeIn?.value || 0,
-        ...(commissionSummary || {}),
+        ...(distributionSummary || {}),
       }
     };
   });
@@ -369,12 +422,13 @@ const registerSale = async (vehicleId, saleData, userId) => {
  * Registrar cobro de venta (pago a CxC)
  */
 const addSaleCollection = async (vehicleId, collectionData, userId) => {
-  // Buscar el receivable asociado al vehículo
+  // Buscar el receivable DE LA VENTA (no el de comisión del socio) asociado al vehículo
   const receivable = await prisma.payable.findFirst({
     where: {
       vehicleId,
       type: 'RECEIVABLE',
-      status: { in: ['PENDING', 'PARTIAL'] }
+      status: { in: ['PENDING', 'PARTIAL'] },
+      description: { startsWith: SALE_RECEIVABLE_PREFIX }
     }
   });
 
@@ -473,7 +527,7 @@ const getSaleSummary = async (vehicleId) => {
   }
 
   const purchasePayable = vehicle.payables.find(p => p.type === 'PAYABLE');
-  const saleReceivable = vehicle.payables.find(p => p.type === 'RECEIVABLE');
+  const saleReceivable = vehicle.payables.find(isSaleReceivable);
 
   // Calcular totales
   const totalExpenses = vehicle.expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
@@ -538,7 +592,7 @@ const cancelSale = async (vehicleId, userId) => {
   }
 
   // Verificar si hay CxC con pagos
-  const saleReceivable = vehicle.payables.find(p => p.type === 'RECEIVABLE');
+  const saleReceivable = vehicle.payables.find(isSaleReceivable);
   if (saleReceivable && parseFloat(saleReceivable.paidAmount) > 0) {
     throw new AppError('No se puede cancelar la venta porque ya hay cobros registrados', 400);
   }
@@ -555,14 +609,14 @@ const cancelSale = async (vehicleId, userId) => {
     throw new AppError('No se puede cancelar la venta porque ya hay transacciones registradas', 400);
   }
 
-  // Verificar si hay Payables COMMISSION asociadas
+  // Verificar si hay Payables COMMISSION, PROFIT_SHARE o PARTNER_SHARE asociadas
   const commissionPayables = await prisma.payable.findMany({
-    where: { vehicleId, type: 'COMMISSION' },
+    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] } },
   });
   if (commissionPayables.length > 0) {
     throw new AppError(
-      'No se puede cancelar la venta porque hay comisiones devengadas. ' +
-      'Anula o paga las CxP de comisión primero.',
+      'No se puede cancelar la venta porque hay comisiones o ganancias devengadas ' +
+      '(incluye ganancia de socio). Anula o paga esas CxP primero.',
       400
     );
   }
@@ -618,5 +672,7 @@ module.exports = {
   registerSale,
   addSaleCollection,
   getSaleSummary,
-  cancelSale
+  cancelSale,
+  isSaleReceivable,
+  SALE_RECEIVABLE_PREFIX,
 };

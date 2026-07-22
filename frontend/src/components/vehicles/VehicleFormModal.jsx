@@ -7,6 +7,7 @@ import { Input, Select, Textarea, Checkbox } from '@/components/shared/FormField
 import ThirdPartySelector from '@/components/shared/ThirdPartySelector';
 import { accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi } from '@/lib/payablesApi';
+import api from '@/lib/api';
 import { Lock, AlertTriangle, Info, Users, Handshake, CreditCard, Banknote, Landmark, Check } from 'lucide-react';
 
 // Mapa de tipos de issue → campo en el formulario + mensaje rojo sobre el input
@@ -50,6 +51,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const [dueDate, setDueDate] = useState('');
   // null = aún no consultado, true/false = resultado
   const [hasExistingPayable, setHasExistingPayable] = useState(null);
+  // IDs de terceros del equipo de inversionistas (para validar socio inversionista⟺100%)
+  const [investorTeamIds, setInvestorTeamIds] = useState([]);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const togglePortal = (pid) => s('publishedPortals', f.publishedPortals.includes(pid) ? f.publishedPortals.filter(x => x !== pid) : [...f.publishedPortals, pid]);
 
@@ -96,6 +99,18 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const supplierLocked = !!vehicle?.supplierId;
   const partnerIdLocked = !!vehicle?.partnerId;
 
+  // Cargar quién es inversionista (para validar socio inversionista⟺100%). Se lee de
+  // la lista de terceros (/treasury/third-parties expone isInvestor) — accesible por
+  // todos los roles, a diferencia de /settings/commission-config que es ADMIN-only.
+  useEffect(() => {
+    api.get('/treasury/third-parties')
+      .then(res => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        setInvestorTeamIds(list.filter(tp => tp.isInvestor).map(tp => tp.id));
+      })
+      .catch(err => console.error('Error loading third parties:', err));
+  }, []);
+
   // Cargar cuentas al montar (creando O confirmando compra)
   useEffect(() => {
     if (vehicle && !isConfirmingPurchase) return;
@@ -129,6 +144,33 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
     const suggested = price > 0 ? Math.round((myCap / price) * 10000) / 100 : 100;
     return { myCapital: myCap, suggestedPercent: suggested };
   }, [f.purchasePrice, f.partnerContribution]);
+
+  // participation reactiva: recalcular siempre que cambie el precio o el aporte del socio,
+  // no solo cuando el usuario toca el campo de aporte (bug: quedaba stale si el precio cambiaba después).
+  useEffect(() => {
+    if (!f.partnerId) return;
+    setF(prev => (prev.participation === suggestedPercent ? prev : { ...prev, participation: suggestedPercent }));
+  }, [f.partnerId, suggestedPercent]);
+
+  // Validación en vivo: socio inversionista (equipo de inversionistas u owner-self) debe
+  // aportar el 100% del precio de compra; socio externo debe aportar solo una parte.
+  const isPartnerInvestor = f.partnerId === 'owner-self' || investorTeamIds.includes(f.partnerId);
+  const partnerValidationError = useMemo(() => {
+    const currentPrice = parseFloat(f.purchasePrice) || 0;
+    if (!f.partnerId || tradeInLocked || currentPrice <= 0) return null;
+    const partnerAmt = parseFloat(f.partnerContribution) || 0;
+    const isFullContribution = partnerAmt >= currentPrice;
+    if (isPartnerInvestor && !isFullContribution) {
+      return 'Un socio inversionista debe aportar el 100% del precio de compra (tu participación quedaría en 0%).';
+    }
+    if (!isPartnerInvestor && isFullContribution) {
+      return 'Un socio externo debe aportar solo una parte del precio de compra, no el 100%.';
+    }
+    if (!isPartnerInvestor && partnerAmt <= 0) {
+      return 'Indica el aporte del socio externo: debe ser mayor a 0 y menor al precio de compra.';
+    }
+    return null;
+  }, [f.partnerId, f.partnerContribution, f.purchasePrice, isPartnerInvestor, tradeInLocked]);
 
   // Cuando cambia el aporte del socio, auto-ajustar participación sugerida
   const onPartnerContributionChange = (value) => {
@@ -182,6 +224,8 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   const transferAccount = accounts.find(a => a.id === transferAccountId);
   const cashWarning = cashPay > 0 && cashAccount && cashPay > parseFloat(cashAccount.currentBalance);
   const transferWarning = transferPay > 0 && transferAccount && transferPay > parseFloat(transferAccount.currentBalance);
+  // Cuenta SOCIO del tercero seleccionado: de ahí sale su aporte (la resuelve el backend por partnerId).
+  const socioAccount = f.partnerId ? accounts.find(a => a.type === 'SOCIO' && a.thirdPartyId === f.partnerId) : null;
 
   const handleSave = async () => {
     if (!f.plate && !f.brand) {
@@ -204,6 +248,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       setSaveError('Debes seleccionar un proveedor para esta etapa');
       return;
     }
+    // Socio inversionista → 100%; socio externo → participación parcial
+    if (!partnerLocked && partnerValidationError) {
+      setSaveError(partnerValidationError);
+      return;
+    }
     if (showPaymentSection) {
       if (cashPay > 0 && !cashAccountId) { setSaveError('Selecciona la cuenta de efectivo'); return; }
       if (transferPay > 0 && !transferAccountId) { setSaveError('Selecciona la cuenta de transferencia'); return; }
@@ -211,15 +260,20 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
         return;
       }
+      if (partnerAmt > 0 && f.partnerId && !socioAccount) {
+        setSaveError('El socio no tiene una cuenta activa para registrar su aporte');
+        return;
+      }
     }
     setLoading(true);
     setSaveError(null);
     try {
-      const participationDecimal = (parseFloat(f.participation) || 100) / 100;
+      // Calculado en fresco a partir de precio + aporte actuales (NO de f.participation,
+      // que puede quedar stale si el precio cambia sin tocar el campo de aporte).
+      const participationDecimal = price > 0 ? Math.max(0, Math.min(1, (price - partnerAmt) / price)) : 1;
       const partnerContribValue = f.partnerId && parseFloat(f.partnerContribution) > 0
         ? parseFloat(f.partnerContribution)
         : null;
-
       // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP)
       const purchasePayments = [];
       if (cashPay > 0 && cashAccountId) purchasePayments.push({ accountId: cashAccountId, amount: cashPay, method: 'CASH' });
@@ -510,9 +564,21 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
           <div className="text-sm font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-1.5"><Handshake className="w-4 h-4" /> Aporte del socio</div>
           <p className="text-[11px] text-[#6E7681] mb-3">
-            El aporte del socio NO descuenta de tu tesorería — solo se registra como dato.
-            Tu participación se calcula automáticamente a partir del aporte.
+            {socioAccount
+              ? `El aporte del socio sale de su cuenta: ${socioAccount.name}.`
+              : 'El aporte del socio sale de su propia cuenta (no de tu tesorería).'}
+            {' '}Tu participación se calcula automáticamente a partir del aporte.
           </p>
+          {partnerAmt > 0 && f.partnerId && !socioAccount && (
+            <div className="text-xs text-amber-400 mb-2 flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Este socio no tiene una cuenta activa registrada.</span>
+            </div>
+          )}
+          <div className="text-[11px] text-[#8B949E] mb-2">
+            {isPartnerInvestor
+              ? 'Socio inversionista: debe aportar el 100% del precio de compra.'
+              : 'Socio externo: debe aportar solo una parte del precio de compra.'}
+          </div>
           <Input
             label="Aporte del socio (COP)"
             type="number"
@@ -521,6 +587,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             placeholder="20000000"
             disabled={partnerLocked}
           />
+          {!partnerLocked && partnerValidationError && (
+            <div className="text-xs text-red-400 mt-2 flex items-start gap-1.5" data-testid="vehicle-form-partner-error">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>{partnerValidationError}</span>
+            </div>
+          )}
           {price > 0 && (
             <div className="mt-2 text-xs text-[#8B949E]">
               Tu participación: <span className="text-[#E6EDF3] font-semibold">{suggestedPercent}%</span>
@@ -529,9 +600,18 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
           )}
           {price > 0 && (
             <div className="mt-3 text-xs text-[#8B949E] grid grid-cols-2 gap-2">
-              <div>Tu aporte efectivo: <span className="text-[#E6EDF3] font-semibold">{formatCurrency(myCapital)}</span></div>
-              <div>Solo tu parte se descuenta de tesorería al comprar.</div>
+              <div>Aporte del socio: <span className="text-sky-400 font-semibold" data-testid="vehicle-form-partner-contribution">{formatCurrency(parseFloat(f.partnerContribution) || 0)}</span></div>
+              <div>Tu parte: <span className="text-[#E6EDF3] font-semibold" data-testid="vehicle-form-my-part">{formatCurrency(myCapital)}</span></div>
             </div>
+          )}
+          {price > 0 && (
+            myCapital === 0 ? (
+              <div className="mt-2 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md px-2 py-1.5 flex items-start gap-1.5">
+                <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>El socio aporta el 100% del precio: tu parte es $0. El aporte del socio salda la compra por completo, no se descuenta nada de tu tesorería.</span>
+              </div>
+            ) : (
+              <div className="mt-2 text-[11px] text-[#6E7681]">Solo tu parte se descuenta de tesorería al comprar.</div>
+            )
           )}
           <div className="mt-3">
             <Checkbox
