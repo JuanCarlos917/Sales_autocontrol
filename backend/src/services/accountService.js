@@ -205,7 +205,11 @@ class AccountService {
 
   async getTotalBalance() {
     const accounts = await this.findAll({ isActive: true });
-    return accounts.reduce((sum, acc) => sum + parseFloat(acc.currentBalance), 0);
+    // Las cuentas SOCIO son capital del socio, no dinero de la empresa: no cuentan
+    // en el saldo total de tesorería (se llevan aparte por socio).
+    return accounts
+      .filter((acc) => acc.type !== 'SOCIO')
+      .reduce((sum, acc) => sum + parseFloat(acc.currentBalance), 0);
   }
 }
 

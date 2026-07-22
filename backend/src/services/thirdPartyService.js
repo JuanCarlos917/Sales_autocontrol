@@ -19,6 +19,41 @@ function assertThirdPartyDeletable(id) {
   }
 }
 
+// Crea la cuenta SOCIO del tercero si aún no existe (idempotente). No aplica
+// si el tercero no es PARTNER. Recibe prisma o una tx para poder encadenarse
+// en operaciones transaccionales futuras.
+async function ensureSocioAccount(prismaOrTx, thirdParty) {
+  if (!thirdParty || thirdParty.type !== 'PARTNER') return null;
+  const existing = await prismaOrTx.account.findFirst({
+    where: { type: 'SOCIO', thirdPartyId: thirdParty.id },
+  });
+  if (existing) return existing;
+  return prismaOrTx.account.create({
+    data: {
+      name: `Cuenta Socio — ${thirdParty.name}`,
+      type: 'SOCIO',
+      initialBalance: 0,
+      isActive: true,
+      thirdPartyId: thirdParty.id,
+    },
+  });
+}
+
+// Lee los thirdPartyId del equipo de inversionistas (investor_team) de forma
+// defensiva, sin exigir las demás keys de comisiones (a diferencia de
+// loadCommissionConfig). Devuelve un Set; investor_team corrupto/ausente → vacío.
+async function getInvestorThirdPartyIds() {
+  const ids = new Set();
+  const row = await prisma.setting.findUnique({ where: { key: 'investor_team' } });
+  if (row?.value) {
+    try {
+      const team = JSON.parse(row.value);
+      if (Array.isArray(team)) team.forEach((t) => t?.thirdPartyId && ids.add(t.thirdPartyId));
+    } catch { /* investor_team corrupto → sin miembros */ }
+  }
+  return ids;
+}
+
 class ThirdPartyService {
   async findAll({ type, isActive, search } = {}) {
     const where = {};
@@ -31,10 +66,14 @@ class ThirdPartyService {
       ];
     }
 
-    return prisma.thirdParty.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+    const [list, investorIds] = await Promise.all([
+      prisma.thirdParty.findMany({ where, orderBy: { name: 'asc' } }),
+      getInvestorThirdPartyIds(),
+    ]);
+    // isInvestor: owner-self o miembro del investor_team. Permite a la UI (p. ej.
+    // validación del socio en la compra) saber quién es inversionista sin depender
+    // del endpoint ADMIN-only de commission-config.
+    return list.map((tp) => ({ ...tp, isInvestor: tp.id === 'owner-self' || investorIds.has(tp.id) }));
   }
 
   async findById(id) {
@@ -44,14 +83,18 @@ class ThirdPartyService {
   }
 
   async create(data) {
-    return prisma.thirdParty.create({ data });
+    const created = await prisma.thirdParty.create({ data });
+    if (created.type === 'PARTNER') await ensureSocioAccount(prisma, created);
+    return created;
   }
 
   async update(id, data) {
     const existing = await prisma.thirdParty.findUnique({ where: { id } });
     if (!existing) throw new AppError('Tercero no encontrado', 404);
 
-    return prisma.thirdParty.update({ where: { id }, data });
+    const updated = await prisma.thirdParty.update({ where: { id }, data });
+    if (updated.type === 'PARTNER') await ensureSocioAccount(prisma, updated);
+    return updated;
   }
 
   async delete(id, userId) {
@@ -120,3 +163,4 @@ class ThirdPartyService {
 module.exports = new ThirdPartyService();
 module.exports.assertThirdPartyDeletable = assertThirdPartyDeletable;
 module.exports.SYSTEM_THIRD_PARTY_IDS = SYSTEM_THIRD_PARTY_IDS;
+module.exports.ensureSocioAccount = ensureSocioAccount;

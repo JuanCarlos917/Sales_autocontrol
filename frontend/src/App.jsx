@@ -24,6 +24,7 @@ import LoanDetailPage from '@/pages/treasury/LoanDetailPage';
 import DebtsPage from '@/pages/treasury/DebtsPage';
 import DebtDetailPage from '@/pages/treasury/DebtDetailPage';
 import CommissionsPage from '@/pages/treasury/CommissionsPage';
+import InvestorsPage from '@/pages/treasury/InvestorsPage';
 // Alerts
 import AlertsPage from '@/pages/AlertsPage';
 
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="treasury/cash-count" element={<CashCountPage />} />
           <Route path="treasury/payables" element={<PayablesPage />} />
           <Route path="treasury/commissions" element={<CommissionsPage />} />
+          <Route path="treasury/investors" element={<InvestorsPage />} />
           <Route path="treasury/loans" element={<LoansPage />} />
           <Route path="treasury/loans/:id" element={<LoanDetailPage />} />
           <Route path="treasury/debts" element={<DebtsPage />} />

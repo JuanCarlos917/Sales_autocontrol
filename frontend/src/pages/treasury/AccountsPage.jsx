@@ -9,7 +9,7 @@ import Modal from '@/components/shared/Modal';
 import ReverseAction from '@/components/shared/ReverseAction';
 import ReversedBadge from '@/components/shared/ReversedBadge';
 import { useAuth } from '@/contexts/AuthContext';
-import { Banknote, Landmark, PiggyBank } from 'lucide-react';
+import { Banknote, Landmark, PiggyBank, Users } from 'lucide-react';
 
 const ACCOUNT_TYPES = [
   { id: 'CASH', label: 'Efectivo / Caja' },
@@ -99,6 +99,7 @@ export default function AccountsPage() {
       {(() => {
         const cashAccounts = accounts.filter((a) => a.type === 'CASH');
         const bankAccounts = accounts.filter((a) => a.type === 'BANK');
+        const socioAccounts = accounts.filter((a) => a.type === 'SOCIO');
         const budgetAccounts = accounts.filter((a) => a.type === 'BUDGET');
 
         const renderCard = (account) => (
@@ -114,9 +115,11 @@ export default function AccountsPage() {
                     ? 'bg-green-500/20 text-green-400'
                     : account.type === 'BANK'
                       ? 'bg-blue-500/20 text-blue-400'
-                      : 'bg-purple-500/20 text-[#BC8CFF]'
+                      : account.type === 'SOCIO'
+                        ? 'bg-amber-500/20 text-amber-400'
+                        : 'bg-purple-500/20 text-[#BC8CFF]'
                 }`}>
-                  {account.type === 'CASH' ? 'Efectivo' : account.type === 'BANK' ? 'Banco' : 'Fondo'}
+                  {account.type === 'CASH' ? 'Efectivo' : account.type === 'BANK' ? 'Banco' : account.type === 'SOCIO' ? 'Socio' : 'Fondo'}
                 </span>
               </div>
             </div>
@@ -160,6 +163,18 @@ export default function AccountsPage() {
                 <h3 className="text-lg font-semibold text-[#E6EDF3] mb-3 inline-flex items-center gap-2"><Landmark className="w-5 h-5" /> Bancos</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {bankAccounts.map(renderCard)}
+                </div>
+              </section>
+            )}
+
+            {socioAccounts.length > 0 && (
+              <section>
+                <h3 className="text-lg font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-2"><Users className="w-5 h-5" /> Socios</h3>
+                <p className="text-sm text-[#8B949E] mb-3">
+                  Cuenta dedicada de cada socio: desde aquí se debita su aporte al comprar un vehículo compartido.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {socioAccounts.map(renderCard)}
                 </div>
               </section>
             )}

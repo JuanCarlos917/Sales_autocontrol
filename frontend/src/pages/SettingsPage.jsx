@@ -28,6 +28,8 @@ export default function SettingsPage() {
       // _id estable para las keys del editor (se descarta antes del PUT).
       data.commission_default_team = (data.commission_default_team || [])
         .map(row => ({ _id: crypto.randomUUID(), ...row }));
+      data.investor_team = (data.investor_team || [])
+        .map(row => ({ _id: crypto.randomUUID(), ...row }));
       setCommCfg(data);
     }).catch(() => {});
   }, []);
@@ -46,15 +48,35 @@ export default function SettingsPage() {
 
   const handleSaveCommissions = async () => {
     setCommError(''); setCommSuccess(false);
-    const bucketSum = Number(commCfg.commission_share_pct) + Number(commCfg.reinvest_share_pct) + Number(commCfg.tax_share_pct);
-    if (Math.abs(bucketSum - 100) > 0.001) { setCommError('Los tres bolsillos deben sumar 100'); return; }
+    // Los bolsillos legacy (commission_share_pct/reinvest_share_pct/tax_share_pct) ya no
+    // se editan aquí — se round-tripean sin cambios desde el GET. Los % vivos de la
+    // cascada están en la card de Ganancia. Solo validamos lo editable en esta card.
     const splitSum = Number(commCfg.default_captador_pct) + Number(commCfg.default_cerrador_pct);
     if (Math.abs(splitSum - 100) > 0.001) { setCommError('Captador + cerrador deben sumar 100'); return; }
+    const investorTeamClean = (commCfg.investor_team || [])
+      .filter((r) => r.thirdPartyId && parseFloat(r.sharePct) > 0)
+      .map((r) => ({ thirdPartyId: r.thirdPartyId, role: 'INVESTOR', sharePct: Number(r.sharePct) }));
+    if (investorTeamClean.length > 0) {
+      const investorSum = investorTeamClean.reduce((s, r) => s + r.sharePct, 0);
+      if (Math.abs(investorSum - 100) > 0.001) { setCommError('Los porcentajes de inversionistas deben sumar 100'); return; }
+    }
+    if (commCfg.reinvest_pct !== undefined && commCfg.tax_pct !== undefined) {
+      const reinvestTaxSum = Number(commCfg.reinvest_pct) + Number(commCfg.tax_pct);
+      if (reinvestTaxSum > 100.001) { setCommError('Reinversión % + Impuestos % (ganancia) no pueden superar 100'); return; }
+    }
     try {
       const teamClean = (commCfg.commission_default_team || [])
         .filter((r) => r.thirdPartyId && parseFloat(r.sharePct) > 0)
         .map((r) => ({ thirdPartyId: r.thirdPartyId, role: r.role, sharePct: Number(r.sharePct) }));
-      await api.put('/settings/commission-config', { ...commCfg, commission_default_team: teamClean, commission_default_team_people: undefined, reinvest_account: undefined, tax_reserve_account: undefined });
+      await api.put('/settings/commission-config', {
+        ...commCfg,
+        commission_default_team: teamClean,
+        commission_default_team_people: undefined,
+        investor_team: investorTeamClean,
+        investor_team_people: undefined,
+        reinvest_account: undefined,
+        tax_reserve_account: undefined,
+      });
       setCommSuccess(true);
     } catch (err) {
       setCommError(err.response?.data?.error || 'Error al guardar');
@@ -102,23 +124,14 @@ export default function SettingsPage() {
 
       {tab === 'comisiones' && (
         commCfg ? (
+          <>
           <div className="card" data-testid="settings-commissions-card">
-            <div className="card-title">Comisiones y bolsillos</div>
+            <div className="card-title">Comisiones</div>
             <p className="text-xs text-[#6E7681] mb-3">
-              Cómo se reparte la ganancia bruta de cada venta. Los tres porcentajes deben sumar 100.
+              Quién recibe comisión por vender y con qué rol. Los porcentajes de comisión,
+              reinversión e impuestos se configuran en la card de Ganancia.
             </p>
             <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <Input label="Comisiones %" type="number" value={commCfg.commission_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, commission_share_pct: e.target.value })}
-                  data-testid="settings-commission-pct" />
-                <Input label="Reinversión %" type="number" value={commCfg.reinvest_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, reinvest_share_pct: e.target.value })}
-                  data-testid="settings-reinvest-pct" />
-                <Input label="Impuestos %" type="number" value={commCfg.tax_share_pct}
-                  onChange={e => setCommCfg({ ...commCfg, tax_share_pct: e.target.value })}
-                  data-testid="settings-tax-pct" />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Captador % (default)" type="number" value={commCfg.default_captador_pct}
                   onChange={e => setCommCfg({ ...commCfg, default_captador_pct: e.target.value })}
@@ -130,19 +143,14 @@ export default function SettingsPage() {
               <div className="border-t border-border pt-3">
                 <div className="text-sm font-semibold text-[#E6EDF3] mb-1">Equipo de reparto</div>
                 <p className="text-xs text-[#6E7681] mb-2">
-                  Personas que reciben parte del bolsillo de comisión en cada venta (máx 5).
-                  Tu parte es el resto, automática. Puedes ajustarlo por venta al vender.
+                  Personas que reciben comisión en cada venta (máx 5). Sus porcentajes deben
+                  sumar 100. Puedes ajustarlo por venta al vender.
                 </p>
                 <CommissionSplitEditor
                   value={commCfg.commission_default_team || []}
                   onChange={(team) => setCommCfg({ ...commCfg, commission_default_team: team })}
                   testidPrefix="settings-team"
                 />
-              </div>
-              <div className="text-xs text-[#8B949E]">
-                Fondo Reinversión: <span className="text-[#E6EDF3] font-mono">{commCfg.reinvest_account?.name || commCfg.reinvest_account_id}</span>
-                {' · '}
-                Reserva Impuestos: <span className="text-[#E6EDF3] font-mono">{commCfg.tax_reserve_account?.name || commCfg.tax_reserve_account_id}</span>
               </div>
               {commError && <div className="text-[12px] text-red-400">{commError}</div>}
               {commSuccess && <div className="text-[12px] text-green-400">Guardado.</div>}
@@ -151,6 +159,51 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+
+          <div className="card" data-testid="settings-investors-card">
+            <div className="card-title">Ganancia · Equipo de inversionistas</div>
+            <p className="text-xs text-[#6E7681] mb-3">
+              Cómo se reparte la ganancia neta de cada venta entre los inversionistas (capital).
+              Independiente del equipo de reparto de comisiones.
+            </p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-3">
+                <Input label="Comisión (bruta) %" type="number" value={commCfg.commission_gross_pct ?? ''}
+                  onChange={e => setCommCfg({ ...commCfg, commission_gross_pct: e.target.value })}
+                  data-testid="settings-commission-gross-pct" />
+                <Input label="Reinversión %" type="number" value={commCfg.reinvest_pct ?? ''}
+                  onChange={e => setCommCfg({ ...commCfg, reinvest_pct: e.target.value })}
+                  data-testid="settings-investor-reinvest-pct" />
+                <Input label="Impuestos %" type="number" value={commCfg.tax_pct ?? ''}
+                  onChange={e => setCommCfg({ ...commCfg, tax_pct: e.target.value })}
+                  data-testid="settings-investor-tax-pct" />
+              </div>
+              <p className="text-[11px] text-[#6E7681] -mt-1">
+                Comisión: % de la ganancia bruta. Reinversión + Impuestos: % del remanente después de comisión (no deben superar 100 entre sí).
+              </p>
+              <div className="border-t border-border pt-3">
+                <div className="text-sm font-semibold text-[#E6EDF3] mb-1">Equipo de inversionistas</div>
+                <p className="text-xs text-[#6E7681] mb-2">
+                  Personas que reciben ganancia como inversionistas de capital. A diferencia del equipo de reparto,
+                  el dueño puede ser una fila más. Vacío = 100% al dueño; si agregas filas, deben sumar exactamente 100.
+                </p>
+                <CommissionSplitEditor
+                  value={commCfg.investor_team || []}
+                  onChange={(team) => setCommCfg({ ...commCfg, investor_team: team })}
+                  testidPrefix="settings-investors"
+                  roles={[{ id: 'INVESTOR', label: 'Inversionista' }]}
+                  requireExactSum
+                  maxPeople={10}
+                />
+              </div>
+              {commError && <div className="text-[12px] text-red-400">{commError}</div>}
+              {commSuccess && <div className="text-[12px] text-green-400">Guardado.</div>}
+              <button onClick={handleSaveCommissions} className="btn-primary" data-testid="settings-save-investors">
+                Guardar configuración de comisiones e inversionistas
+              </button>
+            </div>
+          </div>
+          </>
         ) : (
           <div className="card text-sm text-[#6E7681]">Configuración de comisiones no disponible.</div>
         )

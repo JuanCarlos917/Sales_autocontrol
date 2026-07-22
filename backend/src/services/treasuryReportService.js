@@ -12,7 +12,10 @@ class TreasuryReportService {
    */
   async getDashboard() {
     const accounts = await accountService.findAll({ isActive: true });
-    const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.currentBalance), 0);
+    // Total de tesorería SIN las cuentas SOCIO (capital del socio, no de la empresa).
+    const totalBalance = accounts
+      .filter((acc) => acc.type !== 'SOCIO')
+      .reduce((sum, acc) => sum + parseFloat(acc.currentBalance), 0);
 
     // Resumen del mes actual
     const now = new Date();

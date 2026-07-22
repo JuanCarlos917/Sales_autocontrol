@@ -3,7 +3,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildCommissionVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
+const { buildCommissionVehicleItem, buildInvestorVehicleItem, resolveParticipants, MAX_PARTICIPANTS, loadCommissionConfig } = require('../commissionService');
+const { resolveSellers, resolveInvestors, resolveSocio } = require('../commissionService');
 const { AppError } = require('../../middleware/errorHandler');
 
 const vehicle = {
@@ -92,6 +93,104 @@ test('item: gasto legacy COMISION no rompe la identidad de la cascada', () => {
     item.cascade.salePrice - item.cascade.purchaseCost - item.cascade.directExpenses,
     item.cascade.grossProfit,
   );
+});
+
+// ── buildInvestorVehicleItem (cascada de GANANCIA, no de comisión) ──
+// A diferencia de buildCommissionVehicleItem: NO usa calculateCommissionBase
+// (sin `participation`, sin excluir gastos COMISION); grossProfit = salePrice
+// − purchaseCost − TODOS los gastos, igual que calculateSaleDistribution.
+
+const mkInvestorPayable = (over = {}) => ({
+  id: 'inv-pay-1', status: 'PENDING', totalAmount: 5_400_000, paidAmount: 0,
+  thirdParty: { id: 'owner-self', name: 'Juan' },
+  saleParticipant: { role: 'INVESTOR', sharePct: 100 },
+  payments: [],
+  ...over,
+});
+
+test('investor item: cascada replica calculateSaleDistribution — grossProfit − commission − reinvest − tax === profitToDistribute', () => {
+  // Mismo escenario que investors.spec.ts: venta 30M − costo 20M = gross 10M.
+  // commissionPool 1M (10% comisión), reinvest 2.7M, tax 0.9M → profitToDistribute 5.4M.
+  const v = {
+    id: 'v1', plate: 'INV001', brand: 'Suzuki', model: 'Vitara',
+    saleDate: '2026-06-01T00:00:00Z', salePrice: 30_000_000,
+    purchasePrice: 20_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [],
+  };
+  const payables = [
+    mkInvestorPayable({ id: 'inv-pay-a', totalAmount: 3_240_000, thirdParty: { id: 'invA', name: 'Inversionista A' }, saleParticipant: { role: 'INVESTOR', sharePct: 60 } }),
+    mkInvestorPayable({ id: 'inv-pay-b', totalAmount: 2_160_000, thirdParty: { id: 'invB', name: 'Inversionista B' }, saleParticipant: { role: 'INVESTOR', sharePct: 40 } }),
+  ];
+  const item = buildInvestorVehicleItem({
+    vehicle: v,
+    payables,
+    commissionPayableSum: 1_000_000,
+    bucketTransfers: [
+      { bucket: 'reinvest', amount: 2_700_000 },
+      { bucket: 'tax', amount: 900_000 },
+    ],
+  });
+
+  assert.equal(item.cascade.salePrice, 30_000_000);
+  assert.equal(item.cascade.purchaseCost, 20_000_000);
+  assert.equal(item.cascade.directExpenses, 0);
+  assert.equal(item.cascade.grossProfit, 10_000_000);
+  assert.equal(item.cascade.commissionPool, 1_000_000);
+  assert.equal(item.cascade.reinvest, 2_700_000);
+  assert.equal(item.cascade.tax, 900_000);
+  assert.equal(item.cascade.profitToDistribute, 5_400_000);
+
+  // Invariante de la cascada.
+  assert.equal(
+    item.cascade.grossProfit - item.cascade.commissionPool - item.cascade.reinvest - item.cascade.tax,
+    item.cascade.profitToDistribute,
+  );
+  // Σ montos de inversionistas === profitToDistribute (persistido).
+  const investorsSum = item.roles.reduce((s, r) => s + r.total, 0);
+  assert.equal(investorsSum, item.cascade.profitToDistribute);
+  assert.equal(item.roles.length, 2);
+  assert.deepEqual(item.buckets, { reinvest: 2_700_000, tax: 900_000 });
+});
+
+test('investor item: venta sin vendedor (sin comisión) → commissionPool 0, profitToDistribute = ganancia completa', () => {
+  const v = {
+    id: 'v2', plate: 'INV002', brand: 'Mazda', model: '3',
+    saleDate: '2026-06-05T00:00:00Z', salePrice: 25_000_000,
+    purchasePrice: 18_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [{ amount: 1_000_000, category: 'MECANICA', deletedAt: null }],
+  };
+  const payables = [mkInvestorPayable({ totalAmount: 6_000_000 })];
+  const item = buildInvestorVehicleItem({
+    vehicle: v,
+    payables,
+    commissionPayableSum: 0,
+    bucketTransfers: [],
+  });
+
+  assert.equal(item.cascade.grossProfit, 6_000_000); // 25M - 18M - 1M
+  assert.equal(item.cascade.commissionPool, 0);
+  assert.equal(item.cascade.reinvest, 0);
+  assert.equal(item.cascade.tax, 0);
+  assert.equal(item.cascade.profitToDistribute, 6_000_000);
+  assert.equal(item.buckets, null);
+  assert.equal(item.cascade.grossProfit - item.cascade.commissionPool - item.cascade.reinvest - item.cascade.tax, item.cascade.profitToDistribute);
+});
+
+test('investor item: gasto category COMISION SÍ se descuenta (a diferencia de la comisión)', () => {
+  const v = {
+    id: 'v3', plate: 'INV003', brand: 'Renault', model: 'Duster',
+    saleDate: '2026-06-10T00:00:00Z', salePrice: 40_000_000,
+    purchasePrice: 30_000_000, negotiatedValue: null, fromTradeIn: false,
+    expenses: [{ amount: 500_000, category: 'COMISION', deletedAt: null }],
+  };
+  const item = buildInvestorVehicleItem({
+    vehicle: v, payables: [mkInvestorPayable({ totalAmount: 9_500_000 })],
+    commissionPayableSum: 0, bucketTransfers: [],
+  });
+  // A diferencia de calculateCommissionBase (excluye COMISION), la cascada de
+  // ganancia SÍ resta todos los gastos no borrados (match con calculateSaleDistribution).
+  assert.equal(item.cascade.directExpenses, 500_000);
+  assert.equal(item.cascade.grossProfit, 9_500_000);
 });
 
 // ── resolveParticipants (equipo de reparto + resto al dueño) ─────
@@ -242,8 +341,118 @@ test('reparto: decimales 33.33+33.33 → resto 33.34 y la lista suma exactamente
   assert.equal(Math.round(out.reduce((s, p) => s + p.sharePct, 0) * 100) / 100, 100);
 });
 
+// ── resolveSellers / resolveInvestors (ganancia vs comisión) ─────
+
+const CFG_DIST = { investorTeam: [
+  { thirdPartyId: 'owner-self', sharePct: 50 },
+  { thirdPartyId: 'mama', sharePct: 25 },
+  { thirdPartyId: 'papa', sharePct: 25 },
+] };
+
+test('resolveSellers: un vendedor debe sumar 100', async () => {
+  const out = await resolveSellers(mkTx(), [{ thirdPartyId: 'a', role: 'CERRADOR', sharePct: 100 }], {});
+  assert.equal(out.length, 1);
+  assert.equal(out[0].sharePct, 100);
+});
+
+test('resolveSellers: sin vendedores → []', async () => {
+  const out = await resolveSellers(mkTx(), [], {});
+  assert.deepEqual(out, []);
+});
+
+test('resolveSellers: no suman 100 → 400', async () => {
+  await assert.rejects(
+    resolveSellers(mkTx(), [{ thirdPartyId: 'a', role: 'OTHER', sharePct: 60 }], {}),
+    (e) => e instanceof AppError && e.statusCode === 400,
+  );
+});
+
+test('resolveSellers: el dueño SÍ puede comisionar (owner-self como vendedor)', async () => {
+  // El dueño puede hacer el trabajo de venta y cobrar comisión por ello, aparte
+  // de su ganancia como inversionista. owner-self permitido en el reparto de vendedores.
+  const out = await resolveSellers(mkTx(), [
+    { thirdPartyId: 'owner-self', role: 'CAPTADOR', sharePct: 60 },
+    { thirdPartyId: 'tp-hermano', role: 'CERRADOR', sharePct: 40 },
+  ], {});
+  assert.equal(out.length, 2);
+  const owner = out.find((p) => p.thirdPartyId === 'owner-self');
+  assert.equal(owner.role, 'CAPTADOR');
+  assert.equal(owner.sharePct, 60);
+});
+
+test('resolveSellers: owner-self como único vendedor 100%', async () => {
+  const out = await resolveSellers(mkTx(), [{ thirdPartyId: 'owner-self', role: 'CERRADOR', sharePct: 100 }], {});
+  assert.equal(out.length, 1);
+  assert.equal(out[0].thirdPartyId, 'owner-self');
+});
+
+test('resolveInvestors: team válido → filas INVESTOR que suman 100', async () => {
+  const out = await resolveInvestors(mkTx(), CFG_DIST);
+  assert.equal(out.length, 3);
+  assert.ok(out.every((r) => r.role === 'INVESTOR'));
+  assert.equal(out.reduce((s, r) => s + r.sharePct, 0), 100);
+});
+
+test('resolveInvestors: sin team → fallback owner-self 100', async () => {
+  const out = await resolveInvestors(mkTx(), { investorTeam: [] });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].thirdPartyId, 'owner-self');
+  assert.equal(out[0].sharePct, 100);
+});
+
+test('resolveInvestors: team con owner-self borrado → error (ensureOwnerExists)', async () => {
+  await assert.rejects(
+    resolveInvestors(mkTx(['owner-self']), CFG_DIST),
+    (e) => e instanceof AppError && /owner-self/.test(e.message),
+  );
+});
+
+// ── resolveSocio (detección externo/inversionista + regla 100%) ──
+
+const CFG_SOCIO = { investorTeam: [
+  { thirdPartyId: 'owner-self', sharePct: 50 },
+  { thirdPartyId: 'tp-mama', sharePct: 25 },
+  { thirdPartyId: 'tp-papa', sharePct: 25 },
+] };
+
+test('resolveSocio: sin partnerId → null', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: null, participation: 1 }, CFG_SOCIO);
+  assert.equal(out, null);
+});
+
+test('resolveSocio: externo parcial → share 0.4, isInvestor false', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: 'tp-externo', participation: 0.6 }, CFG_SOCIO);
+  assert.equal(out.thirdPartyId, 'tp-externo');
+  assert.equal(out.share, 0.4);
+  assert.equal(out.isInvestor, false);
+});
+
+test('resolveSocio: inversionista al 100% → share 1, isInvestor true', async () => {
+  const out = await resolveSocio(mkTx(), { partnerId: 'tp-mama', participation: 0 }, CFG_SOCIO);
+  assert.equal(out.share, 1);
+  assert.equal(out.isInvestor, true);
+});
+
+test('resolveSocio: inversionista parcial → 400', async () => {
+  await assert.rejects(
+    resolveSocio(mkTx(), { partnerId: 'tp-mama', participation: 0.6 }, CFG_SOCIO),
+    (e) => e instanceof AppError && e.statusCode === 400 && /100%/.test(e.message),
+  );
+});
+
+test('resolveSocio: externo al 100% → 400', async () => {
+  await assert.rejects(
+    resolveSocio(mkTx(), { partnerId: 'tp-externo', participation: 0 }, CFG_SOCIO),
+    (e) => e instanceof AppError && e.statusCode === 400,
+  );
+});
+
 // ── loadCommissionConfig: parse defensivo del equipo ─────────────
 
+// reinvest_share_pct/tax_share_pct (legacy, consumidos por calculatePools/
+// saleService) se fijan DELIBERADAMENTE distintos de reinvest_pct/tax_pct
+// (nuevos, sólo consumidos por distributionCfg) para poder probar que
+// loadCommissionConfig no mezcla ambas fuentes.
 const SETTING_ROWS = [
   { key: 'commission_share_pct', value: '60' },
   { key: 'reinvest_share_pct', value: '30' },
@@ -252,13 +461,18 @@ const SETTING_ROWS = [
   { key: 'default_cerrador_pct', value: '70' },
   { key: 'reinvest_account_id', value: 'budget-reinvest' },
   { key: 'tax_reserve_account_id', value: 'budget-tax' },
+  { key: 'commission_gross_pct', value: '10' },
+  { key: 'reinvest_pct', value: '99' },
+  { key: 'tax_pct', value: '88' },
 ];
 
-const mkSettingsTx = (teamValue) => ({
+const mkSettingsTx = (teamValue, investorTeamValue) => ({
   setting: {
-    findMany: async () => teamValue === undefined
-      ? SETTING_ROWS
-      : [...SETTING_ROWS, { key: 'commission_default_team', value: teamValue }],
+    findMany: async () => [
+      ...SETTING_ROWS,
+      ...(teamValue === undefined ? [] : [{ key: 'commission_default_team', value: teamValue }]),
+      ...(investorTeamValue === undefined ? [] : [{ key: 'investor_team', value: investorTeamValue }]),
+    ],
   },
 });
 
@@ -281,6 +495,45 @@ test('config: array válido → defaultTeam parseado', async () => {
   const team = [{ thirdPartyId: 'x', role: 'OTHER', sharePct: 20 }];
   const cfg = await loadCommissionConfig(mkSettingsTx(JSON.stringify(team)));
   assert.deepEqual(cfg.defaultTeam, team);
+});
+
+test('config: distributionCfg mapea commissionGrossPct/reinvestPct/taxPct desde las keys nuevas', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  assert.deepEqual(cfg.distributionCfg, {
+    commissionGrossPct: 10,
+    reinvestPct: 99,
+    taxPct: 88,
+  });
+});
+
+test('REGRESIÓN: reinvestPct/taxPct top-level siguen viniendo de las keys viejas (no de las nuevas)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  // Fixture: reinvest_share_pct=30/tax_share_pct=10 (viejas) vs reinvest_pct=99/tax_pct=88 (nuevas).
+  assert.equal(cfg.reinvestPct, 30);
+  assert.equal(cfg.taxPct, 10);
+  assert.notEqual(cfg.reinvestPct, cfg.distributionCfg.reinvestPct);
+  assert.notEqual(cfg.taxPct, cfg.distributionCfg.taxPct);
+});
+
+test('config: investorTeam — JSON array válido se parsea', async () => {
+  const team = [{ thirdPartyId: 'mama', role: 'INVESTOR', sharePct: 100 }];
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, JSON.stringify(team)));
+  assert.deepEqual(cfg.investorTeam, team);
+});
+
+test('config: investorTeam — JSON corrupto → [] (no tumba la venta)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, '{{{no-json'));
+  assert.deepEqual(cfg.investorTeam, []);
+});
+
+test('config: investorTeam — JSON válido pero no-array → []', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx(undefined, '{"foo":"bar"}'));
+  assert.deepEqual(cfg.investorTeam, []);
+});
+
+test('config: investorTeam — sin key → [] (default)', async () => {
+  const cfg = await loadCommissionConfig(mkSettingsTx());
+  assert.deepEqual(cfg.investorTeam, []);
 });
 
 // ── buildPersonSummary (métricas por persona) ────────────────────

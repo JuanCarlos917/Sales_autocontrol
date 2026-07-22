@@ -54,12 +54,19 @@ async function getJson<T>(path: string, token: string): Promise<T> {
 export interface Account {
   id: string;
   name: string;
+  type: 'CASH' | 'BANK' | 'BUDGET' | 'SOCIO';
   currentBalance: string | number;
   isActive: boolean;
+  thirdPartyId: string | null;
 }
 
 export async function apiGetAccount(token: string, id: string): Promise<Account> {
   return getJson(`/treasury/accounts/${id}`, token);
+}
+
+export async function apiListAccounts(token: string, params: { isActive?: boolean } = {}): Promise<Account[]> {
+  const qs = params.isActive !== undefined ? `?isActive=${params.isActive}` : '';
+  return getJson(`/treasury/accounts${qs}`, token);
 }
 
 export async function apiCreateAccount(
@@ -210,6 +217,11 @@ export interface ConfirmPurchasePayload {
     purchasePrice: number;
     supplierId?: string | null;
     listedPrice?: number | null;
+    // Socio del vehículo (Task 1/2 aporte del socio): partnerContribution es
+    // el aporte en $; participation (fondo, 0-1) se auto-calcula si se omite.
+    partnerId?: string | null;
+    partnerContribution?: number | null;
+    participation?: number | null;
   };
   payment: {
     accountId?: string | null;
@@ -217,6 +229,10 @@ export interface ConfirmPurchasePayload {
     payments?: PurchasePaymentLine[];
     thirdPartyId?: string | null;
     dueDate?: string | null;
+    // NOTA: ya no existe `partnerAccountId`. El aporte del socio
+    // (`vehicle.partnerContribution`) sale como un único EXPENSE de la
+    // cuenta SOCIO dedicada del tercero `vehicle.partnerId` (resuelta por
+    // servidor); si no tiene una cuenta SOCIO activa, la API responde 400.
   };
 }
 
@@ -261,12 +277,31 @@ export interface RegisterSaleResult {
     totalReceived: number;
     pendingAmount: number;
     tradeInValue: number;
-    commissionBase?: number;
+    // Cascada nueva (calculateSaleDistribution, Task 4): comisión sobre el gross
+    // (vendedores) → reservas (reinversión/impuestos) sobre el neto → ganancia
+    // repartida por capital (inversionistas). Ausentes si la venta no tuvo utilidad.
+    grossProfit?: number;
     commissionPool?: number;
-    reinvestPool?: number;
-    taxPool?: number;
+    reinvestAmount?: number;
+    taxAmount?: number;
+    profitToDistribute?: number;
     cashRatioApplied?: number;
-    participants?: Array<{
+    // Socio del vehículo (partnerId/participation, Task 3): su ganancia bruta
+    // (partnerProfit → CxP PARTNER_SHARE), su % de la comisión adeudada al
+    // fondo (partnerCommissionOwed → CxC "Comisión socio") y su share (1 −
+    // participation). Ausentes/0 si el vehículo no tiene socio.
+    partnerProfit?: number;
+    partnerCommissionOwed?: number;
+    socioShare?: number;
+    sellers?: Array<{
+      id: string;
+      thirdPartyId: string;
+      role: string;
+      sharePct: number;
+      amount: number;
+      payableId: string;
+    }>;
+    investors?: Array<{
       id: string;
       thirdPartyId: string;
       role: string;
@@ -300,14 +335,25 @@ export async function apiGetVehiclePaymentStatus(token: string, id: string): Pro
 export interface Payable {
   id: string;
   vehicleId: string | null;
-  type: 'PAYABLE' | 'RECEIVABLE';
+  thirdPartyId: string | null;
+  description: string | null;
+  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE';
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   totalAmount: string | number;
   paidAmount: string | number;
 }
 
-export async function apiListPayables(token: string): Promise<Payable[]> {
-  return getJson('/payables', token);
+export interface PayableFilters {
+  type?: string;
+  status?: string;
+  vehicleId?: string;
+  thirdPartyId?: string;
+}
+
+export async function apiListPayables(token: string, filters: PayableFilters = {}): Promise<Payable[]> {
+  const entries = Object.entries(filters).filter(([, v]) => v !== undefined) as [string, string][];
+  const qs = new URLSearchParams(entries).toString();
+  return getJson(`/payables${qs ? `?${qs}` : ''}`, token);
 }
 
 export interface LoanInstallmentInput {
@@ -555,6 +601,7 @@ export interface TransactionRaw {
   description: string | null;
   expenseId: string | null;
   vehicleId: string | null;
+  thirdPartyId: string | null;
   debtId: string | null;
   reversesTransactionId: string | null;
   date: string;
@@ -574,9 +621,13 @@ export async function apiCreateTreasuryExpense(
   return postJson('/treasury/transactions/expense', { category: 'OTHER_EXPENSE', ...data }, token);
 }
 
-export async function apiListTransactions(token: string, params: { accountId?: string } = {}): Promise<TransactionRaw[]> {
-  const qs = params.accountId ? `?accountId=${encodeURIComponent(params.accountId)}` : '';
-  const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs}`, token);
+export async function apiListTransactions(
+  token: string,
+  params: { accountId?: string; vehicleId?: string; thirdPartyId?: string } = {},
+): Promise<TransactionRaw[]> {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][];
+  const qs = new URLSearchParams(entries).toString();
+  const res = await getJson<{ transactions: TransactionRaw[] } | TransactionRaw[]>(`/treasury/transactions${qs ? `?${qs}` : ''}`, token);
   return Array.isArray(res) ? res : res.transactions;
 }
 
@@ -744,19 +795,60 @@ export async function apiReverseTransactionRaw(
 
 // ── Commissions ───────────────────────────────────────────
 
-export async function apiListCommissions(token: string): Promise<Array<{
+// Espejo del shape de /investors: ambos endpoints reutilizan
+// commissionService.buildCommissionVehicleItem — cascada de comisión
+// (calculateCommissionBase: aplica `participation`, excluye gastos COMISION).
+interface VehicleItemRole {
+  role: string; sharePct: number; total: number; paid: number; pending: number;
+  status: string; payableId: string; thirdParty: { id: string; name: string };
+  payments: Array<{ date: string | null; amount: number; accountName: string }>;
+}
+
+export interface CommissionVehicleItem {
   vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
   cascade: {
     salePrice: number; purchaseCost: number; directExpenses: number;
     grossProfit: number; participation: number; commissionBase: number; commissionPool: number;
   };
-  roles: Array<{
-    role: string; sharePct: number; total: number; paid: number; pending: number;
-    status: string; payableId: string; thirdParty: { id: string; name: string };
-    payments: Array<{ date: string | null; amount: number; accountName: string }>;
-  }>;
+  roles: VehicleItemRole[];
   buckets: { reinvest: number; tax: number } | null;
   hasPending: boolean;
-}>> {
+}
+
+export async function apiListCommissions(token: string): Promise<CommissionVehicleItem[]> {
   return getJson('/commissions', token);
+}
+
+// ── Investors (ganancia por inversionista) ──
+// commissionService.buildInvestorVehicleItem — cascada de GANANCIA real
+// (espejo de calculateSaleDistribution): NO usa participation/commissionBase,
+// resta la CxP COMMISSION + reservas reinvest/tax, y profitToDistribute es el
+// pool que se reparte entre inversionistas.
+export interface InvestorVehicleItem {
+  vehicle: { id: string; plate: string; brand: string | null; model: string | null; saleDate: string | null; salePrice: number };
+  cascade: {
+    salePrice: number; purchaseCost: number; directExpenses: number; grossProfit: number;
+    commissionPool: number; reinvest: number; tax: number; profitToDistribute: number;
+  };
+  roles: VehicleItemRole[];
+  buckets: { reinvest: number; tax: number } | null;
+  hasPending: boolean;
+}
+
+export async function apiListInvestors(token: string): Promise<InvestorVehicleItem[]> {
+  return getJson('/investors', token);
+}
+
+export async function apiGetInvestorsSummary(token: string): Promise<CommissionsSummary> {
+  return getJson('/investors/summary', token);
+}
+
+// ── Payables summary (CxC/CxP consolidado) ──
+export interface PayablesSummary {
+  receivables: { total: number; count: number; overdueCount: number };
+  payables: { total: number; count: number; overdueCount: number };
+}
+
+export async function apiGetPayablesSummary(token: string): Promise<PayablesSummary> {
+  return getJson('/payables/summary', token);
 }

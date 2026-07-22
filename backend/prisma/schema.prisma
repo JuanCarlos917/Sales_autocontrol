@@ -238,6 +238,8 @@ model Account {
   accountNumber  String?
   initialBalance Decimal     @default(0) @db.Decimal(15, 2)
   isActive       Boolean     @default(true)
+  thirdPartyId   String?
+  thirdParty     ThirdParty? @relation("SocioAccount", fields: [thirdPartyId], references: [id], onDelete: SetNull)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -250,6 +252,7 @@ model Account {
   loanPayments  LoanPayment[] @relation("LoanPaymentAccount")
   debtPayments  DebtPayment[] @relation("DebtPaymentAccount")
 
+  @@index([thirdPartyId])
   @@map("accounts")
 }
 
@@ -257,6 +260,7 @@ enum AccountType {
   CASH
   BANK
   BUDGET
+  SOCIO
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -282,6 +286,7 @@ model ThirdParty {
   vehiclesAsBuyer    Vehicle[]     @relation("VehicleBuyer")
   loansAsBorrower    Loan[]        @relation("LoanBorrower")
   saleParticipants   SaleParticipant[]
+  socioAccounts      Account[]     @relation("SocioAccount")
 
   @@map("third_parties")
 }
@@ -365,6 +370,8 @@ enum TransactionCategory {
   FIXED_EXPENSE
   OPERATING_EXPENSE
   COMMISSION
+  PROFIT_SHARE
+  PARTNER_SHARE
   CAPITAL_CONTRIBUTION
   OTHER_INCOME
   OTHER_EXPENSE
@@ -483,6 +490,7 @@ enum ParticipantRole {
   CAPTADOR
   CERRADOR
   OTHER
+  INVESTOR
 }
 
 model PayablePayment {
@@ -502,6 +510,8 @@ enum PayableType {
   RECEIVABLE
   PAYABLE
   COMMISSION
+  PROFIT_SHARE
+  PARTNER_SHARE
 }
 
 enum PayableStatus {

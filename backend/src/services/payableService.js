@@ -194,14 +194,22 @@ const addPayment = async (payableId, paymentData, userId) => {
       }
     }
     const isCommission = payable.type === 'COMMISSION';
+    const isProfitShare = payable.type === 'PROFIT_SHARE';
+    const isPartnerShare = payable.type === 'PARTNER_SHARE';
     const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-    // COMMISSION es un PAYABLE pero categoriza distinto: no es VEHICLE_PURCHASE,
-    // es un egreso operativo por comisión al vendedor.
+    // COMMISSION, PROFIT_SHARE y PARTNER_SHARE son PAYABLE pero categorizan distinto:
+    // no son VEHICLE_PURCHASE (contaminarían el costo del vehículo). COMMISSION es
+    // egreso por comisión al vendedor; PROFIT_SHARE es reparto de ganancia al
+    // inversionista; PARTNER_SHARE es la ganancia que se le paga al socio del carro.
     const transactionCategory = isReceivable
       ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
       : isCommission
         ? 'COMMISSION'
-        : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+        : isProfitShare
+          ? 'PROFIT_SHARE'
+          : isPartnerShare
+            ? 'PARTNER_SHARE'
+            : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
     // 1. Crear la transaccion de tesoreria
     const transaction = await tx.transaction.create({
@@ -326,11 +334,12 @@ const getSummary = async () => {
     _count: true
   });
 
-  // Total por pagar (CxP) — incluye PAYABLE de compras y COMMISSION de comisiones
-  // ya devengadas. Ambas son deudas reales del negocio.
+  // Total por pagar (CxP) — incluye PAYABLE de compras, COMMISSION de comisiones,
+  // PROFIT_SHARE de ganancia a inversionistas y PARTNER_SHARE de ganancia de socio
+  // ya devengadas. Las cuatro son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -348,7 +357,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }
