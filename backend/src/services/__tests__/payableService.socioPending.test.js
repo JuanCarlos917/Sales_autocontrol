@@ -78,3 +78,14 @@ test('buckets vacíos → { total:0, count:0, items:[] }', async () => {
   assert.deepEqual(out.profit, { total: 0, count: 0, items: [] });
   assert.deepEqual(out.commission, { total: 0, count: 0, items: [] });
 });
+
+test('incluye bucket capital con las CxP CAPITAL_RETURN pendientes', async () => {
+  rows = [
+    mkRow({ id: 'cap1', type: 'CAPITAL_RETURN', description: 'Devolución de capital socio ABC', totalAmount: 30_000_000, paidAmount: 0 }),
+    mkRow({ id: 'g1', type: 'PARTNER_SHARE', totalAmount: 12_800_000, paidAmount: 0 }),
+  ];
+  const out = await payableService.getSocioPending();
+  assert.equal(out.capital.count, 1);
+  assert.equal(out.capital.items[0].id, 'cap1');
+  assert.equal(out.capital.total, 30_000_000);
+});

@@ -201,11 +201,14 @@ const addPayment = async (payableId, paymentData, userId) => {
     const isCommission = payable.type === 'COMMISSION';
     const isProfitShare = payable.type === 'PROFIT_SHARE';
     const isPartnerShare = payable.type === 'PARTNER_SHARE';
+    const isCapitalReturn = payable.type === 'CAPITAL_RETURN';
     const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-    // COMMISSION, PROFIT_SHARE y PARTNER_SHARE son PAYABLE pero categorizan distinto:
-    // no son VEHICLE_PURCHASE (contaminarían el costo del vehículo). COMMISSION es
-    // egreso por comisión al vendedor; PROFIT_SHARE es reparto de ganancia al
-    // inversionista; PARTNER_SHARE es la ganancia que se le paga al socio del carro.
+    // COMMISSION, PROFIT_SHARE, PARTNER_SHARE y CAPITAL_RETURN son PAYABLE pero
+    // categorizan distinto: no son VEHICLE_PURCHASE (contaminarían el costo del
+    // vehículo). COMMISSION es egreso por comisión al vendedor; PROFIT_SHARE es
+    // reparto de ganancia al inversionista; PARTNER_SHARE es la ganancia que se
+    // le paga al socio del carro; CAPITAL_RETURN es la devolución del capital
+    // aportado por el socio.
     const transactionCategory = isReceivable
       ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
       : isCommission
@@ -214,7 +217,9 @@ const addPayment = async (payableId, paymentData, userId) => {
           ? 'PROFIT_SHARE'
           : isPartnerShare
             ? 'PARTNER_SHARE'
-            : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+            : isCapitalReturn
+              ? 'CAPITAL_RETURN'
+              : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
     // Enrutamiento FASE B: si la CxP no es RECEIVABLE y el tercero tiene una
     // cuenta SOCIO activa, el pago sale de la cuenta de la empresa y entra a
@@ -357,11 +362,12 @@ const getSummary = async () => {
   });
 
   // Total por pagar (CxP) — incluye PAYABLE de compras, COMMISSION de comisiones,
-  // PROFIT_SHARE de ganancia a inversionistas y PARTNER_SHARE de ganancia de socio
-  // ya devengadas. Las cuatro son deudas reales del negocio.
+  // PROFIT_SHARE de ganancia a inversionistas, PARTNER_SHARE de ganancia de socio
+  // ya devengadas y CAPITAL_RETURN de devolución de capital al socio. Las cinco
+  // son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -379,7 +385,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }
@@ -440,7 +446,12 @@ const getSocioPending = async () => {
     thirdParty: { select: { id: true, name: true } },
   };
 
-  const [profitRows, commissionRows] = await Promise.all([
+  const [capitalRows, profitRows, commissionRows] = await Promise.all([
+    prisma.payable.findMany({
+      where: { type: 'CAPITAL_RETURN', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
     prisma.payable.findMany({
       where: { type: 'PARTNER_SHARE', status: PENDING },
       include,
@@ -478,7 +489,7 @@ const getSocioPending = async () => {
     };
   };
 
-  return { profit: toBucket(profitRows), commission: toBucket(commissionRows) };
+  return { capital: toBucket(capitalRows), profit: toBucket(profitRows), commission: toBucket(commissionRows) };
 };
 
 module.exports = {

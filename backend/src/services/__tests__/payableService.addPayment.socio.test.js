@@ -117,3 +117,19 @@ test('cuenta origen === cuenta socio destino → 400', async () => {
     (e) => e.statusCode === 400 && /socio/i.test(e.message),
   );
 });
+
+test('CAPITAL_RETURN a socio con cuenta → egreso empresa + ingreso socio, categoría CAPITAL_RETURN', async () => {
+  resetCtx();
+  ctx.payable.type = 'CAPITAL_RETURN';
+  ctx.payable.description = 'Devolución de capital socio ABC';
+  const result = await payableService.addPayment(
+    'pay-1', { accountId: 'acc-empresa', amount: 6_400_000, date: '2026-07-21' }, 'user-1',
+  );
+  assert.equal(created.length, 2);
+  const egreso = created.find((t) => t.type === 'EXPENSE');
+  const ingreso = created.find((t) => t.type === 'INCOME');
+  assert.equal(egreso.category, 'CAPITAL_RETURN');
+  assert.equal(ingreso.category, 'CAPITAL_RETURN');
+  assert.equal(ingreso.accountId, 'acc-socio');
+  assert.equal(result.transaction.type, 'EXPENSE');
+});
