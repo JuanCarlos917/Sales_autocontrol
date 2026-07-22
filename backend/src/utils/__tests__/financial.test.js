@@ -629,10 +629,18 @@ test('dist socio inversionista 100%: reservas sobre todo; reparto al fondo 0', (
     { sellers: oneSellerS, investors: teamS, socio: { thirdPartyId: 'mama', share: 1, isInvestor: true } });
   assert.equal(d.reinvestAmount, 2_700_000);       // 30% × 9M
   assert.equal(d.taxAmount, 900_000);              // 10% × 9M
-  assert.equal(d.partnerProfit, 6_400_000);        // bruta − reservas
+  assert.equal(d.partnerProfit, 5_400_000);        // afterCommission (9M) − reservas (2.7M + 0.9M)
   assert.equal(d.partnerCommissionOwed, 1_000_000);
   assert.equal(d.profitToDistribute, 0);
   assert.equal(d.investorRows.length, 0);
+});
+
+test('dist socio inversionista 100% SIN vendedores: ganancia neta == bruta (sin comisión)', () => {
+  const d = calculateSaleDistribution(vBase, socioCfg,
+    { sellers: [], investors: teamS, socio: { thirdPartyId: 'mama', share: 1, isInvestor: true } });
+  assert.equal(d.commissionPool, 0);
+  assert.equal(d.afterCommission, 10_000_000);
+  assert.equal(d.partnerProfit, 6_000_000);        // 10M − 30% (3M) − 10% (1M)
 });
 
 test('dist sin socio: idéntico al comportamiento actual', () => {
