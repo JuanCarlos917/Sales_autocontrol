@@ -244,6 +244,7 @@ export default function CommissionsPage() {
           totalAmount={paying.role.total}
           paidAmount={paying.role.paid}
           defaultDescription={`Comisión venta ${paying.item.vehicle.plate} — ${paying.role.role}`}
+          originSocioThirdPartyId={paying.item.socioInvestor?.thirdPartyId || null}
           loading={processing}
         />
       )}

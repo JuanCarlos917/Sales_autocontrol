@@ -32,10 +32,10 @@ export default function SocioPendingWidget() {
   }, []);
 
   if (!data) return null;
-  const { capital, profit, commission } = data;
-  if (capital.count === 0 && profit.count === 0 && commission.count === 0) return null;
+  const { capital, profit, commissionReturn, commission } = data;
+  if (capital.count === 0 && profit.count === 0 && commissionReturn.count === 0 && commission.count === 0) return null;
 
-  const isExpense = selected?.kind === 'profit' || selected?.kind === 'capital';
+  const isExpense = selected?.kind === 'profit' || selected?.kind === 'capital' || selected?.kind === 'commissionReturn';
 
   const handleSubmit = async (paymentData) => {
     if (!selected) return;
@@ -81,8 +81,20 @@ export default function SocioPendingWidget() {
         </div>
       )}
 
-      {commission.count > 0 && (
+      {commissionReturn.count > 0 && (
         <div className={(capital.count > 0 || profit.count > 0) ? 'mt-5' : ''}>
+          <Section
+            title="Comisión por pagar"
+            icon={<ArrowUpRight className="w-4 h-4 text-red-400" />}
+            bucket={commissionReturn}
+            accent="red"
+            onRow={(item) => setSelected({ item, kind: 'commissionReturn' })}
+          />
+        </div>
+      )}
+
+      {commission.count > 0 && (
+        <div className={(capital.count > 0 || profit.count > 0 || commissionReturn.count > 0) ? 'mt-5' : ''}>
           <Section
             title="Comisión por cobrar"
             icon={<ArrowDownLeft className="w-4 h-4 text-green-400" />}
@@ -101,7 +113,9 @@ export default function SocioPendingWidget() {
           title={
             selected.kind === 'capital'
               ? 'Devolver capital al socio'
-              : isExpense ? 'Pagar ganancia socio' : 'Cobrar comisión socio'
+              : selected.kind === 'commissionReturn'
+                ? 'Depositar comisión al socio'
+                : isExpense ? 'Pagar ganancia socio' : 'Cobrar comisión socio'
           }
           type={isExpense ? 'expense' : 'income'}
           totalAmount={selected.item.totalAmount}
@@ -109,9 +123,11 @@ export default function SocioPendingWidget() {
           defaultDescription={
             selected.kind === 'capital'
               ? `Devolución de capital ${selected.item.vehicle?.plate || ''}`.trim()
-              : isExpense
-                ? `Ganancia socio ${selected.item.vehicle?.plate || ''}`.trim()
-                : `Comisión socio ${selected.item.vehicle?.plate || ''}`.trim()
+              : selected.kind === 'commissionReturn'
+                ? `Comisión por pagar ${selected.item.vehicle?.plate || ''}`.trim()
+                : isExpense
+                  ? `Ganancia socio ${selected.item.vehicle?.plate || ''}`.trim()
+                  : `Comisión socio ${selected.item.vehicle?.plate || ''}`.trim()
           }
           thirdPartyId={isExpense ? selected.item.thirdParty?.id : null}
           loading={processing}

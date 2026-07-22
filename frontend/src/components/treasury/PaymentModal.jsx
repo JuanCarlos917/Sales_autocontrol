@@ -18,6 +18,7 @@ export default function PaymentModal({
   defaultDescription = '',
   loading = false,
   thirdPartyId = null,
+  originSocioThirdPartyId = null,
 }) {
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState({
@@ -38,7 +39,14 @@ export default function PaymentModal({
   const socioDestAccount = !isIncome
     ? accounts.find((a) => a.type === 'SOCIO' && a.thirdPartyId === thirdPartyId && a.isActive)
     : null;
-  const originAccounts = socioDestAccount ? accounts.filter((a) => a.type !== 'SOCIO') : accounts;
+  // Restricción de origen: pagar una comisión de un vehículo de socio inversionista
+  // solo puede salir de la cuenta SOCIO de ese tercero.
+  const restrictedOrigin = originSocioThirdPartyId
+    ? accounts.filter((a) => a.type === 'SOCIO' && a.thirdPartyId === originSocioThirdPartyId && a.isActive)
+    : null;
+  const originAccounts = restrictedOrigin
+    ? restrictedOrigin
+    : (socioDestAccount ? accounts.filter((a) => a.type !== 'SOCIO') : accounts);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,9 +64,13 @@ export default function PaymentModal({
   const loadAccounts = async () => {
     try {
       const { data } = await accountsApi.getAll();
-      setAccounts(data.filter(a => a.isActive));
-      if (data.length > 0) {
-        setForm(f => (f.accountId ? f : { ...f, accountId: data[0].id }));
+      const active = data.filter((a) => a.isActive);
+      setAccounts(active);
+      const preferred = originSocioThirdPartyId
+        ? active.find((a) => a.type === 'SOCIO' && a.thirdPartyId === originSocioThirdPartyId)
+        : active[0];
+      if (preferred) {
+        setForm((f) => (f.accountId ? f : { ...f, accountId: preferred.id }));
       }
     } catch (err) {
       console.error('Error loading accounts:', err);
