@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "PayableType" ADD VALUE 'CAPITAL_RETURN';
