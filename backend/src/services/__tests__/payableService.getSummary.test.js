@@ -75,3 +75,14 @@ test('getSummary: PARTNER_SHARE + PAYABLE + COMMISSION + PROFIT_SHARE se suman t
   assert.equal(summary.payables.total, 1_300_000);
   assert.equal(summary.payables.count, 4);
 });
+
+test('getSummary: una CxP CAPITAL_RETURN pendiente cuenta en payables.total', async () => {
+  payablesFixture = [
+    { id: 'p-1', type: 'CAPITAL_RETURN', status: 'PENDING', totalAmount: 30_000_000, paidAmount: 0 },
+  ];
+
+  const summary = await payableService.getSummary();
+
+  assert.equal(summary.payables.total, 30_000_000);
+  assert.equal(summary.payables.count, 1);
+});
