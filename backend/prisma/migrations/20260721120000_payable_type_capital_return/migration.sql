@@ -1,2 +1,3 @@
 -- AlterEnum
-ALTER TYPE "PayableType" ADD VALUE 'CAPITAL_RETURN';
+-- Idempotente (IF NOT EXISTS) por consistencia con las demás migraciones de enum.
+ALTER TYPE "PayableType" ADD VALUE IF NOT EXISTS 'CAPITAL_RETURN';
