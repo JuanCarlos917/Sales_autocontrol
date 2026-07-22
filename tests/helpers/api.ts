@@ -356,6 +356,22 @@ export async function apiListPayables(token: string, filters: PayableFilters = {
   return getJson(`/payables${qs ? `?${qs}` : ''}`, token);
 }
 
+export interface SocioPendingItem {
+  id: string;
+  vehicleId: string | null;
+  vehicle: { id: string; plate: string; brand: string; model: string } | null;
+  thirdParty: { id: string; name: string } | null;
+  totalAmount: number;
+  paidAmount: number;
+  pending: number;
+}
+export interface SocioPendingBucket { total: number; count: number; items: SocioPendingItem[] }
+export async function apiGetSocioPending(
+  token: string,
+): Promise<{ profit: SocioPendingBucket; commission: SocioPendingBucket }> {
+  return getJson('/payables/socio-pending', token);
+}
+
 export interface LoanInstallmentInput {
   sequence: number;
   dueDate: string;

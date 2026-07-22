@@ -10,6 +10,7 @@ import {
   apiRequestRaw,
   apiGetAccount,
   apiListTransactions,
+  apiGetSocioPending,
 } from '../../helpers/api';
 import { TEST_SEED_IDS } from '../../global-setup';
 
@@ -257,5 +258,47 @@ test.describe('Socio del vehículo (partnerId/participation) en la cascada de ve
       (t) => t.type === 'INCOME' && t.category === 'PARTNER_SHARE' && Number(t.amount) === amount,
     );
     expect(ingreso).toBeTruthy();
+  });
+
+  test('widget socio: el endpoint /socio-pending refleja pagar la ganancia y cobrar la comisión', async () => {
+    const token = await apiPinLogin();
+    const v = await buyVehicleWithSocio(token, plate('SPW'), {
+      partnerId: TEST_SEED_IDS.partner,
+      participation: 0.6,
+    });
+    await sellSocioVehicleCash(token, v.id);
+
+    // Ambos buckets listan este vehículo.
+    const before = await apiGetSocioPending(token);
+    const gRow = before.profit.items.find((it) => it.vehicleId === v.id);
+    const cRow = before.commission.items.find((it) => it.vehicleId === v.id);
+    expect(gRow).toBeTruthy();
+    expect(cRow).toBeTruthy();
+    expect(gRow!.pending).toBeGreaterThan(0);
+    expect(cRow!.pending).toBeGreaterThan(0);
+
+    // Pagar la ganancia (PARTNER_SHARE) → sale del bucket de ganancia.
+    const payG = await apiRequestRaw('POST', `/payables/${gRow!.id}/payments`, token, {
+      accountId: TEST_SEED_IDS.accountCash,
+      amount: gRow!.pending,
+      description: 'Pago ganancia socio (widget)',
+    });
+    expect(payG.status).toBe(201);
+
+    const afterG = await apiGetSocioPending(token);
+    expect(afterG.profit.items.some((it) => it.vehicleId === v.id)).toBe(false);
+    // La comisión sigue pendiente.
+    expect(afterG.commission.items.some((it) => it.vehicleId === v.id)).toBe(true);
+
+    // Cobrar la comisión (RECEIVABLE) → sale del bucket de comisión.
+    const payC = await apiRequestRaw('POST', `/payables/${cRow!.id}/payments`, token, {
+      accountId: TEST_SEED_IDS.accountCash,
+      amount: cRow!.pending,
+      description: 'Cobro comisión socio (widget)',
+    });
+    expect(payC.status).toBe(201);
+
+    const afterC = await apiGetSocioPending(token);
+    expect(afterC.commission.items.some((it) => it.vehicleId === v.id)).toBe(false);
   });
 });
