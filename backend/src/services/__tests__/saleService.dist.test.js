@@ -275,3 +275,47 @@ test('registerSale: sin vendedores → 0 COMMISSION, 3 PROFIT_SHARE por 3M', asy
   assert.equal(ctx.created.payablesByType.PROFIT_SHARE.length, 3);
   assert.equal(sum(ctx.created.payablesByType.PROFIT_SHARE, 'totalAmount'), 3_000_000);
 });
+
+// ── Escenario inversionista 100%: partnerId 'owner-self', participation 0 ──
+// bruta = 30M − 20M = 10M; comisión 10% = 1M; afterCommission = 9M;
+// reinvest 30% = 2.7M; tax 10% = 0.9M; ganancia NETA = 5.4M; capital = 20M.
+test('registerSale: socio inversionista 100% → PARTNER_SHARE neto 5.4M + COMMISSION_RETURN 1M; SIN CxC "Comisión socio venta"', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle({
+    partnerId: 'owner-self', participation: 0, purchasePrice: 20_000_000, partnerContribution: 20_000_000,
+  }) });
+  await saleService.registerSale('veh-1', {
+    salePrice: 30_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 30_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'u-1');
+
+  const { payablesByType } = ctx.created;
+  // Ganancia neta de comisión
+  assert.equal(payablesByType.PARTNER_SHARE.length, 1);
+  assert.equal(payablesByType.PARTNER_SHARE[0].totalAmount, 5_400_000);
+  // Comisión depositada al socio
+  const capRet = payablesByType.COMMISSION_RETURN || [];
+  assert.equal(capRet.length, 1);
+  assert.equal(capRet[0].totalAmount, 1_000_000);
+  assert.equal(capRet[0].thirdPartyId, 'owner-self');
+  assert.match(capRet[0].description, /comisi/i);
+  // NO se crea la CxC "Comisión socio venta"
+  const socioRec = (payablesByType.RECEIVABLE || []).find((p) => /Comisión socio/.test(p.description));
+  assert.equal(socioRec, undefined);
+});
+
+test('registerSale: socio inversionista SIN vendedores → no crea COMMISSION_RETURN', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle({
+    partnerId: 'owner-self', participation: 0, purchasePrice: 20_000_000, partnerContribution: 20_000_000,
+  }) });
+  await saleService.registerSale('veh-1', {
+    salePrice: 30_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 30_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [],
+  }, 'u-1');
+  assert.equal((ctx.created.payablesByType.COMMISSION_RETURN || []).length, 0);
+});
