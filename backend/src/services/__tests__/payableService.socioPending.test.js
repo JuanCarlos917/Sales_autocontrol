@@ -89,3 +89,14 @@ test('incluye bucket capital con las CxP CAPITAL_RETURN pendientes', async () =>
   assert.equal(out.capital.items[0].id, 'cap1');
   assert.equal(out.capital.total, 30_000_000);
 });
+
+test('incluye bucket commissionReturn con las CxP COMMISSION_RETURN pendientes', async () => {
+  rows = [
+    mkRow({ id: 'cr1', type: 'COMMISSION_RETURN', description: 'Comisión por pagar socio ABC', totalAmount: 1_000_000, paidAmount: 0 }),
+    mkRow({ id: 'g1', type: 'PARTNER_SHARE', totalAmount: 5_400_000, paidAmount: 0 }),
+  ];
+  const out = await payableService.getSocioPending();
+  assert.equal(out.commissionReturn.count, 1);
+  assert.equal(out.commissionReturn.items[0].id, 'cr1');
+  assert.equal(out.commissionReturn.total, 1_000_000);
+});

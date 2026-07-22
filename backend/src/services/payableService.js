@@ -202,13 +202,15 @@ const addPayment = async (payableId, paymentData, userId) => {
     const isProfitShare = payable.type === 'PROFIT_SHARE';
     const isPartnerShare = payable.type === 'PARTNER_SHARE';
     const isCapitalReturn = payable.type === 'CAPITAL_RETURN';
+    const isCommissionReturn = payable.type === 'COMMISSION_RETURN';
     const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-    // COMMISSION, PROFIT_SHARE, PARTNER_SHARE y CAPITAL_RETURN son PAYABLE pero
-    // categorizan distinto: no son VEHICLE_PURCHASE (contaminarían el costo del
-    // vehículo). COMMISSION es egreso por comisión al vendedor; PROFIT_SHARE es
-    // reparto de ganancia al inversionista; PARTNER_SHARE es la ganancia que se
-    // le paga al socio del carro; CAPITAL_RETURN es la devolución del capital
-    // aportado por el socio.
+    // COMMISSION, PROFIT_SHARE, PARTNER_SHARE, CAPITAL_RETURN y COMMISSION_RETURN
+    // son PAYABLE pero categorizan distinto: no son VEHICLE_PURCHASE (contaminarían
+    // el costo del vehículo). COMMISSION es egreso por comisión al vendedor;
+    // PROFIT_SHARE es reparto de ganancia al inversionista; PARTNER_SHARE es la
+    // ganancia que se le paga al socio del carro; CAPITAL_RETURN es la devolución
+    // del capital aportado por el socio; COMMISSION_RETURN es la comisión que el
+    // socio debe devolver al fondo.
     const transactionCategory = isReceivable
       ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
       : isCommission
@@ -219,7 +221,9 @@ const addPayment = async (payableId, paymentData, userId) => {
             ? 'PARTNER_SHARE'
             : isCapitalReturn
               ? 'CAPITAL_RETURN'
-              : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+              : isCommissionReturn
+                ? 'COMMISSION_RETURN'
+                : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
     // Enrutamiento FASE B: si la CxP no es RECEIVABLE y el tercero tiene una
     // cuenta SOCIO activa, el pago sale de la cuenta de la empresa y entra a
@@ -367,7 +371,7 @@ const getSummary = async () => {
   // son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN', 'COMMISSION_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -385,7 +389,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN', 'COMMISSION_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }
@@ -446,7 +450,7 @@ const getSocioPending = async () => {
     thirdParty: { select: { id: true, name: true } },
   };
 
-  const [capitalRows, profitRows, commissionRows] = await Promise.all([
+  const [capitalRows, profitRows, commissionReturnRows, commissionRows] = await Promise.all([
     prisma.payable.findMany({
       where: { type: 'CAPITAL_RETURN', status: PENDING },
       include,
@@ -454,6 +458,11 @@ const getSocioPending = async () => {
     }),
     prisma.payable.findMany({
       where: { type: 'PARTNER_SHARE', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.payable.findMany({
+      where: { type: 'COMMISSION_RETURN', status: PENDING },
       include,
       orderBy: { createdAt: 'asc' },
     }),
@@ -489,7 +498,12 @@ const getSocioPending = async () => {
     };
   };
 
-  return { capital: toBucket(capitalRows), profit: toBucket(profitRows), commission: toBucket(commissionRows) };
+  return {
+    capital: toBucket(capitalRows),
+    profit: toBucket(profitRows),
+    commissionReturn: toBucket(commissionReturnRows),
+    commission: toBucket(commissionRows),
+  };
 };
 
 module.exports = {

@@ -133,3 +133,19 @@ test('CAPITAL_RETURN a socio con cuenta → egreso empresa + ingreso socio, cate
   assert.equal(ingreso.accountId, 'acc-socio');
   assert.equal(result.transaction.type, 'EXPENSE');
 });
+
+test('COMMISSION_RETURN a socio con cuenta → egreso empresa + ingreso socio, categoría COMMISSION_RETURN', async () => {
+  resetCtx();
+  ctx.payable.type = 'COMMISSION_RETURN';
+  ctx.payable.description = 'Comisión por pagar socio ABC';
+  const result = await payableService.addPayment(
+    'pay-1', { accountId: 'acc-empresa', amount: 1_000_000, date: '2026-07-22' }, 'user-1',
+  );
+  assert.equal(created.length, 2);
+  const egreso = created.find((t) => t.type === 'EXPENSE');
+  const ingreso = created.find((t) => t.type === 'INCOME');
+  assert.equal(egreso.category, 'COMMISSION_RETURN');
+  assert.equal(ingreso.category, 'COMMISSION_RETURN');
+  assert.equal(ingreso.accountId, 'acc-socio');
+  assert.equal(result.transaction.type, 'EXPENSE');
+});
