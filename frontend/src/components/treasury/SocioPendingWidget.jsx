@@ -32,10 +32,10 @@ export default function SocioPendingWidget() {
   }, []);
 
   if (!data) return null;
-  const { profit, commission } = data;
-  if (profit.count === 0 && commission.count === 0) return null;
+  const { capital, profit, commission } = data;
+  if (capital.count === 0 && profit.count === 0 && commission.count === 0) return null;
 
-  const isExpense = selected?.kind === 'profit';
+  const isExpense = selected?.kind === 'profit' || selected?.kind === 'capital';
 
   const handleSubmit = async (paymentData) => {
     if (!selected) return;
@@ -59,18 +59,30 @@ export default function SocioPendingWidget() {
         <h3 className="text-sm font-semibold text-[#E6EDF3]">Socios: pendientes</h3>
       </div>
 
-      {profit.count > 0 && (
+      {capital.count > 0 && (
         <Section
-          title="Ganancia por pagar"
+          title="Capital por devolver"
           icon={<ArrowUpRight className="w-4 h-4 text-red-400" />}
-          bucket={profit}
+          bucket={capital}
           accent="red"
-          onRow={(item) => setSelected({ item, kind: 'profit' })}
+          onRow={(item) => setSelected({ item, kind: 'capital' })}
         />
       )}
 
+      {profit.count > 0 && (
+        <div className={capital.count > 0 ? 'mt-5' : ''}>
+          <Section
+            title="Ganancia por pagar"
+            icon={<ArrowUpRight className="w-4 h-4 text-red-400" />}
+            bucket={profit}
+            accent="red"
+            onRow={(item) => setSelected({ item, kind: 'profit' })}
+          />
+        </div>
+      )}
+
       {commission.count > 0 && (
-        <div className={profit.count > 0 ? 'mt-5' : ''}>
+        <div className={(capital.count > 0 || profit.count > 0) ? 'mt-5' : ''}>
           <Section
             title="Comisión por cobrar"
             icon={<ArrowDownLeft className="w-4 h-4 text-green-400" />}
@@ -86,14 +98,20 @@ export default function SocioPendingWidget() {
           isOpen={!!selected}
           onClose={() => setSelected(null)}
           onSubmit={handleSubmit}
-          title={isExpense ? 'Pagar ganancia socio' : 'Cobrar comisión socio'}
+          title={
+            selected.kind === 'capital'
+              ? 'Devolver capital al socio'
+              : isExpense ? 'Pagar ganancia socio' : 'Cobrar comisión socio'
+          }
           type={isExpense ? 'expense' : 'income'}
           totalAmount={selected.item.totalAmount}
           paidAmount={selected.item.paidAmount}
           defaultDescription={
-            isExpense
-              ? `Ganancia socio ${selected.item.vehicle?.plate || ''}`.trim()
-              : `Comisión socio ${selected.item.vehicle?.plate || ''}`.trim()
+            selected.kind === 'capital'
+              ? `Devolución de capital ${selected.item.vehicle?.plate || ''}`.trim()
+              : isExpense
+                ? `Ganancia socio ${selected.item.vehicle?.plate || ''}`.trim()
+                : `Comisión socio ${selected.item.vehicle?.plate || ''}`.trim()
           }
           thirdPartyId={isExpense ? selected.item.thirdParty?.id : null}
           loading={processing}
