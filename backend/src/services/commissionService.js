@@ -458,10 +458,19 @@ async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMIS
     byVehicle.get(p.vehicleId).payables.push(p);
   }
 
-  // Transfers de bolsillos: TRANSFER_IN a las cuentas budget con vehicleId
-  let bucketByVehicle = new Map();
+  // Config de comisiones: se usa para los transfers de bolsillos Y para resolver el
+  // socio inversionista de cada vehículo. Una sola carga; degrada a null solo cuando
+  // los settings no existen (cualquier otro error se propaga).
+  let cfg = null;
   try {
-    const cfg = await loadCommissionConfig(prismaOrTx);
+    cfg = await loadCommissionConfig(prismaOrTx);
+  } catch (err) {
+    if (!(err instanceof AppError && err.message.startsWith('Settings de comisiones faltantes'))) throw err;
+  }
+
+  // Transfers de bolsillos: TRANSFER_IN a las cuentas budget con vehicleId.
+  const bucketByVehicle = new Map();
+  if (cfg) {
     const bucketTxns = await prismaOrTx.transaction.findMany({
       where: {
         type: 'TRANSFER_IN',
@@ -477,31 +486,17 @@ async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMIS
         amount: t.amount,
       });
     }
-  } catch (err) {
-    // Solo el caso "settings de comisiones no configuradas" degrada a buckets null;
-    // cualquier otro error (DB caída, Prisma, red) debe propagarse.
-    if (err instanceof AppError && err.message.startsWith('Settings de comisiones faltantes')) {
-      bucketByVehicle = new Map();
-    } else {
-      throw err;
-    }
-  }
-
-  // Config para resolver el socio inversionista de cada vehículo (no toca DB en
-  // resolveSocio; degrada a null si los settings de comisiones no existen).
-  let socioCfg = null;
-  try {
-    socioCfg = await loadCommissionConfig(prismaOrTx);
-  } catch (err) {
-    if (!(err instanceof AppError && err.message.startsWith('Settings de comisiones faltantes'))) throw err;
   }
 
   const items = await Promise.all(
     [...byVehicle.values()].map(async ({ vehicle, payables: ps }) => {
       let socioInvestor = null;
-      if (socioCfg) {
+      if (cfg) {
         try {
-          const socio = await resolveSocio(prismaOrTx, vehicle, socioCfg);
+          // El socio se re-deriva del investor_team ACTUAL (read-time), no del estado
+          // al vender: si el socio ya no está en el equipo, resolveSocio lanza AppError
+          // → socioInvestor null (la UI deja de restringir el origen, sin romper).
+          const socio = await resolveSocio(prismaOrTx, vehicle, cfg);
           if (socio && socio.isInvestor) socioInvestor = { thirdPartyId: socio.thirdPartyId };
         } catch (err) {
           // Solo suprimimos las invariantes de resolveSocio (AppError, ya validadas
