@@ -172,21 +172,26 @@ export default function TransactionsPage() {
     }
   };
 
+  // Selectores de acción (transferencias, movimientos manuales) solo operan
+  // sobre cuentas activas. El filtro de historial de abajo sí conserva las
+  // inactivas (para poder consultar sus movimientos), marcadas "(inactiva)".
+  const activeAccounts = accounts.filter((a) => a.isActive !== false);
+
   const openModal = (type) => {
-    if (accounts.length === 0) {
+    if (activeAccounts.length === 0) {
       alert('Primero debe crear al menos una cuenta');
       return;
     }
     setModalType(type);
     setForm({
-      accountId: accounts[0]?.id || '',
+      accountId: activeAccounts[0]?.id || '',
       category: type === 'income' ? 'CAPITAL_CONTRIBUTION' : type === 'expense' ? 'OPERATING_EXPENSE' : '',
       amount: '',
       description: '',
       thirdPartyId: '',
       date: getLocalDateString(),
-      fromAccountId: accounts[0]?.id || '',
-      toAccountId: accounts.length > 1 ? accounts[1]?.id : accounts[0]?.id || '',
+      fromAccountId: activeAccounts[0]?.id || '',
+      toAccountId: activeAccounts.length > 1 ? activeAccounts[1]?.id : activeAccounts[0]?.id || '',
     });
     setShowModal(true);
   };
@@ -266,7 +271,7 @@ export default function TransactionsPage() {
         >
           <option value="">Todas las cuentas</option>
           {accounts.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
+            <option key={a.id} value={a.id}>{a.name}{a.isActive === false ? ' (inactiva)' : ''}</option>
           ))}
         </select>
         <select
@@ -406,7 +411,7 @@ export default function TransactionsPage() {
                   required
                   data-testid="transfer-from-account"
                 >
-                  {accounts.map((a) => (
+                  {activeAccounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
                   ))}
                 </select>
@@ -420,7 +425,7 @@ export default function TransactionsPage() {
                   required
                   data-testid="transfer-to-account"
                 >
-                  {accounts.filter(a => a.id !== form.fromAccountId).map((a) => (
+                  {activeAccounts.filter(a => a.id !== form.fromAccountId).map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
@@ -436,7 +441,7 @@ export default function TransactionsPage() {
                   className="input w-full"
                   required
                 >
-                  {accounts.map((a) => (
+                  {activeAccounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
                   ))}
                 </select>

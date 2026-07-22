@@ -119,6 +119,9 @@ export default function TreasuryPage() {
   };
 
   const netPosition = payablesSummary?.netPosition || 0;
+  // Las cuentas inactivas no se muestran en la vista de saldos (su saldo es
+  // cero al desactivarse; su gestión/reactivación vive en /treasury/accounts).
+  const activeAccounts = accounts.filter((a) => a.isActive !== false);
 
   return (
     <div className="space-y-6">
@@ -153,7 +156,7 @@ export default function TreasuryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <BalanceCard
-            accounts={accounts}
+            accounts={activeAccounts}
             totalBalance={totalBalance}
             loading={loading}
           />
@@ -277,7 +280,7 @@ export default function TreasuryPage() {
         <Link to="/treasury/accounts" className="card p-4 text-center hover:bg-surface-hover transition-colors">
           <Landmark className="w-7 h-7 mx-auto mb-2 text-accent" />
           <div className="text-sm text-[#E6EDF3]">Cuentas</div>
-          <div className="text-xs text-[#6E7681] mt-1">{accounts.length} activas</div>
+          <div className="text-xs text-[#6E7681] mt-1">{activeAccounts.length} activas</div>
         </Link>
         <Link to="/treasury/third-parties" className="card p-4 text-center hover:bg-surface-hover transition-colors">
           <Users className="w-7 h-7 mx-auto mb-2 text-accent" />
