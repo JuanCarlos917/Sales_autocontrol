@@ -337,7 +337,7 @@ export interface Payable {
   vehicleId: string | null;
   thirdPartyId: string | null;
   description: string | null;
-  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE';
+  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE' | 'CAPITAL_RETURN' | 'COMMISSION_RETURN';
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   totalAmount: string | number;
   paidAmount: string | number;
@@ -354,6 +354,27 @@ export async function apiListPayables(token: string, filters: PayableFilters = {
   const entries = Object.entries(filters).filter(([, v]) => v !== undefined) as [string, string][];
   const qs = new URLSearchParams(entries).toString();
   return getJson(`/payables${qs ? `?${qs}` : ''}`, token);
+}
+
+export interface SocioPendingItem {
+  id: string;
+  vehicleId: string | null;
+  vehicle: { id: string; plate: string; brand: string; model: string } | null;
+  thirdParty: { id: string; name: string } | null;
+  totalAmount: number;
+  paidAmount: number;
+  pending: number;
+}
+export interface SocioPendingBucket { total: number; count: number; items: SocioPendingItem[] }
+export async function apiGetSocioPending(
+  token: string,
+): Promise<{
+  capital: SocioPendingBucket;
+  profit: SocioPendingBucket;
+  commissionReturn: SocioPendingBucket;
+  commission: SocioPendingBucket;
+}> {
+  return getJson('/payables/socio-pending', token);
 }
 
 export interface LoanInstallmentInput {

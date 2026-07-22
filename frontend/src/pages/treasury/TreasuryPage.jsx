@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { treasuryReportsApi, transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { payablesApi } from '@/lib/payablesApi';
 import { formatCurrency } from '@/lib/constants';
-import { BalanceCard, ReceivablesWidget, PayablesWidgetCxP, CashFlowChart, LoansSummaryCards } from '@/components/treasury';
+import { BalanceCard, ReceivablesWidget, PayablesWidgetCxP, CashFlowChart, LoansSummaryCards, SocioPendingWidget } from '@/components/treasury';
 import { AlertTriangle, ClipboardList, Landmark, Users, Calculator, HandCoins, Building2 } from 'lucide-react';
 
 export default function TreasuryPage() {
@@ -200,6 +200,9 @@ export default function TreasuryPage() {
           loading={loading}
         />
       </div>
+
+      {/* Pendientes de socio (se auto-oculta si no hay) */}
+      <SocioPendingWidget />
 
       {/* Seccion Prestamos: resumen + top deudores */}
       <LoansSummaryCards />

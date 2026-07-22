@@ -393,7 +393,7 @@ export default function SalePaymentModal({
                     data-testid="sale-cash-account"
                   >
                     <option value="">Seleccionar</option>
-                    {accounts.map((a) => (
+                    {accounts.filter((a) => a.type !== 'SOCIO').map((a) => (
                       <option key={a.id} value={a.id}>{a.name}</option>
                     ))}
                   </select>

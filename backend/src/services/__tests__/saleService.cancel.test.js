@@ -120,6 +120,39 @@ test('cancelSale: bloquea cuando hay CxP PARTNER_SHARE devengadas (ganancia de s
   );
 });
 
+test('cancelSale: bloquea cuando hay CxP CAPITAL_RETURN devengada', async () => {
+  ctx = {
+    vehicle: baseVehicle([
+      { id: 'cap-1', vehicleId: 'veh-1', type: 'CAPITAL_RETURN', paidAmount: 0, totalAmount: 8_000_000 },
+    ]),
+    transactions: [],
+    settings: [],
+  };
+
+  await assert.rejects(
+    () => saleService.cancelSale('veh-1', 'u-1'),
+    (err) => {
+      assert.equal(err.statusCode, 400);
+      assert.match(err.message, /comisiones o ganancias devengadas/);
+      return true;
+    }
+  );
+});
+
+test('cancelSale: bloquea cuando hay CxP COMMISSION_RETURN devengada', async () => {
+  ctx = {
+    vehicle: baseVehicle([
+      { id: 'cr-1', vehicleId: 'veh-1', type: 'COMMISSION_RETURN', paidAmount: 0, totalAmount: 1_000_000 },
+    ]),
+    transactions: [],
+    settings: [],
+  };
+  await assert.rejects(
+    () => saleService.cancelSale('veh-1', 'u-1'),
+    (e) => e.statusCode === 400 && /cancelar la venta/i.test(e.message),
+  );
+});
+
 test('cancelSale: procede cuando no hay CxP COMMISSION, PROFIT_SHARE ni PARTNER_SHARE', async () => {
   ctx = {
     vehicle: baseVehicle([]),

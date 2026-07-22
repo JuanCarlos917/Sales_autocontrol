@@ -14,6 +14,9 @@ export const payablesApi = {
   // Obtener CxC/CxP proximas a vencer
   getUpcoming: (days = 7) => api.get('/payables/upcoming', { params: { days } }),
 
+  // Pendientes de socio: ganancia por pagar + comisión por cobrar
+  getSocioPending: () => api.get('/payables/socio-pending'),
+
   // Obtener detalle de una CxC/CxP
   getById: (id) => api.get(`/payables/${id}`),
 
