@@ -290,6 +290,24 @@ const registerSale = async (vehicleId, saleData, userId) => {
           },
         });
       }
+      // Devolución de capital al socio (Modelo B): lo que aportó en la compra
+      // (partnerContribution) se le devuelve como CxP dedicada; al pagarla, el
+      // enrutamiento FASE B la deposita en su cuenta SOCIO.
+      const partnerCapital = Number(vehicle.partnerContribution || 0);
+      if (socio && partnerCapital > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'CAPITAL_RETURN',
+            status: 'PENDING',
+            totalAmount: partnerCapital,
+            paidAmount: 0,
+            description: `Devolución de capital socio ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
       if (socio && dist.partnerCommissionOwed > 0) {
         await tx.payable.create({
           data: {
@@ -611,7 +629,7 @@ const cancelSale = async (vehicleId, userId) => {
 
   // Verificar si hay Payables COMMISSION, PROFIT_SHARE o PARTNER_SHARE asociadas
   const commissionPayables = await prisma.payable.findMany({
-    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] } },
+    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN'] } },
   });
   if (commissionPayables.length > 0) {
     throw new AppError(

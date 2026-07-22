@@ -214,6 +214,39 @@ test('registerSale: socio externo → PARTNER_SHARE 4M + CxC comisión 400k; PRO
   assert.equal(res.summary.socioShare, 0.4);
 });
 
+test('registerSale: socio externo con aporte → CxP CAPITAL_RETURN = partnerContribution', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle({
+    partnerId: 'ext', participation: 0.6, purchasePrice: 20_000_000, partnerContribution: 8_000_000,
+  }) });
+  await saleService.registerSale('veh-1', {
+    salePrice: 30_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 30_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'u-1');
+
+  const cap = ctx.created.payablesByType.CAPITAL_RETURN || [];
+  assert.equal(cap.length, 1);
+  assert.equal(cap[0].totalAmount, 8_000_000);
+  assert.equal(cap[0].thirdPartyId, 'ext');
+  assert.match(cap[0].description, /capital/i);
+});
+
+test('registerSale: socio SIN aporte (partnerContribution 0) → no crea CAPITAL_RETURN', async () => {
+  ctx = makeCtx({ vehicle: baseVehicle({
+    partnerId: 'ext', participation: 0.6, purchasePrice: 20_000_000, partnerContribution: 0,
+  }) });
+  await saleService.registerSale('veh-1', {
+    salePrice: 30_000_000,
+    paymentType: 'CASH',
+    cashPayment: { accountId: 'acc-cash', amount: 30_000_000, method: 'CASH' },
+    buyerId: 'buyer-1',
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'u-1');
+  assert.equal((ctx.created.payablesByType.CAPITAL_RETURN || []).length, 0);
+});
+
 // ── Regresión: venta sin socio no crea ningún PARTNER_SHARE ──────────────
 test('registerSale: sin socio → 0 PARTNER_SHARE', async () => {
   ctx = makeCtx({ vehicle: baseVehicle() });
