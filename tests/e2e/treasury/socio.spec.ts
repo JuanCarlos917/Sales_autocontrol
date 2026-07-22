@@ -144,23 +144,29 @@ test.describe('Socio del vehículo (partnerId/participation) en la cascada de ve
     const v = await buyVehicleWithSocio(token, p, { partnerId: 'owner-self', participation: 0 });
     const sale = await sellSocioVehicleCash(token, v.id);
 
-    // Reservas sobre TODO el neto (9M): reinvest 30% = 2.7M, tax 10% = 0.9M.
-    // Ganancia del socio = gross − reservas = 10M − 2.7M − 0.9M = 6.4M.
-    // Comisión adeudada = 100% del pool = 1M. Fondo se queda con 0.
+    // Comisión primero (afterCommission = gross − commissionPool = 10M − 1M =
+    // 9M), luego reservas sobre ESE neto: reinvest 30% = 2.7M, tax 10% = 0.9M.
+    // Ganancia del socio = afterCommission − reservas = 9M − 2.7M − 0.9M = 5.4M
+    // (neta de comisión: la comisión ya no se resta de partnerProfit, se
+    // adeuda aparte y se devuelve al fondo vía CxP COMMISSION_RETURN — Modelo B).
     expect(sale.summary.socioShare).toBe(1);
     expect(sale.summary.reinvestAmount).toBe(2_700_000);
     expect(sale.summary.taxAmount).toBe(900_000);
-    expect(sale.summary.partnerProfit).toBe(6_400_000);
+    expect(sale.summary.partnerProfit).toBe(5_400_000);
     expect(sale.summary.partnerCommissionOwed).toBe(1_000_000);
     expect(sale.summary.profitToDistribute).toBe(0);
     expect(sale.summary.investors ?? []).toHaveLength(0);
 
     const payables = await apiListPayables(token, { vehicleId: v.id });
     const partnerShare = payables.find((pb) => pb.type === 'PARTNER_SHARE');
-    expect(Number(partnerShare?.totalAmount)).toBe(6_400_000);
+    expect(Number(partnerShare?.totalAmount)).toBe(5_400_000);
 
-    const socioReceivable = payables.find((pb) => pb.type === 'RECEIVABLE');
-    expect(Number(socioReceivable?.totalAmount)).toBe(1_000_000);
+    // Inversionista 100%: el pool de comisión se deposita en la cuenta del
+    // socio como CxP COMMISSION_RETURN (no se crea la CxC RECEIVABLE del
+    // modelo de socio externo).
+    const commissionReturn = payables.find((pb) => pb.type === 'COMMISSION_RETURN');
+    expect(Number(commissionReturn?.totalAmount)).toBe(1_000_000);
+    expect(payables.some((pb) => pb.type === 'RECEIVABLE')).toBe(false);
 
     // Sin fila de PROFIT_SHARE: profitToDistribute === 0 no crea CxP vacías.
     const profitShares = payables.filter((pb) => pb.type === 'PROFIT_SHARE');
@@ -399,6 +405,124 @@ test.describe('Socio del vehículo (partnerId/participation) en la cascada de ve
       // Ya no aparece en el bucket capital.
       const pend2 = await apiGetSocioPending(token);
       expect(pend2.capital.items.some((it) => it.vehicleId === v.id)).toBe(false);
+    } finally {
+      // Restaurar investor_team para no contaminar otros tests del archivo
+      // (settings no se trunca entre tests).
+      await apiUpdateCommissionConfig(token, { ...BASE_COMMISSION_CFG, investor_team: [] });
+    }
+  });
+
+  test('Modelo B: round-trip inversionista 100% — capital, ganancia y comisión vuelven a la cuenta del socio; la comisión del vendedor se paga desde ahí', async () => {
+    const token = await apiPinLogin();
+
+    // Mismo patrón que "Modelo B: round-trip ... capital vuelve a la cuenta del
+    // socio": TEST_SEED_IDS.partner sí tiene cuenta SOCIO sembrada
+    // (TEST_SEED_IDS.partnerAccount); se incorpora temporalmente al
+    // investor_team para que resolveSocio lo trate como inversionista 100%.
+    const cfgRes = await apiUpdateCommissionConfig(token, {
+      ...BASE_COMMISSION_CFG,
+      investor_team: [{ thirdPartyId: TEST_SEED_IDS.partner, sharePct: 100 }],
+    });
+    expect(cfgRes.status).toBe(200);
+
+    try {
+      // Fondear la cuenta SOCIO con el aporte que va a poner en la compra.
+      const fund = await apiRequestRaw('POST', '/treasury/transfers', token, {
+        fromAccountId: TEST_SEED_IDS.accountCash,
+        toAccountId: TEST_SEED_IDS.partnerAccount,
+        amount: SOCIO_PURCHASE_PRICE,
+      });
+      expect(fund.status).toBe(201);
+
+      const p = plate('CR');
+      const v = await apiCreateVehicle(token, {
+        plate: p,
+        stage: 'NEGOCIANDO',
+        negotiatedValue: SOCIO_PURCHASE_PRICE,
+        supplierId: TEST_SEED_IDS.supplier,
+      });
+
+      // Compra: el socio aporta el 100% desde su cuenta SOCIO.
+      await apiConfirmPurchase(token, v.id, {
+        vehicle: {
+          purchasePrice: SOCIO_PURCHASE_PRICE,
+          supplierId: TEST_SEED_IDS.supplier,
+          partnerId: TEST_SEED_IDS.partner,
+          partnerContribution: SOCIO_PURCHASE_PRICE,
+        },
+        payment: {},
+      });
+
+      const socioBefore = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+      const before = Number(socioBefore.currentBalance);
+
+      // Venta con un único vendedor (test-tp-employee) al 100% de la comisión.
+      const sale = await apiRegisterSale(token, v.id, {
+        salePrice: SOCIO_SALE_PRICE,
+        paymentType: 'CASH',
+        buyerId: TEST_SEED_IDS.buyer,
+        cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: SOCIO_SALE_PRICE },
+        participants: saleParticipants(),
+      });
+      expect(sale.summary.socioShare).toBe(1);
+
+      // Los 3 buckets del socio traen filas para este vehículo: capital
+      // (aporte devuelto), ganancia (PARTNER_SHARE, neta de comisión) y la
+      // comisión que el fondo adelantó a los vendedores (COMMISSION_RETURN).
+      const pend = await apiGetSocioPending(token);
+      const cap = pend.capital.items.find((it) => it.vehicleId === v.id);
+      const prof = pend.profit.items.find((it) => it.vehicleId === v.id);
+      const comm = pend.commissionReturn.items.find((it) => it.vehicleId === v.id);
+      expect(cap).toBeTruthy();
+      expect(prof).toBeTruthy();
+      expect(comm).toBeTruthy();
+      expect(cap!.pending).toBe(SOCIO_PURCHASE_PRICE);
+
+      // Depositar capital + ganancia + comisión a la cuenta del socio (FASE B,
+      // desde la caja de la empresa) — no se hardcodean montos derivados de
+      // porcentajes: sólo se verifican relaciones entre buckets y saldos.
+      for (const it of [cap!, prof!, comm!]) {
+        const r = await apiRequestRaw('POST', `/payables/${it.id}/payments`, token, {
+          accountId: TEST_SEED_IDS.accountCash,
+          amount: it.pending,
+          description: 'Depósito socio (round-trip comisión)',
+        });
+        expect(r.status).toBe(201);
+      }
+
+      const commTx = comm!.pending;
+      const socioAfterDeposits = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+      expect(Number(socioAfterDeposits.currentBalance)).toBe(before + cap!.pending + prof!.pending + commTx);
+
+      // El pool de comisión depositado debe coincidir exactamente con lo que
+      // el fondo adeuda a los vendedores de este vehículo (CxP COMMISSION).
+      const sellerPayables = await apiListPayables(token, { type: 'COMMISSION', vehicleId: v.id });
+      expect(sellerPayables.length).toBeGreaterThan(0);
+      const sellerTotal = sellerPayables.reduce((s, pb) => s + (Number(pb.totalAmount) - Number(pb.paidAmount)), 0);
+      expect(sellerTotal).toBe(commTx);
+
+      // Pagar la comisión del vendedor DESDE la cuenta del socio (único
+      // egreso de esa cuenta; el vendedor no tiene cuenta SOCIO, así que no
+      // hay reenrutamiento FASE B — el dinero sale directo de la cuenta socio).
+      for (const pb of sellerPayables) {
+        const pendingAmount = Number(pb.totalAmount) - Number(pb.paidAmount);
+        if (pendingAmount <= 0) continue;
+        const r = await apiRequestRaw('POST', `/payables/${pb.id}/payments`, token, {
+          accountId: TEST_SEED_IDS.partnerAccount,
+          amount: pendingAmount,
+          description: 'Comisión vendedor pagada desde cuenta socio',
+        });
+        expect(r.status).toBe(201);
+      }
+
+      // Neto: la comisión entró y salió de la cuenta del socio → sólo queda
+      // capital + ganancia.
+      const socioAfterPay = await apiGetAccount(token, TEST_SEED_IDS.partnerAccount);
+      expect(Number(socioAfterPay.currentBalance)).toBe(before + cap!.pending + prof!.pending);
+
+      // Ya no queda comisión por depositar para este vehículo.
+      const pend2 = await apiGetSocioPending(token);
+      expect(pend2.commissionReturn.items.some((it) => it.vehicleId === v.id)).toBe(false);
     } finally {
       // Restaurar investor_team para no contaminar otros tests del archivo
       // (settings no se trunca entre tests).

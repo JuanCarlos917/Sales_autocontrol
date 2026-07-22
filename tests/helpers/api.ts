@@ -337,7 +337,7 @@ export interface Payable {
   vehicleId: string | null;
   thirdPartyId: string | null;
   description: string | null;
-  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE';
+  type: 'PAYABLE' | 'RECEIVABLE' | 'COMMISSION' | 'PROFIT_SHARE' | 'PARTNER_SHARE' | 'CAPITAL_RETURN' | 'COMMISSION_RETURN';
   status: 'PENDING' | 'PARTIAL' | 'PAID' | 'CANCELLED';
   totalAmount: string | number;
   paidAmount: string | number;
@@ -368,7 +368,12 @@ export interface SocioPendingItem {
 export interface SocioPendingBucket { total: number; count: number; items: SocioPendingItem[] }
 export async function apiGetSocioPending(
   token: string,
-): Promise<{ capital: SocioPendingBucket; profit: SocioPendingBucket; commission: SocioPendingBucket }> {
+): Promise<{
+  capital: SocioPendingBucket;
+  profit: SocioPendingBucket;
+  commissionReturn: SocioPendingBucket;
+  commission: SocioPendingBucket;
+}> {
   return getJson('/payables/socio-pending', token);
 }
 
