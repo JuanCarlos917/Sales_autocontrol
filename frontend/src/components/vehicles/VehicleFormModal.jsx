@@ -227,6 +227,11 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
   // Cuenta SOCIO del tercero seleccionado: de ahí sale su aporte (la resuelve el backend por partnerId).
   const socioAccount = f.partnerId ? accounts.find(a => a.type === 'SOCIO' && a.thirdPartyId === f.partnerId) : null;
 
+  // Socio inversionista al 100%: aporta todo el precio, tu parte es $0. En ese
+  // caso la compra se paga completa desde la cuenta del socio; no se muestran
+  // (ni se usan) cuentas de la empresa.
+  const socioFundsFull = showPaymentSection && !!f.partnerId && myOwedAmount === 0;
+
   const handleSave = async () => {
     if (!f.plate && !f.brand) {
       setSaveError('Debes ingresar al menos una placa o una marca');
@@ -254,11 +259,13 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       return;
     }
     if (showPaymentSection) {
-      if (cashPay > 0 && !cashAccountId) { setSaveError('Selecciona la cuenta de efectivo'); return; }
-      if (transferPay > 0 && !transferAccountId) { setSaveError('Selecciona la cuenta de transferencia'); return; }
-      if (overpay) {
-        setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
-        return;
+      if (!socioFundsFull) {
+        if (cashPay > 0 && !cashAccountId) { setSaveError('Selecciona la cuenta de efectivo'); return; }
+        if (transferPay > 0 && !transferAccountId) { setSaveError('Selecciona la cuenta de transferencia'); return; }
+        if (overpay) {
+          setSaveError(`Los pagos (${formatCurrency(totalPaidNow)}) no pueden superar tu parte a pagar (${formatCurrency(myOwedAmount)})`);
+          return;
+        }
       }
       if (partnerAmt > 0 && f.partnerId && !socioAccount) {
         setSaveError('El socio no tiene una cuenta activa para registrar su aporte');
@@ -274,10 +281,14 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       const partnerContribValue = f.partnerId && parseFloat(f.partnerContribution) > 0
         ? parseFloat(f.partnerContribution)
         : null;
-      // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP)
+      // Pago dividido: una línea por método con monto > 0 (lo no cubierto queda como CxP).
+      // Con socio al 100% (tu parte $0) no se usa ninguna cuenta de empresa: la compra
+      // la salda el egreso del aporte desde la cuenta SOCIO (lo resuelve el backend).
       const purchasePayments = [];
-      if (cashPay > 0 && cashAccountId) purchasePayments.push({ accountId: cashAccountId, amount: cashPay, method: 'CASH' });
-      if (transferPay > 0 && transferAccountId) purchasePayments.push({ accountId: transferAccountId, amount: transferPay, method: 'TRANSFER' });
+      if (!socioFundsFull) {
+        if (cashPay > 0 && cashAccountId) purchasePayments.push({ accountId: cashAccountId, amount: cashPay, method: 'CASH' });
+        if (transferPay > 0 && transferAccountId) purchasePayments.push({ accountId: transferAccountId, amount: transferPay, method: 'TRANSFER' });
+      }
 
       // Flujo con tesorería: confirmar compra de un vehículo en NEGOCIANDO
       if (isConfirmingPurchase && showPaymentSection) {
@@ -658,9 +669,23 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
       {showPaymentSection && (
         <div className="mt-4 p-3.5 bg-[#0F1419] rounded-xl border border-accent/30">
           <div className="text-sm font-semibold text-[#E6EDF3] mb-1 inline-flex items-center gap-1.5"><CreditCard className="w-4 h-4" /> Pago de la compra</div>
-          <p className="text-[11px] text-[#6E7681] mb-3">
-            Registra cuánto pagas en efectivo y/o por transferencia. Lo que no cubras queda como cuenta por pagar (CxP).
-          </p>
+          {!socioFundsFull && (
+            <p className="text-[11px] text-[#6E7681] mb-3">
+              Registra cuánto pagas en efectivo y/o por transferencia. Lo que no cubras queda como cuenta por pagar (CxP).
+            </p>
+          )}
+          {socioFundsFull && socioAccount && (
+            <div className="mb-3 text-[12px] text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded-md px-2.5 py-2 flex items-start gap-1.5" data-testid="vehicle-form-socio-funds-full">
+              <Handshake className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>La compra se paga completa desde la cuenta del socio: <span className="font-semibold">{socioAccount.name}</span> — <span className="font-semibold">{formatCurrency(price)}</span>. No sale nada de tu tesorería.</span>
+            </div>
+          )}
+          {socioFundsFull && !socioAccount && (
+            <div className="mb-3 text-[12px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2.5 py-2 flex items-start gap-1.5">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>El socio no tiene una cuenta activa para registrar su aporte. Actívale una cuenta de socio para poder confirmar la compra.</span>
+            </div>
+          )}
           {willPromoteStage && (
             <div className="mb-3 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md px-2 py-1.5 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>Al registrar la compra, el vehículo pasará automáticamente de NEGOCIANDO a COMPRADO.</span>
@@ -672,70 +697,74 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             </div>
           )}
 
-          {/* Efectivo (cuentas tipo Caja) */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Banknote className="w-4 h-4" /> Efectivo — Cuenta</label>
-              <select
-                value={cashAccountId}
-                onChange={e => setCashAccountId(e.target.value)}
-                className="input w-full"
-                data-testid="vehicle-form-cash-account"
-              >
-                <option value="">Sin efectivo</option>
-                {cashAccounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Monto en efectivo</label>
-              <input
-                type="number"
-                value={cashAmount}
-                onChange={e => setCashAmount(e.target.value)}
-                className="input w-full"
-                min="0"
-                placeholder="0"
-                data-testid="vehicle-form-cash-amount"
-              />
-            </div>
-          </div>
-          {cashWarning && (
-            <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de efectivo quedará con saldo negativo.</div>
-          )}
+          {!socioFundsFull && (
+            <>
+              {/* Efectivo (cuentas tipo Caja) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Banknote className="w-4 h-4" /> Efectivo — Cuenta</label>
+                  <select
+                    value={cashAccountId}
+                    onChange={e => setCashAccountId(e.target.value)}
+                    className="input w-full"
+                    data-testid="vehicle-form-cash-account"
+                  >
+                    <option value="">Sin efectivo</option>
+                    {cashAccounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">Monto en efectivo</label>
+                  <input
+                    type="number"
+                    value={cashAmount}
+                    onChange={e => setCashAmount(e.target.value)}
+                    className="input w-full"
+                    min="0"
+                    placeholder="0"
+                    data-testid="vehicle-form-cash-amount"
+                  />
+                </div>
+              </div>
+              {cashWarning && (
+                <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de efectivo quedará con saldo negativo.</div>
+              )}
 
-          {/* Transferencia (cuentas tipo Banco) */}
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Landmark className="w-4 h-4" /> Transferencia — Cuenta</label>
-              <select
-                value={transferAccountId}
-                onChange={e => setTransferAccountId(e.target.value)}
-                className="input w-full"
-                data-testid="vehicle-form-transfer-account"
-              >
-                <option value="">Sin transferencia</option>
-                {bankAccounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-[#8B949E] mb-1">Monto en transferencia</label>
-              <input
-                type="number"
-                value={transferAmount}
-                onChange={e => setTransferAmount(e.target.value)}
-                className="input w-full"
-                min="0"
-                placeholder="0"
-                data-testid="vehicle-form-transfer-amount"
-              />
-            </div>
-          </div>
-          {transferWarning && (
-            <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de transferencia quedará con saldo negativo.</div>
+              {/* Transferencia (cuentas tipo Banco) */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1 inline-flex items-center gap-1.5"><Landmark className="w-4 h-4" /> Transferencia — Cuenta</label>
+                  <select
+                    value={transferAccountId}
+                    onChange={e => setTransferAccountId(e.target.value)}
+                    className="input w-full"
+                    data-testid="vehicle-form-transfer-account"
+                  >
+                    <option value="">Sin transferencia</option>
+                    {bankAccounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.currentBalance)})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-[#8B949E] mb-1">Monto en transferencia</label>
+                  <input
+                    type="number"
+                    value={transferAmount}
+                    onChange={e => setTransferAmount(e.target.value)}
+                    className="input w-full"
+                    min="0"
+                    placeholder="0"
+                    data-testid="vehicle-form-transfer-amount"
+                  />
+                </div>
+              </div>
+              {transferWarning && (
+                <div className="mt-1 text-xs text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3 shrink-0" /> La cuenta de transferencia quedará con saldo negativo.</div>
+              )}
+            </>
           )}
 
           {myOwedAmount > 0 && (
@@ -807,7 +836,7 @@ export default function VehicleFormModal({ vehicle, onClose, highlightFields = [
             )}
           </div>
 
-          {overpay && (
+          {!socioFundsFull && overpay && (
             <div className="mt-2 text-xs text-red-400 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> <span>La suma de los pagos supera tu parte a pagar ({formatCurrency(myOwedAmount)}).</span>
             </div>
