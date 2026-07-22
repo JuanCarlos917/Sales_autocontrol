@@ -366,7 +366,10 @@ test.describe('Cuentas dedicadas por socio', () => {
       expect(sale.summary.socioShare).toBe(1);
       expect(sale.summary.reinvestAmount).toBe(2_700_000);
       expect(sale.summary.taxAmount).toBe(900_000);
-      expect(sale.summary.partnerProfit).toBe(6_400_000);
+      // Ganancia del socio NETA de comisión: afterCommission (9M) − reservas
+      // (2.7M + 0.9M) = 5.4M. La comisión ya no se resta contra una CxC por
+      // cobrar; se deposita en la cuenta del socio vía CxP COMMISSION_RETURN.
+      expect(sale.summary.partnerProfit).toBe(5_400_000);
       expect(sale.summary.partnerCommissionOwed).toBe(1_000_000);
       expect(sale.summary.profitToDistribute).toBe(0);
 
@@ -376,12 +379,16 @@ test.describe('Cuentas dedicadas por socio', () => {
       const partnerShare = payables.find((pb) => pb.type === 'PARTNER_SHARE');
       expect(partnerShare).toBeTruthy();
       expect(partnerShare!.thirdPartyId).toBe(tp.id);
-      expect(Number(partnerShare!.totalAmount)).toBe(6_400_000);
+      expect(Number(partnerShare!.totalAmount)).toBe(5_400_000);
 
-      const socioReceivable = payables.find((pb) => pb.type === 'RECEIVABLE');
-      expect(socioReceivable).toBeTruthy();
-      expect(socioReceivable!.thirdPartyId).toBe(tp.id);
-      expect(Number(socioReceivable!.totalAmount)).toBe(1_000_000);
+      // Inversionista 100%: el pool de comisión se deposita en la cuenta del
+      // socio como CxP COMMISSION_RETURN (no se crea la CxC RECEIVABLE del
+      // modelo de socio externo).
+      const commissionReturn = payables.find((pb) => pb.type === 'COMMISSION_RETURN');
+      expect(commissionReturn).toBeTruthy();
+      expect(commissionReturn!.thirdPartyId).toBe(tp.id);
+      expect(Number(commissionReturn!.totalAmount)).toBe(1_000_000);
+      expect(payables.some((pb) => pb.type === 'RECEIVABLE')).toBe(false);
 
       // Sin fila de PROFIT_SHARE: profitToDistribute === 0 no crea CxP vacías.
       expect(payables.filter((pb) => pb.type === 'PROFIT_SHARE')).toHaveLength(0);

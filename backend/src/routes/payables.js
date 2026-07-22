@@ -33,6 +33,17 @@ router.get('/upcoming', async (req, res, next) => {
 });
 
 /**
+ * GET /api/payables/socio-pending
+ * Pendientes de socio: ganancia por pagar (PARTNER_SHARE) y comisión por cobrar.
+ */
+router.get('/socio-pending', async (req, res, next) => {
+  try {
+    const result = await payableService.getSocioPending();
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+/**
  * GET /api/payables
  * Listar todas las CxC/CxP con filtros
  */

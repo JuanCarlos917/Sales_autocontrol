@@ -7,11 +7,16 @@ const { AppError } = require('../middleware/errorHandler');
 const accountService = require('./accountService');
 const { writeTreasuryAudit, snapshotEntity } = require('../utils/treasuryAudit');
 const { lockRow } = require('../utils/txLocks');
+const { buildPaymentTransactions } = require('./payablePaymentEntries');
 
 const PAYABLE_AUDIT_FIELDS = [
   'id', 'type', 'vehicleId', 'thirdPartyId', 'totalAmount', 'paidAmount',
   'status', 'description', 'dueDate', 'createdAt',
 ];
+
+// Prefijo de la CxC de comisión que el socio adeuda al fondo. Distingue esta
+// RECEIVABLE de la CxC de venta ("Venta vehículo …"), igual que isSaleReceivable.
+const SOCIO_COMMISSION_PREFIX = 'Comisión socio venta';
 
 // Parsea una fecha string (YYYY-MM-DD) a Date en zona horaria de Colombia
 // Evita el problema de que new Date("2026-04-19") se interprete como UTC
@@ -196,11 +201,16 @@ const addPayment = async (payableId, paymentData, userId) => {
     const isCommission = payable.type === 'COMMISSION';
     const isProfitShare = payable.type === 'PROFIT_SHARE';
     const isPartnerShare = payable.type === 'PARTNER_SHARE';
+    const isCapitalReturn = payable.type === 'CAPITAL_RETURN';
+    const isCommissionReturn = payable.type === 'COMMISSION_RETURN';
     const transactionType = isReceivable ? 'INCOME' : 'EXPENSE';
-    // COMMISSION, PROFIT_SHARE y PARTNER_SHARE son PAYABLE pero categorizan distinto:
-    // no son VEHICLE_PURCHASE (contaminarían el costo del vehículo). COMMISSION es
-    // egreso por comisión al vendedor; PROFIT_SHARE es reparto de ganancia al
-    // inversionista; PARTNER_SHARE es la ganancia que se le paga al socio del carro.
+    // COMMISSION, PROFIT_SHARE, PARTNER_SHARE, CAPITAL_RETURN y COMMISSION_RETURN
+    // son PAYABLE pero categorizan distinto: no son VEHICLE_PURCHASE (contaminarían
+    // el costo del vehículo). COMMISSION es egreso por comisión al vendedor;
+    // PROFIT_SHARE es reparto de ganancia al inversionista; PARTNER_SHARE es la
+    // ganancia que se le paga al socio del carro; CAPITAL_RETURN es la devolución
+    // del capital aportado por el socio; COMMISSION_RETURN es la comisión que el
+    // socio debe devolver al fondo.
     const transactionCategory = isReceivable
       ? (payable.vehicleId ? 'VEHICLE_SALE_PARTIAL' : 'OTHER_INCOME')
       : isCommission
@@ -209,22 +219,43 @@ const addPayment = async (payableId, paymentData, userId) => {
           ? 'PROFIT_SHARE'
           : isPartnerShare
             ? 'PARTNER_SHARE'
-            : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
+            : isCapitalReturn
+              ? 'CAPITAL_RETURN'
+              : isCommissionReturn
+                ? 'COMMISSION_RETURN'
+                : (payable.vehicleId ? 'VEHICLE_PURCHASE' : 'OTHER_EXPENSE');
 
-    // 1. Crear la transaccion de tesoreria
-    const transaction = await tx.transaction.create({
-      data: {
-        accountId,
-        type: transactionType,
-        category: transactionCategory,
-        amount: paymentAmount,
-        description: description || `Pago ${isReceivable ? 'recibido' : 'realizado'}: ${payable.description || ''}`,
-        date: parseLocalDate(date),
-        vehicleId: payable.vehicleId,
-        thirdPartyId: payable.thirdPartyId,
-        createdBy: userId
-      }
+    // Enrutamiento FASE B: si la CxP no es RECEIVABLE y el tercero tiene una
+    // cuenta SOCIO activa, el pago sale de la cuenta de la empresa y entra a
+    // la cuenta del socio, preservando la categoría en ambos asientos.
+    const socioAccount = (!isReceivable && payable.thirdPartyId)
+      ? await tx.account.findFirst({
+          where: { type: 'SOCIO', thirdPartyId: payable.thirdPartyId, isActive: true },
+        })
+      : null;
+
+    const { entries, paymentTransactionIndex } = buildPaymentTransactions({
+      transactionType,
+      transactionCategory,
+      accountId,
+      socioAccount,
+      isReceivable,
+      paymentAmount,
+      description,
+      payableDescription: payable.description,
+      date: parseLocalDate(date),
+      vehicleId: payable.vehicleId,
+      thirdPartyId: payable.thirdPartyId,
+      userId,
     });
+
+    // 1. Crear la(s) transaccion(es) de tesoreria
+    const createdTransactions = [];
+    for (const data of entries) {
+      createdTransactions.push(await tx.transaction.create({ data }));
+    }
+    // La transacción que salda la CxP (egreso/único asiento) liga el pago.
+    const transaction = createdTransactions[paymentTransactionIndex];
 
     // 2. Crear el registro de pago
     const payment = await tx.payablePayment.create({
@@ -335,11 +366,12 @@ const getSummary = async () => {
   });
 
   // Total por pagar (CxP) — incluye PAYABLE de compras, COMMISSION de comisiones,
-  // PROFIT_SHARE de ganancia a inversionistas y PARTNER_SHARE de ganancia de socio
-  // ya devengadas. Las cuatro son deudas reales del negocio.
+  // PROFIT_SHARE de ganancia a inversionistas, PARTNER_SHARE de ganancia de socio
+  // ya devengadas y CAPITAL_RETURN de devolución de capital al socio. Las cinco
+  // son deudas reales del negocio.
   const payables = await prisma.payable.aggregate({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN', 'COMMISSION_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] }
     },
     _sum: { totalAmount: true, paidAmount: true },
@@ -357,7 +389,7 @@ const getSummary = async () => {
 
   const overduePayables = await prisma.payable.count({
     where: {
-      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] },
+      type: { in: ['PAYABLE', 'COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN', 'COMMISSION_RETURN'] },
       status: { in: ['PENDING', 'PARTIAL'] },
       dueDate: { lt: now }
     }
@@ -407,6 +439,73 @@ const getUpcoming = async (days = 7) => {
   return upcoming;
 };
 
+/**
+ * Pendientes de socio: ganancia por pagar (PARTNER_SHARE) y comisión por
+ * cobrar (RECEIVABLE "Comisión socio venta"), agrupadas por vehículo.
+ */
+const getSocioPending = async () => {
+  const PENDING = { in: ['PENDING', 'PARTIAL'] };
+  const include = {
+    vehicle: { select: { id: true, plate: true, brand: true, model: true } },
+    thirdParty: { select: { id: true, name: true } },
+  };
+
+  const [capitalRows, profitRows, commissionReturnRows, commissionRows] = await Promise.all([
+    prisma.payable.findMany({
+      where: { type: 'CAPITAL_RETURN', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.payable.findMany({
+      where: { type: 'PARTNER_SHARE', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.payable.findMany({
+      where: { type: 'COMMISSION_RETURN', status: PENDING },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.payable.findMany({
+      where: {
+        type: 'RECEIVABLE',
+        status: PENDING,
+        description: { startsWith: SOCIO_COMMISSION_PREFIX },
+      },
+      include,
+      orderBy: { createdAt: 'asc' },
+    }),
+  ]);
+
+  const toBucket = (payables) => {
+    const items = payables.map((p) => {
+      const totalAmount = parseFloat(p.totalAmount);
+      const paidAmount = parseFloat(p.paidAmount);
+      return {
+        id: p.id,
+        vehicleId: p.vehicleId,
+        vehicle: p.vehicle,
+        thirdParty: p.thirdParty,
+        totalAmount,
+        paidAmount,
+        pending: totalAmount - paidAmount,
+      };
+    });
+    return {
+      total: items.reduce((sum, it) => sum + it.pending, 0),
+      count: items.length,
+      items,
+    };
+  };
+
+  return {
+    capital: toBucket(capitalRows),
+    profit: toBucket(profitRows),
+    commissionReturn: toBucket(commissionReturnRows),
+    commission: toBucket(commissionRows),
+  };
+};
+
 module.exports = {
   getAll,
   getById,
@@ -414,5 +513,6 @@ module.exports = {
   addPayment,
   cancel,
   getSummary,
-  getUpcoming
+  getUpcoming,
+  getSocioPending
 };

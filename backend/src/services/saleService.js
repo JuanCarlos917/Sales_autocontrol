@@ -290,7 +290,43 @@ const registerSale = async (vehicleId, saleData, userId) => {
           },
         });
       }
-      if (socio && dist.partnerCommissionOwed > 0) {
+      // Devolución de capital al socio (Modelo B): lo que aportó en la compra
+      // (partnerContribution) se le devuelve como CxP dedicada; al pagarla, el
+      // enrutamiento FASE B la deposita en su cuenta SOCIO.
+      const partnerCapital = Number(vehicle.partnerContribution || 0);
+      if (socio && partnerCapital > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'CAPITAL_RETURN',
+            status: 'PENDING',
+            totalAmount: partnerCapital,
+            paidAmount: 0,
+            description: `Devolución de capital socio ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
+      // Comisión del socio:
+      //  - Inversionista 100%: el pool de comisión se DEPOSITA en su cuenta como
+      //    CxP COMMISSION_RETURN (FASE B); él paga a los vendedores desde su cuenta.
+      //  - Externo parcial: conserva el modelo actual (CxC "Comisión socio venta"
+      //    que el fondo le cobra por su % de la comisión).
+      if (socio && socio.isInvestor && dist.commissionPool > 0) {
+        await tx.payable.create({
+          data: {
+            type: 'COMMISSION_RETURN',
+            status: 'PENDING',
+            totalAmount: dist.commissionPool,
+            paidAmount: 0,
+            description: `Comisión por pagar socio ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      } else if (socio && !socio.isInvestor && dist.partnerCommissionOwed > 0) {
         await tx.payable.create({
           data: {
             type: 'RECEIVABLE',
@@ -611,7 +647,7 @@ const cancelSale = async (vehicleId, userId) => {
 
   // Verificar si hay Payables COMMISSION, PROFIT_SHARE o PARTNER_SHARE asociadas
   const commissionPayables = await prisma.payable.findMany({
-    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE'] } },
+    where: { vehicleId, type: { in: ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'CAPITAL_RETURN', 'COMMISSION_RETURN'] } },
   });
   if (commissionPayables.length > 0) {
     throw new AppError(

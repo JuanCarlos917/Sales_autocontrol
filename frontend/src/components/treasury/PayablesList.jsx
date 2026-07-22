@@ -222,6 +222,7 @@ export default function PayablesList({
           totalAmount={parseFloat(selectedPayable.totalAmount)}
           paidAmount={parseFloat(selectedPayable.paidAmount)}
           defaultDescription={selectedPayable.description || ''}
+          thirdPartyId={selectedPayable.thirdPartyId}
           loading={processingPayment}
         />
       )}

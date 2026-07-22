@@ -337,7 +337,7 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [],
     // Inversionista 100%: reservas sobre todo, el socio se queda el resto, fondo 0.
     reinvestAmount = roundCop((Number(cfg.reinvestPct) / 100) * afterCommission);
     taxAmount = roundCop((Number(cfg.taxPct) / 100) * afterCommission);
-    partnerProfit = grossProfit - reinvestAmount - taxAmount;
+    partnerProfit = afterCommission - reinvestAmount - taxAmount;
     profitToDistribute = 0;
   } else {
     // Externo parcial: reservas solo sobre la parte del fondo; socio sin reservas.

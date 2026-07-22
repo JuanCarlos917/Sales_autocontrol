@@ -95,6 +95,19 @@ test('item: gasto legacy COMISION no rompe la identidad de la cascada', () => {
   );
 });
 
+test('buildCommissionVehicleItem: incluye socioInvestor cuando se pasa', () => {
+  const item = buildCommissionVehicleItem({
+    vehicle, payables: [mkPayable()], bucketTransfers: [],
+    socioInvestor: { thirdPartyId: 'owner-self' },
+  });
+  assert.deepEqual(item.socioInvestor, { thirdPartyId: 'owner-self' });
+});
+
+test('buildCommissionVehicleItem: socioInvestor null por defecto', () => {
+  const item = buildCommissionVehicleItem({ vehicle, payables: [mkPayable()], bucketTransfers: [] });
+  assert.equal(item.socioInvestor, null);
+});
+
 // ── buildInvestorVehicleItem (cascada de GANANCIA, no de comisión) ──
 // A diferencia de buildCommissionVehicleItem: NO usa calculateCommissionBase
 // (sin `participation`, sin excluir gastos COMISION); grossProfit = salePrice
