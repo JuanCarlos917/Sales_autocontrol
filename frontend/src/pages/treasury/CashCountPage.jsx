@@ -35,7 +35,8 @@ export default function CashCountPage() {
   const loadAccounts = async () => {
     try {
       const { data } = await accountsApi.getAll();
-      setAccounts(data);
+      // Solo cuentas activas: no se hacen arqueos de cuentas inactivas.
+      setAccounts(data.filter((a) => a.isActive !== false));
     } catch (err) {
       console.error('Error loading accounts:', err);
     }

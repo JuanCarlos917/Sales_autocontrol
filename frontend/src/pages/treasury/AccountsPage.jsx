@@ -22,6 +22,7 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [showInactive, setShowInactive] = useState(false);
   const [form, setForm] = useState({ name: '', type: 'CASH', bank: '', accountNumber: '', initialBalance: 0 });
 
   useEffect(() => {
@@ -83,24 +84,50 @@ export default function AccountsPage() {
     }
   };
 
+  const handleActivate = async (id) => {
+    if (!confirm('Activar esta cuenta?')) return;
+    try {
+      await accountsApi.update(id, { isActive: true });
+      loadAccounts();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al activar');
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="text-[#8B949E]">Cargando...</div></div>;
   }
 
+  const inactiveCount = accounts.filter((a) => a.isActive === false).length;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-xl font-bold text-[#E6EDF3]">Cuentas</h2>
-        {!isViewer && (
-          <button onClick={openCreate} className="btn-primary text-sm">+ Nueva Cuenta</button>
-        )}
+        <div className="flex items-center gap-4">
+          {inactiveCount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-[#8B949E] cursor-pointer select-none" data-testid="toggle-show-inactive">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="accent-accent"
+              />
+              Mostrar inactivas ({inactiveCount})
+            </label>
+          )}
+          {!isViewer && (
+            <button onClick={openCreate} className="btn-primary text-sm">+ Nueva Cuenta</button>
+          )}
+        </div>
       </div>
 
       {(() => {
-        const cashAccounts = accounts.filter((a) => a.type === 'CASH');
-        const bankAccounts = accounts.filter((a) => a.type === 'BANK');
-        const socioAccounts = accounts.filter((a) => a.type === 'SOCIO');
-        const budgetAccounts = accounts.filter((a) => a.type === 'BUDGET');
+        const visibleAccounts = showInactive ? accounts : accounts.filter((a) => a.isActive !== false);
+        const cashAccounts = visibleAccounts.filter((a) => a.type === 'CASH');
+        const bankAccounts = visibleAccounts.filter((a) => a.type === 'BANK');
+        const socioAccounts = visibleAccounts.filter((a) => a.type === 'SOCIO');
+        const budgetAccounts = visibleAccounts.filter((a) => a.type === 'BUDGET');
 
         const renderCard = (account) => (
           <div key={account.id} className={`card p-4 ${account.isActive === false ? 'opacity-60' : ''}`} data-testid={`account-card-${account.id}`}>
@@ -143,6 +170,15 @@ export default function AccountsPage() {
                 />
                 <button onClick={() => handleDelete(account.id)} className="btn-ghost text-xs text-red-400 hover:text-red-300">Eliminar</button>
               </div>
+            )}
+            {!isViewer && account.isActive === false && (
+              <button
+                onClick={() => handleActivate(account.id)}
+                className="btn-ghost text-xs text-green-400 hover:text-green-300 w-full"
+                data-testid={`account-${account.id}-activate`}
+              >
+                Activar
+              </button>
             )}
           </div>
         );
