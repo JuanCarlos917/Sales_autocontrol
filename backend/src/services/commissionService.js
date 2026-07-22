@@ -327,7 +327,7 @@ function buildPayableRoles(payables, pool) {
  *   de montos (total/pool) para data legacy sin participante.
  * - buckets: montos informativos de reinversión/impuestos; null si no hay.
  */
-function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
+function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers, socioInvestor = null }) {
   const { grossProfitGlobal, commissionBase } = calculateCommissionBase(vehicle);
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
   // Excluye COMISION legacy (igual que calculateCommissionBase) para que la
@@ -367,6 +367,7 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers }) {
     },
     roles,
     buckets,
+    socioInvestor,
     hasPending: roles.some((r) => r.status === 'PENDING' || r.status === 'PARTIAL'),
   };
 }
@@ -486,8 +487,28 @@ async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMIS
     }
   }
 
-  const items = [...byVehicle.values()].map(({ vehicle, payables: ps }) =>
-    buildCommissionVehicleItem({ vehicle, payables: ps, bucketTransfers: bucketByVehicle.get(vehicle.id) || [] }),
+  // Config para resolver el socio inversionista de cada vehículo (no toca DB en
+  // resolveSocio; degrada a null si los settings de comisiones no existen).
+  let socioCfg = null;
+  try {
+    socioCfg = await loadCommissionConfig(prismaOrTx);
+  } catch (err) {
+    if (!(err instanceof AppError && err.message.startsWith('Settings de comisiones faltantes'))) throw err;
+  }
+
+  const items = await Promise.all(
+    [...byVehicle.values()].map(async ({ vehicle, payables: ps }) => {
+      let socioInvestor = null;
+      if (socioCfg) {
+        try {
+          const socio = await resolveSocio(prismaOrTx, vehicle, socioCfg);
+          if (socio && socio.isInvestor) socioInvestor = { thirdPartyId: socio.thirdPartyId };
+        } catch { socioInvestor = null; } // invariantes ya validadas al vender
+      }
+      return buildCommissionVehicleItem({
+        vehicle, payables: ps, bucketTransfers: bucketByVehicle.get(vehicle.id) || [], socioInvestor,
+      });
+    }),
   );
 
   const filtered = status === 'pending'
