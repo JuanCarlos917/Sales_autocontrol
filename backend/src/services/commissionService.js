@@ -503,7 +503,12 @@ async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMIS
         try {
           const socio = await resolveSocio(prismaOrTx, vehicle, socioCfg);
           if (socio && socio.isInvestor) socioInvestor = { thirdPartyId: socio.thirdPartyId };
-        } catch { socioInvestor = null; } // invariantes ya validadas al vender
+        } catch (err) {
+          // Solo suprimimos las invariantes de resolveSocio (AppError, ya validadas
+          // al vender). Cualquier otro error debe propagarse.
+          if (!(err instanceof AppError)) throw err;
+          socioInvestor = null;
+        }
       }
       return buildCommissionVehicleItem({
         vehicle, payables: ps, bucketTransfers: bucketByVehicle.get(vehicle.id) || [], socioInvestor,
