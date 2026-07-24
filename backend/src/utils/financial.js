@@ -294,11 +294,33 @@ function calculateDealMetrics(chain) {
 }
 
 /**
+ * Ganancia directa agregada de una cadena de cruces (cierre de negocio).
+ * Mismo criterio de costo que calculateSaleDistribution: negotiatedValue
+ * para eslabones fromTradeIn, purchasePrice para el resto.
+ */
+function calculateChainGrossProfit(members) {
+  const acc = { salePrice: 0, purchaseCost: 0, directExpenses: 0, plates: [] };
+  for (const m of members || []) {
+    const expenses = (m.expenses || [])
+      .filter((e) => !e.deletedAt)
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+    const cost = m.fromTradeIn
+      ? Number(m.negotiatedValue || m.purchasePrice || 0)
+      : Number(m.purchasePrice || 0);
+    acc.salePrice += Number(m.salePrice || 0);
+    acc.purchaseCost += cost;
+    acc.directExpenses += expenses;
+    acc.plates.push(m.plate);
+  }
+  return { ...acc, grossProfit: acc.salePrice - acc.purchaseCost - acc.directExpenses };
+}
+
+/**
  * Cascada de distribución de una venta (fuente única de verdad).
  * Recibe vendedores e inversionistas YA resueltos (con sharePct que suman 100).
  * Devuelve montos enteros COP; cada bloque (comisión/ganancia) suma exacto.
  */
-function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [], socio = null } = {}) {
+function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [], socio = null, overrideGrossProfit = null } = {}) {
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
   const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const salePrice = Number(vehicle.salePrice || 0);
@@ -306,14 +328,17 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [],
     ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
     : Number(vehicle.purchasePrice || 0);
 
-  const grossProfit = salePrice - purchaseCost - directExpenses;
+  const grossProfit = overrideGrossProfit != null
+    ? Number(overrideGrossProfit)
+    : salePrice - purchaseCost - directExpenses;
   const empty = { grossProfit, skip: true, commissionPool: 0, afterCommission: 0,
     reinvestAmount: 0, taxAmount: 0, profitToDistribute: 0, sellerRows: [], investorRows: [],
     partnerProfit: 0, partnerCommissionOwed: 0, socioShare: 0, socioIsInvestor: false, partnerThirdPartyId: null };
   // Sin base de costo (vehículo vendido sin precio de compra registrado, o
   // cruce sin valor negociado), no hay forma de calcular ganancia real:
-  // evitamos tratar el salePrice completo como ganancia.
-  if (purchaseCost <= 0) return empty;
+  // evitamos tratar el salePrice completo como ganancia. Con override (cierre
+  // de negocio), la validación de base de costo la hace el caller sobre la cadena.
+  if (overrideGrossProfit == null && purchaseCost <= 0) return empty;
   if (grossProfit <= 0) return empty;
 
   const hasSellers = Array.isArray(sellers) && sellers.length > 0;
@@ -376,4 +401,4 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [],
   };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics, calculateSaleDistribution };
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics, calculateChainGrossProfit, calculateSaleDistribution };
