@@ -195,3 +195,124 @@ test('cruce + socio EXTERNO parcial: flujo inmediato intacto (COMMISSION + PARTN
   assert.ok(socioRec);
   assert.equal(res.summary.deferred, undefined);
 });
+
+// ── Cierre de cadena (Task 5) ───────────────────────────────────
+// B (fromTradeIn de A) se vende sin nuevo cruce → liquida el negocio.
+const NODE_A_SOCIO = {
+  id: 'veh-a', plate: 'AAA111', stage: 'VENDIDO', salePrice: 50_000_000,
+  purchasePrice: 40_000_000, negotiatedValue: null, fromTradeIn: false,
+  saleDate: new Date('2026-07-01'), sourceVehicleId: null,
+  partnerId: 'socio-cap', participation: 0, partnerContribution: 40_000_000,
+  expenses: [], tradeInIds: [], tradeInsReceived: [{ id: 'veh-b' }],
+};
+const NODE_A_FUND = { ...NODE_A_SOCIO, partnerId: null, participation: 1, partnerContribution: null };
+// Nodo de B "en DB dentro de la tx": ya VENDIDO con salePrice (el update del
+// paso 1 de registerSale es visible dentro de la misma transacción).
+const NODE_B = (salePrice) => ({
+  id: 'veh-b', plate: 'BBB222', stage: 'VENDIDO', salePrice,
+  purchasePrice: null, negotiatedValue: 20_000_000, fromTradeIn: true,
+  saleDate: new Date('2026-07-20'), sourceVehicleId: 'veh-a',
+  partnerId: null, participation: 1, partnerContribution: null,
+  expenses: [{ amount: 1_000_000, deletedAt: null }], tradeInsReceived: [],
+});
+// Vehículo B tal como lo ve findUnique ANTES de la venta.
+const VEHICLE_B = {
+  id: 'veh-b', plate: 'BBB222', stage: 'DISPONIBLE', userId: 'user-1',
+  purchasePrice: null, negotiatedValue: 20_000_000, fromTradeIn: true,
+  sourceVehicleId: 'veh-a', participation: 1, partnerId: null, partnerContribution: null,
+  expenses: [{ amount: 1_000_000, deletedAt: null }],
+};
+
+test('cierre con socio 100%: cascada sobre 14M; COMMISSION_RETURN + PARTNER_SHARE + CAPITAL_RETURN remanente', async () => {
+  ctx = makeCtx({
+    vehicle: VEHICLE_B,
+    chainNodes: [NODE_A_SOCIO, NODE_B(25_000_000)],
+    // Parcial de capital creado al vender A (rama defer).
+    priorPayables: [{ vehicleId: 'veh-a', type: 'CAPITAL_RETURN', thirdPartyId: 'socio-cap', totalAmount: 30_000_000 }],
+    settings: SOCIO_SETTINGS,
+  });
+  const res = await saleService.registerSale('veh-b', {
+    salePrice: 25_000_000, paymentType: 'CASH', buyerId: 'buyer-1',
+    cashPayment: { accountId: 'acc-1', amount: 25_000_000 },
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'user-1');
+
+  // Chain gross = (50−40−0) + (25−20−1) = 14M; pool 10% = 1.4M.
+  const comm = ctx.created.payablesByType.COMMISSION || [];
+  assert.equal(comm.length, 1);
+  assert.equal(comm[0].totalAmount, 1_400_000);
+  const commRet = ctx.created.payablesByType.COMMISSION_RETURN || [];
+  assert.equal(commRet[0].totalAmount, 1_400_000);
+  assert.equal(commRet[0].thirdPartyId, 'socio-cap');
+  // afterCommission 12.6M − reinvest 3.78M − tax 1.26M = 7.56M al socio.
+  const ps = ctx.created.payablesByType.PARTNER_SHARE || [];
+  assert.equal(ps[0].totalAmount, 7_560_000);
+  // Capital remanente: 40M − 30M ya adeudados = 10M.
+  const caps = ctx.created.payablesByType.CAPITAL_RETURN || [];
+  assert.equal(caps.length, 1);
+  assert.equal(caps[0].totalAmount, 10_000_000);
+  // Inversionista 100% → sin PROFIT_SHARE; reservas con cashRatio 1.
+  assert.equal(count(ctx.created, 'PROFIT_SHARE'), 0);
+  assert.equal(ctx.created.transfers.length, 2);
+  assert.deepEqual(res.summary.chain, { plates: ['AAA111', 'BBB222'], grossProfit: 14_000_000 });
+});
+
+test('cierre compat: A ya distribuyó → base solo B (4M), cascada de fondo', async () => {
+  ctx = makeCtx({
+    vehicle: VEHICLE_B,
+    chainNodes: [NODE_A_SOCIO, NODE_B(25_000_000)],
+    priorPayables: [{ vehicleId: 'veh-a', type: 'COMMISSION', thirdPartyId: 'hermano', totalAmount: 1 }],
+  });
+  const res = await saleService.registerSale('veh-b', {
+    salePrice: 25_000_000, paymentType: 'CASH', buyerId: 'buyer-1',
+    cashPayment: { accountId: 'acc-1', amount: 25_000_000 },
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'user-1');
+
+  // Base 4M: pool 400k; after 3.6M; reinvest 1.08M; tax 360k; profit 2.16M (50/25/25).
+  assert.equal((ctx.created.payablesByType.COMMISSION || [])[0].totalAmount, 400_000);
+  const shares = (ctx.created.payablesByType.PROFIT_SHARE || []).map((p) => p.totalAmount).sort((a, b) => b - a);
+  assert.deepEqual(shares, [1_080_000, 540_000, 540_000]);
+  // A excluido → su socio NO lidera: sin PARTNER_SHARE ni COMMISSION_RETURN.
+  assert.equal(count(ctx.created, 'PARTNER_SHARE'), 0);
+  assert.equal(count(ctx.created, 'COMMISSION_RETURN'), 0);
+  assert.deepEqual(res.summary.chain.plates, ['BBB222']);
+});
+
+test('cierre sin ganancia: skip de cascada pero CAPITAL_RETURN remanente sí se crea', async () => {
+  // B se vende en 5M → chain = 10M + (5−20−1) = −6M.
+  ctx = makeCtx({
+    vehicle: VEHICLE_B,
+    chainNodes: [NODE_A_SOCIO, NODE_B(5_000_000)],
+    priorPayables: [{ vehicleId: 'veh-a', type: 'CAPITAL_RETURN', thirdPartyId: 'socio-cap', totalAmount: 30_000_000 }],
+    settings: SOCIO_SETTINGS,
+  });
+  await saleService.registerSale('veh-b', {
+    salePrice: 5_000_000, paymentType: 'CASH', buyerId: 'buyer-1',
+    cashPayment: { accountId: 'acc-1', amount: 5_000_000 },
+  }, 'user-1');
+
+  assert.equal(count(ctx.created, 'COMMISSION'), 0);
+  assert.equal(count(ctx.created, 'COMMISSION_RETURN'), 0);
+  assert.equal(count(ctx.created, 'PARTNER_SHARE'), 0);
+  assert.equal(ctx.created.transfers.length, 0);
+  const caps = ctx.created.payablesByType.CAPITAL_RETURN || [];
+  assert.equal(caps.length, 1);
+  assert.equal(caps[0].totalAmount, 10_000_000);
+});
+
+test('cierre sin socio en la cadena: cascada de fondo sobre 14M', async () => {
+  ctx = makeCtx({ vehicle: VEHICLE_B, chainNodes: [NODE_A_FUND, NODE_B(25_000_000)] });
+  await saleService.registerSale('veh-b', {
+    salePrice: 25_000_000, paymentType: 'CASH', buyerId: 'buyer-1',
+    cashPayment: { accountId: 'acc-1', amount: 25_000_000 },
+    participants: [{ thirdPartyId: 'hermano', role: 'CERRADOR', sharePct: 100 }],
+  }, 'user-1');
+
+  assert.equal((ctx.created.payablesByType.COMMISSION || [])[0].totalAmount, 1_400_000);
+  // after 12.6M − 3.78M − 1.26M = 7.56M repartidos 50/25/25.
+  const shares = (ctx.created.payablesByType.PROFIT_SHARE || []).map((p) => p.totalAmount).sort((a, b) => b - a);
+  assert.deepEqual(shares, [3_780_000, 1_890_000, 1_890_000]);
+  assert.equal(count(ctx.created, 'PARTNER_SHARE'), 0);
+  assert.equal(count(ctx.created, 'COMMISSION_RETURN'), 0);
+});

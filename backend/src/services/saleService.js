@@ -5,7 +5,8 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const commissionService = require('./commissionService');
-const { calculateSaleDistribution } = require('../utils/financial');
+const { calculateSaleDistribution, calculateChainGrossProfit } = require('../utils/financial');
+const { loadChainMembers } = require('../utils/dealChain');
 
 // Un vehículo con socio puede tener DOS CxP tipo RECEIVABLE: la de la venta
 // financiada (saldo pendiente del comprador) y la de la comisión del socio.
@@ -259,8 +260,45 @@ const registerSale = async (vehicleId, saleData, userId) => {
       };
       const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
       const investors = await commissionService.resolveInvestors(tx, cfg);
-      const socio = socioVenta;
-      const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
+      // Cierre de negocio: vehículo recibido en cruce que se vende SIN nuevo
+      // cruce. La cascada corre UNA vez sobre la ganancia agregada de los
+      // eslabones sin distribución previa; el socio se resuelve desde la cadena.
+      const isClosure = vehicle.fromTradeIn === true && !hasTradeIn;
+      let socio = socioVenta;
+      let chainInfo = null;
+      let socioCapitalToReturn = Number(vehicle.partnerContribution || 0);
+      let dist;
+
+      if (isClosure) {
+        const members = await loadChainMembers(tx, vehicleId);
+        const otherIds = members.filter((m) => m.id !== vehicleId).map((m) => m.id);
+        const distributed = await commissionService.findDistributedVehicleIds(tx, otherIds);
+        const eligible = members.filter(
+          (m) => m.id === vehicleId || (m.stage === 'VENDIDO' && !distributed.has(m.id)),
+        );
+        const chain = calculateChainGrossProfit(eligible);
+        socio = await commissionService.resolveChainSocio(tx, eligible, cfg);
+        chainInfo = { plates: chain.plates, grossProfit: chain.grossProfit };
+        dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, {
+          sellers, investors, socio,
+          // Sin base de costo en la cadena no hay ganancia calculable → skip.
+          overrideGrossProfit: chain.purchaseCost > 0 ? chain.grossProfit : 0,
+        });
+        if (socio) {
+          const prior = await tx.payable.aggregate({
+            _sum: { totalAmount: true },
+            where: {
+              vehicleId: { in: members.map((m) => m.id) },
+              type: 'CAPITAL_RETURN',
+              thirdPartyId: socio.thirdPartyId,
+            },
+          });
+          socioCapitalToReturn =
+            Number(socio.vehicle.partnerContribution || 0) - Number(prior._sum.totalAmount || 0);
+        }
+      } else {
+        dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
+      }
 
       if (!dist.skip) {
         // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
@@ -314,24 +352,6 @@ const registerSale = async (vehicleId, saleData, userId) => {
               totalAmount: dist.partnerProfit,
               paidAmount: 0,
               description: `Ganancia socio venta ${vehicle.plate}`,
-              vehicleId,
-              thirdPartyId: socio.thirdPartyId,
-              createdBy: userId,
-            },
-          });
-        }
-        // Devolución de capital al socio (Modelo B): lo que aportó en la compra
-        // (partnerContribution) se le devuelve como CxP dedicada; al pagarla, el
-        // enrutamiento FASE B la deposita en su cuenta SOCIO.
-        const partnerCapital = Number(vehicle.partnerContribution || 0);
-        if (socio && partnerCapital > 0) {
-          await tx.payable.create({
-            data: {
-              type: 'CAPITAL_RETURN',
-              status: 'PENDING',
-              totalAmount: partnerCapital,
-              paidAmount: 0,
-              description: `Devolución de capital socio ${vehicle.plate}`,
               vehicleId,
               thirdPartyId: socio.thirdPartyId,
               createdBy: userId,
@@ -464,6 +484,27 @@ const registerSale = async (vehicleId, saleData, userId) => {
           investors: investorResults,
           transfers: transferResults,
         };
+      }
+      // Devolución de capital al socio (Modelo B): en flujo normal solo con
+      // utilidad (comportamiento histórico); en cierre de cadena siempre —
+      // el capital del socio no depende de la ganancia del negocio.
+      if (socio && socioCapitalToReturn > 0 && (isClosure || !dist.skip)) {
+        await tx.payable.create({
+          data: {
+            type: 'CAPITAL_RETURN',
+            status: 'PENDING',
+            totalAmount: socioCapitalToReturn,
+            paidAmount: 0,
+            description: `Devolución de capital socio ${vehicle.plate}`,
+            vehicleId,
+            thirdPartyId: socio.thirdPartyId,
+            createdBy: userId,
+          },
+        });
+      }
+      if (chainInfo) {
+        if (distributionSummary) distributionSummary.chain = chainInfo;
+        else distributionSummary = { chain: chainInfo, skipped: true };
       }
     }
 
