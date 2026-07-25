@@ -267,6 +267,45 @@ async function resolveSocio(prismaOrTx, vehicle, cfg) {
   return { thirdPartyId: vehicle.partnerId, share, isInvestor };
 }
 
+// Tipos de CxP que marcan que un vehículo YA distribuyó su venta (comisión/
+// ganancia). CAPITAL_RETURN queda fuera: el parcial del socio en una venta
+// diferida por cruce no cuenta como distribución.
+const DISTRIBUTION_PAYABLE_TYPES = ['COMMISSION', 'PROFIT_SHARE', 'PARTNER_SHARE', 'COMMISSION_RETURN'];
+
+/**
+ * IDs de vehículos (del subset dado) que ya tienen distribución propia.
+ * Se usa al cerrar un negocio con cruce para excluir eslabones que vendieron
+ * con el flujo inmediato (pre-feature o socio externo parcial).
+ */
+async function findDistributedVehicleIds(prismaOrTx, vehicleIds) {
+  if (!Array.isArray(vehicleIds) || vehicleIds.length === 0) return new Set();
+  const rows = await prismaOrTx.payable.findMany({
+    where: { vehicleId: { in: vehicleIds }, type: { in: DISTRIBUTION_PAYABLE_TYPES } },
+    select: { vehicleId: true },
+  });
+  return new Set(rows.map((r) => r.vehicleId));
+}
+
+/**
+ * Socio de una cadena de cruces al cierre: el primer eslabón (orden de linaje)
+ * con partnerId, resuelto con resolveSocio. Solo un socio INVERSIONISTA 100%
+ * lidera la cadena; externo parcial (o invariantes rotas porque el equipo de
+ * inversionistas cambió después de la venta) → null (cascada de fondo).
+ * Devuelve el socio con `vehicle` = nodo de cadena dueño del partnerId.
+ */
+async function resolveChainSocio(prismaOrTx, members, cfg) {
+  const withPartner = (members || []).find((m) => m.partnerId);
+  if (!withPartner) return null;
+  try {
+    const socio = await resolveSocio(prismaOrTx, withPartner, cfg);
+    if (!socio || !socio.isInvestor) return null;
+    return { ...socio, vehicle: withPartner };
+  } catch (err) {
+    if (err instanceof AppError) return null;
+    throw err;
+  }
+}
+
 /**
  * Calcula los tres "pools" (montos absolutos) a partir de la base de comisión.
  */
@@ -604,6 +643,8 @@ module.exports = {
   resolveSellers,
   resolveInvestors,
   resolveSocio,
+  findDistributedVehicleIds,
+  resolveChainSocio,
   calculatePools,
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience
@@ -613,5 +654,6 @@ module.exports = {
   buildPersonSummary,
   getSummary,
   COMMISSION_CONFIG_KEYS,
+  DISTRIBUTION_PAYABLE_TYPES,
   MAX_PARTICIPANTS,
 };
