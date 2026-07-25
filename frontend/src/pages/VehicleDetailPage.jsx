@@ -404,6 +404,35 @@ export default function VehicleDetailPage() {
         </div>
       )}
 
+      {/* Card: distribución diferida — venta con cruce (comisión única al cierre del negocio) */}
+      {saleSummary?.deferred && (
+        <div
+          className="card mb-4 p-4 border border-[#58A6FF]/40 bg-[#58A6FF]/5 flex items-start justify-between gap-3"
+          data-testid="deferred-distribution-card"
+        >
+          <div className="flex items-start gap-2.5">
+            <Handshake className="w-4 h-4 mt-0.5 shrink-0 text-[#58A6FF]" />
+            <div>
+              <div className="text-sm font-semibold text-[#E6EDF3]">
+                Distribución diferida al cierre del negocio
+              </div>
+              <div className="text-[11px] text-[#6E7681] mt-0.5">
+                La comisión y la ganancia se liquidarán al vender el vehículo recibido en cruce
+                {saleSummary.deferredToPlate ? ` (${saleSummary.deferredToPlate})` : ''}, si el negocio deja ganancia.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSaleSummary(null)}
+            className="text-[#6E7681] hover:text-[#E6EDF3] transition-colors p-1 shrink-0"
+            aria-label="Cerrar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex border-b border-border mb-4 overflow-x-auto">
         {[
