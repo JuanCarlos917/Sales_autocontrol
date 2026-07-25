@@ -7,9 +7,10 @@
 // necesita y devuelve plain objects.
 // ═══════════════════════════════════════════════════════════════
 
-const { calculateCommissionBase } = require('../utils/financial');
+const { calculateCommissionBase, calculateChainGrossProfit } = require('../utils/financial');
 const { AppError } = require('../middleware/errorHandler');
 const { dayKeyBogota } = require('../utils/dates');
+const { loadChainMembers } = require('../utils/dealChain');
 
 const MAX_PARTICIPANTS = 5;
 const OWNER_ID = 'owner-self';
@@ -307,6 +308,24 @@ async function resolveChainSocio(prismaOrTx, members, cfg) {
 }
 
 /**
+ * Cadena "del negocio" de un vehículo de cierre, para reporting: si el
+ * vehículo es fromTradeIn y tiene eslabones anteriores VENDIDOS sin
+ * distribución propia, devuelve los agregados de calculateChainGrossProfit;
+ * si no, null (item normal de un solo vehículo).
+ */
+async function resolveChainForVehicle(prismaOrTx, vehicle) {
+  if (!vehicle.fromTradeIn) return null;
+  const members = await loadChainMembers(prismaOrTx, vehicle.id);
+  const otherIds = members.filter((m) => m.id !== vehicle.id).map((m) => m.id);
+  const distributed = await findDistributedVehicleIds(prismaOrTx, otherIds);
+  const eligible = members.filter(
+    (m) => m.id === vehicle.id || (m.stage === 'VENDIDO' && !distributed.has(m.id)),
+  );
+  if (eligible.length <= 1) return null;
+  return calculateChainGrossProfit(eligible);
+}
+
+/**
  * Calcula los tres "pools" (montos absolutos) a partir de la base de comisión.
  */
 function calculatePools(commissionBase, cfg) {
@@ -365,8 +384,11 @@ function buildPayableRoles(payables, pool) {
  * - roles: uno por Payable COMMISSION; sharePct del SaleParticipant o derivado
  *   de montos (total/pool) para data legacy sin participante.
  * - buckets: montos informativos de reinversión/impuestos; null si no hay.
+ * - chain: agregados de calculateChainGrossProfit (resolveChainForVehicle) si el
+ *   vehículo es el cierre de un negocio con cruce; si viene, la cascada mostrada
+ *   es la del NEGOCIO (eslabones agregados) en vez de solo este vehículo.
  */
-function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers, socioInvestor = null }) {
+function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers, socioInvestor = null, chain = null }) {
   const { grossProfitGlobal, commissionBase } = calculateCommissionBase(vehicle);
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
   // Excluye COMISION legacy (igual que calculateCommissionBase) para que la
@@ -390,20 +412,35 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers, socioI
     }
   }
 
+  const cascade = chain
+    ? {
+        // Cierre de negocio con cruce: la cascada mostrada es la del NEGOCIO
+        // (eslabones agregados), la misma base con la que se creó el pool.
+        salePrice: chain.salePrice,
+        purchaseCost: chain.purchaseCost,
+        directExpenses: chain.directExpenses,
+        grossProfit: chain.grossProfit,
+        participation: 1,
+        commissionBase: chain.grossProfit,
+        commissionPool,
+        chainPlates: chain.plates,
+      }
+    : {
+        salePrice: Number(vehicle.salePrice || 0),
+        purchaseCost,
+        directExpenses,
+        grossProfit: grossProfitGlobal,
+        participation: Number(vehicle.participation || 1),
+        commissionBase,
+        commissionPool,
+      };
+
   return {
     vehicle: {
       id: vehicle.id, plate: vehicle.plate, brand: vehicle.brand,
       model: vehicle.model, saleDate: vehicle.saleDate, salePrice: Number(vehicle.salePrice || 0),
     },
-    cascade: {
-      salePrice: Number(vehicle.salePrice || 0),
-      purchaseCost,
-      directExpenses,
-      grossProfit: grossProfitGlobal,
-      participation: Number(vehicle.participation || 1),
-      commissionBase,
-      commissionPool,
-    },
+    cascade,
     roles,
     buckets,
     socioInvestor,
@@ -424,15 +461,18 @@ function buildCommissionVehicleItem({ vehicle, payables, bucketTransfers, socioI
  * Invariante (venta normal): grossProfit − commissionPool − reinvest − tax
  * === profitToDistribute (los montos persistidos ya cuadran porque salieron
  * de calculateSaleDistribution al momento de la venta).
+ * chain: agregados de calculateChainGrossProfit (resolveChainForVehicle) si el
+ * vehículo es el cierre de un negocio con cruce; si viene, salePrice/
+ * purchaseCost/directExpenses/grossProfit son los del NEGOCIO, no del vehículo.
  */
-function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, bucketTransfers }) {
+function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, bucketTransfers, chain = null }) {
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
-  const directExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const purchaseCost = vehicle.fromTradeIn
+  const directExpensesVehicle = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const purchaseCostVehicle = vehicle.fromTradeIn
     ? Number(vehicle.negotiatedValue || vehicle.purchasePrice || 0)
     : Number(vehicle.purchasePrice || 0);
-  const salePrice = Number(vehicle.salePrice || 0);
-  const grossProfit = salePrice - purchaseCost - directExpenses;
+  const salePriceVehicle = Number(vehicle.salePrice || 0);
+  const grossProfitVehicle = salePriceVehicle - purchaseCostVehicle - directExpensesVehicle;
   const commissionPool = Number(commissionPayableSum || 0);
   const profitToDistribute = payables.reduce((s, p) => s + Number(p.totalAmount || 0), 0);
 
@@ -448,21 +488,35 @@ function buildInvestorVehicleItem({ vehicle, payables, commissionPayableSum, buc
   const roles = buildPayableRoles(payables, profitToDistribute);
   const buckets = (Array.isArray(bucketTransfers) && bucketTransfers.length > 0) ? { reinvest, tax } : null;
 
+  const cascade = chain
+    ? {
+        salePrice: chain.salePrice,
+        purchaseCost: chain.purchaseCost,
+        directExpenses: chain.directExpenses,
+        grossProfit: chain.grossProfit,
+        commissionPool,
+        reinvest,
+        tax,
+        profitToDistribute,
+        chainPlates: chain.plates,
+      }
+    : {
+        salePrice: salePriceVehicle,
+        purchaseCost: purchaseCostVehicle,
+        directExpenses: directExpensesVehicle,
+        grossProfit: grossProfitVehicle,
+        commissionPool,
+        reinvest,
+        tax,
+        profitToDistribute,
+      };
+
   return {
     vehicle: {
       id: vehicle.id, plate: vehicle.plate, brand: vehicle.brand,
-      model: vehicle.model, saleDate: vehicle.saleDate, salePrice,
+      model: vehicle.model, saleDate: vehicle.saleDate, salePrice: salePriceVehicle,
     },
-    cascade: {
-      salePrice,
-      purchaseCost,
-      directExpenses,
-      grossProfit,
-      commissionPool,
-      reinvest,
-      tax,
-      profitToDistribute,
-    },
+    cascade,
     roles,
     buckets,
     hasPending: roles.some((r) => r.status === 'PENDING' || r.status === 'PARTIAL'),
@@ -544,8 +598,9 @@ async function listByVehicle(prismaOrTx, { status = 'all', payableType = 'COMMIS
           socioInvestor = null;
         }
       }
+      const chain = await resolveChainForVehicle(prismaOrTx, vehicle);
       return buildCommissionVehicleItem({
-        vehicle, payables: ps, bucketTransfers: bucketByVehicle.get(vehicle.id) || [], socioInvestor,
+        vehicle, payables: ps, bucketTransfers: bucketByVehicle.get(vehicle.id) || [], socioInvestor, chain,
       });
     }),
   );
@@ -645,6 +700,7 @@ module.exports = {
   resolveSocio,
   findDistributedVehicleIds,
   resolveChainSocio,
+  resolveChainForVehicle,
   calculatePools,
   calculateCashRatio,
   calculateCommissionBase, // re-export for convenience
