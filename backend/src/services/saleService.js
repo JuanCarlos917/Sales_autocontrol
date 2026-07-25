@@ -5,7 +5,8 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const commissionService = require('./commissionService');
-const { calculateSaleDistribution } = require('../utils/financial');
+const { calculateSaleDistribution, calculateChainGrossProfit } = require('../utils/financial');
+const { loadChainMembers } = require('../utils/dealChain');
 
 // Un vehículo con socio puede tener DOS CxP tipo RECEIVABLE: la de la venta
 // financiada (saldo pendiente del comprador) y la de la comisión del socio.
@@ -219,87 +220,280 @@ const registerSale = async (vehicleId, saleData, userId) => {
     // inversionista (ambas PENDING, monto completo), más las Transfers de reservas
     // proporcionales al efectivo recibido. Si no hay utilidad (skip) no se crea nada.
     let distributionSummary = null;
-    const vehicleForBase = {
-      salePrice: salePriceNum,
-      purchasePrice: vehicle.purchasePrice,
-      negotiatedValue: vehicle.negotiatedValue,
-      fromTradeIn: vehicle.fromTradeIn,
-      expenses: vehicle.expenses,
-    };
     const cfg = await commissionService.loadCommissionConfig(tx);
-    const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
-    const investors = await commissionService.resolveInvestors(tx, cfg);
-    const socio = await commissionService.resolveSocio(tx, vehicle, cfg);
-    const dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
+    const socioVenta = await commissionService.resolveSocio(tx, vehicle, cfg);
+    const hasTradeIn = !!(tradeIn?.plate && tradeIn?.value > 0);
+    // Diferimiento por cruce (spec 2026-07-24-comision-unica-negocio-cruce):
+    // la venta que recibe carro en parte de pago NO distribuye nada; el negocio
+    // se liquida al vender el carro recibido. El socio externo parcial conserva
+    // el flujo inmediato (su participación es por vehículo, no por negocio).
+    const deferDistribution = hasTradeIn && (!socioVenta || socioVenta.isInvestor);
 
-    if (!dist.skip) {
-      // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
-      //     PROFIT_SHARE (inversionista). totalAmount = monto completo de la fila.
-      const mkPayable = async (type, row, label) => {
-        const payable = await tx.payable.create({
+    if (deferDistribution) {
+      // Socio inversionista 100%: se le adeuda ya la parte en efectivo cobrada,
+      // con tope en su capital; el resto (valor del cruce + ganancia) al cierre.
+      const cashReceivedNow = totalReceived - parseFloat(tradeIn.value);
+      const partnerCapital = Number(vehicle.partnerContribution || 0);
+      const partialCapital = Math.min(cashReceivedNow, partnerCapital);
+      if (socioVenta && partialCapital > 0) {
+        await tx.payable.create({
           data: {
-            type,
+            type: 'CAPITAL_RETURN',
             status: 'PENDING',
-            totalAmount: row.amount,
+            totalAmount: partialCapital,
             paidAmount: 0,
-            description: `${label} venta ${vehicle.plate} — ${row.role}`,
+            description: `Devolución de capital socio ${vehicle.plate}`,
             vehicleId,
-            thirdPartyId: row.thirdPartyId,
+            thirdPartyId: socioVenta.thirdPartyId,
             createdBy: userId,
           },
         });
-        const sp = await tx.saleParticipant.create({
-          data: {
-            vehicleId,
+      }
+      distributionSummary = { deferred: true, reason: 'trade_in', deferredToPlate: tradeIn.plate };
+    } else {
+      const vehicleForBase = {
+        salePrice: salePriceNum,
+        purchasePrice: vehicle.purchasePrice,
+        negotiatedValue: vehicle.negotiatedValue,
+        fromTradeIn: vehicle.fromTradeIn,
+        expenses: vehicle.expenses,
+      };
+      const sellers = await commissionService.resolveSellers(tx, saleData.participants, cfg);
+      const investors = await commissionService.resolveInvestors(tx, cfg);
+      // Cierre de negocio: vehículo recibido en cruce que se vende SIN nuevo
+      // cruce. La cascada corre UNA vez sobre la ganancia agregada de los
+      // eslabones sin distribución previa; el socio se resuelve desde la cadena.
+      const isClosure = vehicle.fromTradeIn === true && !hasTradeIn;
+      let socio = socioVenta;
+      let chainInfo = null;
+      let socioCapitalToReturn = Number(vehicle.partnerContribution || 0);
+      let dist;
+
+      if (isClosure) {
+        const members = await loadChainMembers(tx, vehicleId);
+        const otherIds = members.filter((m) => m.id !== vehicleId).map((m) => m.id);
+        const distributed = await commissionService.findDistributedVehicleIds(tx, otherIds);
+        const eligible = members.filter(
+          (m) => m.id === vehicleId || (m.stage === 'VENDIDO' && !distributed.has(m.id)),
+        );
+        const chain = calculateChainGrossProfit(eligible);
+        socio = await commissionService.resolveChainSocio(tx, eligible, cfg);
+        chainInfo = { plates: chain.plates, grossProfit: chain.grossProfit };
+        dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, {
+          sellers, investors, socio,
+          // Sin base de costo en la cadena no hay ganancia calculable → skip.
+          overrideGrossProfit: chain.purchaseCost > 0 ? chain.grossProfit : 0,
+        });
+        if (socio) {
+          const prior = await tx.payable.aggregate({
+            _sum: { totalAmount: true },
+            where: {
+              vehicleId: { in: members.map((m) => m.id) },
+              type: 'CAPITAL_RETURN',
+              thirdPartyId: socio.thirdPartyId,
+            },
+          });
+          socioCapitalToReturn =
+            Number(socio.vehicle.partnerContribution || 0) - Number(prior._sum.totalAmount || 0);
+        }
+      } else {
+        dist = calculateSaleDistribution(vehicleForBase, cfg.distributionCfg, { sellers, investors, socio });
+      }
+
+      if (!dist.skip) {
+        // 5a. CxP + SaleParticipant por cada fila: COMMISSION (vendedor) y
+        //     PROFIT_SHARE (inversionista). totalAmount = monto completo de la fila.
+        const mkPayable = async (type, row, label) => {
+          const payable = await tx.payable.create({
+            data: {
+              type,
+              status: 'PENDING',
+              totalAmount: row.amount,
+              paidAmount: 0,
+              description: `${label} venta ${vehicle.plate} — ${row.role}`,
+              vehicleId,
+              thirdPartyId: row.thirdPartyId,
+              createdBy: userId,
+            },
+          });
+          const sp = await tx.saleParticipant.create({
+            data: {
+              vehicleId,
+              thirdPartyId: row.thirdPartyId,
+              role: row.role,
+              sharePct: row.sharePct,
+              amount: row.amount,
+              payableId: payable.id,
+            },
+          });
+          return {
+            id: sp.id,
             thirdPartyId: row.thirdPartyId,
             role: row.role,
             sharePct: row.sharePct,
             amount: row.amount,
             payableId: payable.id,
-          },
-        });
-        return {
-          id: sp.id,
-          thirdPartyId: row.thirdPartyId,
-          role: row.role,
-          sharePct: row.sharePct,
-          amount: row.amount,
-          payableId: payable.id,
+          };
         };
-      };
 
-      const sellerResults = [];
-      for (const r of dist.sellerRows) sellerResults.push(await mkPayable('COMMISSION', r, 'Comisión'));
-      const investorResults = [];
-      for (const r of dist.investorRows) investorResults.push(await mkPayable('PROFIT_SHARE', r, 'Ganancia'));
+        const sellerResults = [];
+        for (const r of dist.sellerRows) sellerResults.push(await mkPayable('COMMISSION', r, 'Comisión'));
+        const investorResults = [];
+        for (const r of dist.investorRows) investorResults.push(await mkPayable('PROFIT_SHARE', r, 'Ganancia'));
 
-      // 5a-bis. Socio del vehículo (partnerId/participation): su ganancia bruta va como
-      // CxP PARTNER_SHARE y su parte de la comisión (que adeuda al fondo) como CxC
-      // RECEIVABLE. Sólo cuando hay socio efectivo y montos positivos.
-      if (socio && dist.partnerProfit > 0) {
-        await tx.payable.create({
-          data: {
-            type: 'PARTNER_SHARE',
-            status: 'PENDING',
-            totalAmount: dist.partnerProfit,
-            paidAmount: 0,
-            description: `Ganancia socio venta ${vehicle.plate}`,
-            vehicleId,
-            thirdPartyId: socio.thirdPartyId,
-            createdBy: userId,
-          },
-        });
+        // 5a-bis. Socio del vehículo (partnerId/participation): su ganancia bruta va como
+        // CxP PARTNER_SHARE y su parte de la comisión (que adeuda al fondo) como CxC
+        // RECEIVABLE. Sólo cuando hay socio efectivo y montos positivos.
+        if (socio && dist.partnerProfit > 0) {
+          await tx.payable.create({
+            data: {
+              type: 'PARTNER_SHARE',
+              status: 'PENDING',
+              totalAmount: dist.partnerProfit,
+              paidAmount: 0,
+              description: `Ganancia socio venta ${vehicle.plate}`,
+              vehicleId,
+              thirdPartyId: socio.thirdPartyId,
+              createdBy: userId,
+            },
+          });
+        }
+        // Comisión del socio:
+        //  - Inversionista 100%: el pool de comisión se DEPOSITA en su cuenta como
+        //    CxP COMMISSION_RETURN (FASE B); él paga a los vendedores desde su cuenta.
+        //  - Externo parcial: conserva el modelo actual (CxC "Comisión socio venta"
+        //    que el fondo le cobra por su % de la comisión).
+        if (socio && socio.isInvestor && dist.commissionPool > 0) {
+          await tx.payable.create({
+            data: {
+              type: 'COMMISSION_RETURN',
+              status: 'PENDING',
+              totalAmount: dist.commissionPool,
+              paidAmount: 0,
+              description: `Comisión por pagar socio ${vehicle.plate}`,
+              vehicleId,
+              thirdPartyId: socio.thirdPartyId,
+              createdBy: userId,
+            },
+          });
+        } else if (socio && !socio.isInvestor && dist.partnerCommissionOwed > 0) {
+          await tx.payable.create({
+            data: {
+              type: 'RECEIVABLE',
+              status: 'PENDING',
+              totalAmount: dist.partnerCommissionOwed,
+              paidAmount: 0,
+              description: `Comisión socio venta ${vehicle.plate}`,
+              vehicleId,
+              thirdPartyId: socio.thirdPartyId,
+              createdBy: userId,
+            },
+          });
+        }
+
+        // 5b. Reservas: transfers a reinversión / impuestos proporcionales al efectivo
+        // recibido (mismo cashRatio que el flujo anterior). Las CxP se crean por el
+        // monto completo; sólo las reservas mueven efectivo real proporcional a lo cobrado.
+        //
+        // El patrón estándar del proyecto (transferService.create) crea 1 Transfer
+        // + 2 Transactions (TRANSFER_OUT en origen, TRANSFER_IN en destino).
+        // Ambas transactions son indispensables para que accountService.calculateBalance
+        // las sume al saldo de las cuentas; sin ellas las cuentas BUDGET quedan con
+        // saldo 0 aunque el Transfer exista.
+        const tradeInValueNum = tradeIn?.value ? parseFloat(tradeIn.value) : 0;
+        const cashReceived = totalReceived - tradeInValueNum;
+        const cashRatio = commissionService.calculateCashRatio(totalReceived, cashReceived);
+        const transferResults = [];
+
+        const createBucketTransfer = async (toAccountId, amount, descriptionLabel) => {
+          const transfer = await tx.transfer.create({
+            data: {
+              fromAccountId: moneyPayments[0].accountId,
+              toAccountId,
+              amount,
+              description: `${descriptionLabel} venta ${vehicle.plate}`,
+              date: new Date(),
+              createdBy: userId,
+            },
+          });
+          await tx.transaction.create({
+            data: {
+              accountId: moneyPayments[0].accountId,
+              type: 'TRANSFER_OUT',
+              category: 'TRANSFER',
+              amount,
+              description: `${descriptionLabel} venta ${vehicle.plate}`,
+              date: new Date(),
+              vehicleId,
+              transferId: transfer.id,
+              createdBy: userId,
+            },
+          });
+          await tx.transaction.create({
+            data: {
+              accountId: toAccountId,
+              type: 'TRANSFER_IN',
+              category: 'TRANSFER',
+              amount,
+              description: `${descriptionLabel} venta ${vehicle.plate}`,
+              date: new Date(),
+              vehicleId,
+              transferId: transfer.id,
+              createdBy: userId,
+            },
+          });
+          return transfer;
+        };
+
+        if (cashReceived > 0 && moneyPayments.length > 0) {
+          const reinvestAmt = dist.reinvestAmount * cashRatio;
+          const taxAmt = dist.taxAmount * cashRatio;
+          if (reinvestAmt > 0) {
+            const t = await createBucketTransfer(cfg.reinvestAccountId, reinvestAmt, 'Reinversión');
+            transferResults.push({
+              id: t.id,
+              fromAccountId: moneyPayments[0].accountId,
+              toAccountId: cfg.reinvestAccountId,
+              amount: Number(t.amount),
+              description: t.description,
+            });
+          }
+          if (taxAmt > 0) {
+            const t = await createBucketTransfer(cfg.taxReserveAccountId, taxAmt, 'Impuestos');
+            transferResults.push({
+              id: t.id,
+              fromAccountId: moneyPayments[0].accountId,
+              toAccountId: cfg.taxReserveAccountId,
+              amount: Number(t.amount),
+              description: t.description,
+            });
+          }
+        }
+
+        distributionSummary = {
+          grossProfit: dist.grossProfit,
+          commissionPool: dist.commissionPool,
+          reinvestAmount: dist.reinvestAmount,
+          taxAmount: dist.taxAmount,
+          profitToDistribute: dist.profitToDistribute,
+          cashRatioApplied: cashRatio,
+          partnerProfit: dist.partnerProfit,
+          partnerCommissionOwed: dist.partnerCommissionOwed,
+          socioShare: dist.socioShare,
+          sellers: sellerResults,
+          investors: investorResults,
+          transfers: transferResults,
+        };
       }
-      // Devolución de capital al socio (Modelo B): lo que aportó en la compra
-      // (partnerContribution) se le devuelve como CxP dedicada; al pagarla, el
-      // enrutamiento FASE B la deposita en su cuenta SOCIO.
-      const partnerCapital = Number(vehicle.partnerContribution || 0);
-      if (socio && partnerCapital > 0) {
+      // Devolución de capital al socio (Modelo B): en flujo normal solo con
+      // utilidad (comportamiento histórico); en cierre de cadena siempre —
+      // el capital del socio no depende de la ganancia del negocio.
+      if (socio && socioCapitalToReturn > 0 && (isClosure || !dist.skip)) {
         await tx.payable.create({
           data: {
             type: 'CAPITAL_RETURN',
             status: 'PENDING',
-            totalAmount: partnerCapital,
+            totalAmount: socioCapitalToReturn,
             paidAmount: 0,
             description: `Devolución de capital socio ${vehicle.plate}`,
             vehicleId,
@@ -308,132 +502,10 @@ const registerSale = async (vehicleId, saleData, userId) => {
           },
         });
       }
-      // Comisión del socio:
-      //  - Inversionista 100%: el pool de comisión se DEPOSITA en su cuenta como
-      //    CxP COMMISSION_RETURN (FASE B); él paga a los vendedores desde su cuenta.
-      //  - Externo parcial: conserva el modelo actual (CxC "Comisión socio venta"
-      //    que el fondo le cobra por su % de la comisión).
-      if (socio && socio.isInvestor && dist.commissionPool > 0) {
-        await tx.payable.create({
-          data: {
-            type: 'COMMISSION_RETURN',
-            status: 'PENDING',
-            totalAmount: dist.commissionPool,
-            paidAmount: 0,
-            description: `Comisión por pagar socio ${vehicle.plate}`,
-            vehicleId,
-            thirdPartyId: socio.thirdPartyId,
-            createdBy: userId,
-          },
-        });
-      } else if (socio && !socio.isInvestor && dist.partnerCommissionOwed > 0) {
-        await tx.payable.create({
-          data: {
-            type: 'RECEIVABLE',
-            status: 'PENDING',
-            totalAmount: dist.partnerCommissionOwed,
-            paidAmount: 0,
-            description: `Comisión socio venta ${vehicle.plate}`,
-            vehicleId,
-            thirdPartyId: socio.thirdPartyId,
-            createdBy: userId,
-          },
-        });
+      if (chainInfo) {
+        if (distributionSummary) distributionSummary.chain = chainInfo;
+        else distributionSummary = { chain: chainInfo, skipped: true };
       }
-
-      // 5b. Reservas: transfers a reinversión / impuestos proporcionales al efectivo
-      // recibido (mismo cashRatio que el flujo anterior). Las CxP se crean por el
-      // monto completo; sólo las reservas mueven efectivo real proporcional a lo cobrado.
-      //
-      // El patrón estándar del proyecto (transferService.create) crea 1 Transfer
-      // + 2 Transactions (TRANSFER_OUT en origen, TRANSFER_IN en destino).
-      // Ambas transactions son indispensables para que accountService.calculateBalance
-      // las sume al saldo de las cuentas; sin ellas las cuentas BUDGET quedan con
-      // saldo 0 aunque el Transfer exista.
-      const tradeInValueNum = tradeIn?.value ? parseFloat(tradeIn.value) : 0;
-      const cashReceived = totalReceived - tradeInValueNum;
-      const cashRatio = commissionService.calculateCashRatio(totalReceived, cashReceived);
-      const transferResults = [];
-
-      const createBucketTransfer = async (toAccountId, amount, descriptionLabel) => {
-        const transfer = await tx.transfer.create({
-          data: {
-            fromAccountId: moneyPayments[0].accountId,
-            toAccountId,
-            amount,
-            description: `${descriptionLabel} venta ${vehicle.plate}`,
-            date: new Date(),
-            createdBy: userId,
-          },
-        });
-        await tx.transaction.create({
-          data: {
-            accountId: moneyPayments[0].accountId,
-            type: 'TRANSFER_OUT',
-            category: 'TRANSFER',
-            amount,
-            description: `${descriptionLabel} venta ${vehicle.plate}`,
-            date: new Date(),
-            vehicleId,
-            transferId: transfer.id,
-            createdBy: userId,
-          },
-        });
-        await tx.transaction.create({
-          data: {
-            accountId: toAccountId,
-            type: 'TRANSFER_IN',
-            category: 'TRANSFER',
-            amount,
-            description: `${descriptionLabel} venta ${vehicle.plate}`,
-            date: new Date(),
-            vehicleId,
-            transferId: transfer.id,
-            createdBy: userId,
-          },
-        });
-        return transfer;
-      };
-
-      if (cashReceived > 0 && moneyPayments.length > 0) {
-        const reinvestAmt = dist.reinvestAmount * cashRatio;
-        const taxAmt = dist.taxAmount * cashRatio;
-        if (reinvestAmt > 0) {
-          const t = await createBucketTransfer(cfg.reinvestAccountId, reinvestAmt, 'Reinversión');
-          transferResults.push({
-            id: t.id,
-            fromAccountId: moneyPayments[0].accountId,
-            toAccountId: cfg.reinvestAccountId,
-            amount: Number(t.amount),
-            description: t.description,
-          });
-        }
-        if (taxAmt > 0) {
-          const t = await createBucketTransfer(cfg.taxReserveAccountId, taxAmt, 'Impuestos');
-          transferResults.push({
-            id: t.id,
-            fromAccountId: moneyPayments[0].accountId,
-            toAccountId: cfg.taxReserveAccountId,
-            amount: Number(t.amount),
-            description: t.description,
-          });
-        }
-      }
-
-      distributionSummary = {
-        grossProfit: dist.grossProfit,
-        commissionPool: dist.commissionPool,
-        reinvestAmount: dist.reinvestAmount,
-        taxAmount: dist.taxAmount,
-        profitToDistribute: dist.profitToDistribute,
-        cashRatioApplied: cashRatio,
-        partnerProfit: dist.partnerProfit,
-        partnerCommissionOwed: dist.partnerCommissionOwed,
-        socioShare: dist.socioShare,
-        sellers: sellerResults,
-        investors: investorResults,
-        transfers: transferResults,
-      };
     }
 
     return {

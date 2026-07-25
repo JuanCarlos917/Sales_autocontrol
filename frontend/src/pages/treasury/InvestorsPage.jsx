@@ -42,6 +42,11 @@ function InvestorCard({ item, onPay }) {
 
       {/* Cascada de ganancia — waterfall real (calculateSaleDistribution), NO la base de comisión */}
       <div className="bg-[#161B22] rounded-lg p-3">
+        {cascade.chainPlates && (
+          <div className="text-[11px] text-[#6E7681] mb-1" data-testid={`investor-chain-${vehicle.plate}`}>
+            Negocio en cruce: {cascade.chainPlates.join(' + ')}
+          </div>
+        )}
         <CascadeRow label="Precio de venta" value={cascade.salePrice} />
         <CascadeRow label="Costo" value={cascade.purchaseCost} negative />
         <CascadeRow label="Gastos" value={cascade.directExpenses} negative />

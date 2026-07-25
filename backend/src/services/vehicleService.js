@@ -5,6 +5,7 @@
 const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateVehicleMetrics, calculateParticipation, calculateDealMetrics } = require('../utils/financial');
+const { loadDealChainNodes, chainMembersFor, rootIdFor } = require('../utils/dealChain');
 const storage = require('../utils/storage');
 
 // Campos de participación/socio que quedan bloqueados después de NEGOCIANDO
@@ -103,58 +104,7 @@ async function settleTradeInPurchase(tx, { vehicleId, amount, plate, userId }) {
 }
 
 // ── Cadena de cruces (deal) ─────────────────────────────────────
-// Selección mínima para calcular la ganancia directa de un eslabón.
-const DEAL_CHAIN_SELECT = {
-  id: true, plate: true, stage: true, salePrice: true, purchasePrice: true,
-  saleDate: true, sourceVehicleId: true,
-  expenses: { select: { amount: true, deletedAt: true } },
-  tradeInsReceived: { select: { id: true } },
-};
-
-function toChainNode(v) {
-  return {
-    id: v.id, plate: v.plate, stage: v.stage,
-    salePrice: v.salePrice, purchasePrice: v.purchasePrice,
-    saleDate: v.saleDate, sourceVehicleId: v.sourceVehicleId,
-    expenses: (v.expenses || []).map((e) => ({ amount: e.amount, deletedAt: e.deletedAt })),
-    tradeInIds: (v.tradeInsReceived || []).map((t) => t.id),
-  };
-}
-
-// Cierra transitivamente el grafo de cruces: sube por sourceVehicleId y baja
-// por tradeInsReceived, trayendo de la DB los eslabones que no vinieron en la
-// lista original. Cap defensivo de profundidad 10 (spec).
-async function loadDealChainNodes(vehicles) {
-  const known = new Map(vehicles.map((v) => [v.id, toChainNode(v)]));
-  for (let depth = 0; depth < 10; depth++) {
-    const missing = new Set();
-    for (const node of known.values()) {
-      if (node.sourceVehicleId && !known.has(node.sourceVehicleId)) missing.add(node.sourceVehicleId);
-      for (const tid of node.tradeInIds) if (!known.has(tid)) missing.add(tid);
-    }
-    if (missing.size === 0) break;
-    const rows = await prisma.vehicle.findMany({
-      where: { id: { in: [...missing] } },
-      select: DEAL_CHAIN_SELECT,
-    });
-    if (rows.length === 0) break; // referencias rotas (SetNull/borrados)
-    for (const r of rows) known.set(r.id, toChainNode(r));
-  }
-  return known;
-}
-
-// Miembros de la cadena en orden de linaje: raíz primero, DFS por cruces.
-function chainMembersFor(rootId, known) {
-  const out = [];
-  const walk = (id) => {
-    const node = known.get(id);
-    if (!node || out.includes(node)) return;
-    out.push(node);
-    for (const tid of node.tradeInIds) walk(tid);
-  };
-  walk(rootId);
-  return out;
-}
+// Loader compartido en ../utils/dealChain (prisma inyectable).
 
 // Anexa deal/profitDeferredTo a las metrics de los vehículos que pertenecen
 // a una cadena de cruces (≥2 eslabones). Los demás pasan intactos.
@@ -164,15 +114,8 @@ async function enrichWithDealMetrics(vehicles) {
   );
   if (!involved) return vehicles;
 
-  const known = await loadDealChainNodes(vehicles);
-  const rootOf = (id) => {
-    let cur = known.get(id);
-    let guard = 0;
-    while (cur && cur.sourceVehicleId && known.has(cur.sourceVehicleId) && guard++ < 10) {
-      cur = known.get(cur.sourceVehicleId);
-    }
-    return cur ? cur.id : id;
-  };
+  const known = await loadDealChainNodes(prisma, vehicles);
+  const rootOf = (id) => rootIdFor(id, known);
 
   const dealByRoot = new Map();
   return vehicles.map((v) => {

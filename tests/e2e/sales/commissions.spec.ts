@@ -154,7 +154,7 @@ test.describe('Comisiones — configuración global', () => {
     expect(tax?.amount).toBe(900_000);
   });
 
-  test('venta 100% cruce: crea CxP COMMISSION pero 0 transfers', async ({ page }) => {
+  test('venta 100% cruce: distribución diferida — sin CxP ni transfers', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `CRU${Date.now().toString().slice(-6)}`,
@@ -164,6 +164,10 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
+    // Cualquier venta con cruce difiere TODA la distribución al cierre del
+    // negocio (spec 2026-07-24-comision-unica-negocio-cruce): ya no se crean
+    // CxP COMMISSION ni transfers de reservas en la venta que recibe el carro,
+    // sin importar si hay participants explícitos o no.
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'TRADE_IN',
@@ -175,16 +179,13 @@ test.describe('Comisiones — configuración global', () => {
       ],
     });
 
-    expect(res.summary.grossProfit).toBe(10_000_000);
-    expect(res.summary.cashRatioApplied).toBe(0);
-    // 2 CxPs (10% de 10M repartido 30/70 entre los vendedores)
-    expect(res.summary.sellers).toHaveLength(2);
-    const totalCommitted = res.summary.sellers!.reduce((s, p) => s + p.amount, 0);
-    expect(totalCommitted).toBe(1_000_000);
-    expect(res.summary.transfers).toHaveLength(0);                // sin caja, sin transfer
+    expect((res.summary as { deferred?: boolean }).deferred).toBe(true);
+    expect((res.summary as { reason?: string }).reason).toBe('trade_in');
+    expect(res.summary.sellers).toBeUndefined();
+    expect(res.summary.transfers).toBeUndefined();
   });
 
-  test('venta mixed (cash + cruce): transfers proporcionales al cash', async ({ page }) => {
+  test('venta mixed (cash + cruce): distribución diferida — sin transfers pese al cash', async ({ page }) => {
     const token = await loginAsAdmin(page);
     const v = await apiCreateVehicle(token, {
       plate: `MIX${Date.now().toString().slice(-6)}`,
@@ -194,8 +195,10 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
-    // Total: 30M (15M cash + 15M cruce) → cashRatio = 0.5. Sin vendedores (no es
-    // el foco del test): commissionPool = 0, así que afterCommission = grossProfit.
+    // Con cruce, la venta difiere TODA la distribución al cierre del negocio,
+    // incluso con una porción en efectivo (MIXED): sin transfers de reservas
+    // ni CxP de comisión en esta venta — el negocio se liquida al vender el
+    // carro recibido en cruce (ver tests/e2e/sales/negocio-cruce.spec.ts).
     const res = await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
       paymentType: 'MIXED',
@@ -204,13 +207,9 @@ test.describe('Comisiones — configuración global', () => {
       tradeIn: { plate: `RCM${Date.now().toString().slice(-6)}`, value: 15_000_000 },
     });
 
-    expect(res.summary.grossProfit).toBe(10_000_000);
-    expect(res.summary.cashRatioApplied).toBeCloseTo(0.5, 5);
-    expect(res.summary.transfers).toHaveLength(2);
-    const reinvest = res.summary.transfers!.find(t => t.toAccountId === 'budget-reinvest');
-    const tax = res.summary.transfers!.find(t => t.toAccountId === 'budget-tax');
-    expect(reinvest?.amount).toBeCloseTo(1_500_000, 0);  // 30% de 10M × 0.5
-    expect(tax?.amount).toBeCloseTo(500_000, 0);          // 10% de 10M × 0.5
+    expect((res.summary as { deferred?: boolean }).deferred).toBe(true);
+    expect(res.summary.transfers).toBeUndefined();
+    expect(res.summary.sellers).toBeUndefined();
   });
 
   test('venta con pérdida: cero CxP, cero transfers, sin sellers/investors', async ({ page }) => {
@@ -350,11 +349,14 @@ test.describe('Comisiones — configuración global', () => {
       listedPrice: 30_000_000,
       supplierId: TEST_SEED_IDS.supplier,
     });
+    // Financiada 100% (sin cash, sin cruce): crea CxC por el total + la
+    // distribución normal (CxP COMMISSION), sin ninguna Transaction
+    // VEHICLE_SALE — reproduce "hay comisión pendiente pero cero movimientos
+    // de caja" sin depender de un cruce (que ahora difiere en vez de distribuir).
     await apiRegisterSale(token, v.id, {
       salePrice: 30_000_000,
-      paymentType: 'TRADE_IN',
+      paymentType: 'FINANCED',
       buyerId: TEST_SEED_IDS.buyer,
-      tradeIn: { plate: `RXC${Date.now().toString().slice(-6)}`, value: 30_000_000 },
       participants: [{ thirdPartyId: TEST_SEED_IDS.employee, role: 'CERRADOR', sharePct: 100 }],
     });
 

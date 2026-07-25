@@ -99,12 +99,16 @@ async function listByVehicle(prismaOrTx, { status = 'all' } = {}) {
     }
   }
 
-  const items = [...byVehicle.values()].map(({ vehicle, payables: ps }) =>
-    commissionService.buildInvestorVehicleItem({
-      vehicle,
-      payables: ps,
-      commissionPayableSum: commissionByVehicle.get(vehicle.id) || 0,
-      bucketTransfers: bucketByVehicle.get(vehicle.id) || [],
+  const items = await Promise.all(
+    [...byVehicle.values()].map(async ({ vehicle, payables: ps }) => {
+      const chain = await commissionService.resolveChainForVehicle(prismaOrTx, vehicle);
+      return commissionService.buildInvestorVehicleItem({
+        vehicle,
+        payables: ps,
+        commissionPayableSum: commissionByVehicle.get(vehicle.id) || 0,
+        bucketTransfers: bucketByVehicle.get(vehicle.id) || [],
+        chain,
+      });
     }),
   );
 
