@@ -546,4 +546,40 @@ test.describe('Comisiones — configuración global', () => {
     await page.getByTestId('settings-cerrador-pct').fill('70');
     await page.getByTestId('settings-save-commissions').click();
   });
+
+  test('CommissionsPage agrupa por mes con count de negocios y subtotal', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const plate = `MTH${Date.now().toString().slice(-6)}`;
+    const v = await apiCreateVehicle(token, {
+      plate,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 30_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+    await apiRegisterSale(token, v.id, {
+      salePrice: 30_000_000,
+      paymentType: 'CASH',
+      buyerId: TEST_SEED_IDS.buyer,
+      cashPayment: { accountId: TEST_SEED_IDS.accountCash, amount: 30_000_000 },
+      participants: [
+        { thirdPartyId: TEST_SEED_IDS.employee, role: 'CAPTADOR', sharePct: 30 },
+        { thirdPartyId: TEST_SEED_IDS.partner,  role: 'CERRADOR', sharePct: 70 },
+      ],
+    });
+
+    await page.goto('/treasury/commissions');
+
+    // La card de la venta (pendiente) aparece en la página
+    await expect(page.getByTestId(`commission-card-${plate}`)).toBeVisible({ timeout: 10_000 });
+
+    // Y está bajo el encabezado del mes actual (YYYY-MM), con count y subtotal
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const group = page.getByTestId(`month-group-${monthKey}`);
+    await expect(group).toBeVisible();
+    await expect(group).toContainText(/negocio/);
+    await expect(page.getByTestId(`month-group-subtotal-${monthKey}`)).toContainText(/total/);
+  });
 });
