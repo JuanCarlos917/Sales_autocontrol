@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react';
 import { investorsApi, payablesApi } from '@/lib/payablesApi';
 import { formatCurrency, formatDate } from '@/lib/constants';
 import { PaymentModal } from '@/components/treasury';
+import MonthGroupedGrid from '@/components/treasury/MonthGroupedGrid';
+import { sumRolesTotal, saleDateOf } from '@/lib/monthGrouping';
 import { PiggyBank, ChevronDown, ChevronRight } from 'lucide-react';
 
 const ROLE_LABEL = { INVESTOR: 'Inversionista' };
@@ -210,11 +212,14 @@ export default function InvestorsPage() {
       {pending.length === 0 ? (
         <div className="card p-8 text-center text-[#8B949E]">No hay ganancia pendiente de repartir</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {pending.map((item) => (
+        <MonthGroupedGrid
+          items={pending}
+          dateOf={saleDateOf}
+          sumOf={sumRolesTotal}
+          renderCard={(item) => (
             <InvestorCard key={item.vehicle.id} item={item} onPay={(it, r) => setPaying({ item: it, role: r })} />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {/* Historial pagadas (colapsado) */}
@@ -229,10 +234,15 @@ export default function InvestorsPage() {
             Pagadas ({paid.length})
           </button>
           {showPaid && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
-              {paid.map((item) => (
-                <InvestorCard key={item.vehicle.id} item={item} onPay={(it, r) => setPaying({ item: it, role: r })} />
-              ))}
+            <div className="mt-3">
+              <MonthGroupedGrid
+                items={paid}
+                dateOf={saleDateOf}
+                sumOf={sumRolesTotal}
+                renderCard={(item) => (
+                  <InvestorCard key={item.vehicle.id} item={item} onPay={(it, r) => setPaying({ item: it, role: r })} />
+                )}
+              />
             </div>
           )}
         </section>
