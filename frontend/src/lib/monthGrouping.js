@@ -29,11 +29,18 @@ export function groupByMonth(items, { dateOf, sumOf }) {
     let monthKey;
     let monthLabel;
     if (raw) {
-      const parts = raw.split('-');
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      monthKey = `${year}-${String(month).padStart(2, '0')}`;
-      monthLabel = `${MONTHS_ES[month - 1]} ${year}`;
+      const d = new Date(raw);
+      // formatToParts en vez de parsear el string formateado: el orden de
+      // año/mes en la salida de Intl varía según la versión de ICU aunque
+      // se use el mismo locale (en-CA), así que buscamos por `type` en vez
+      // de asumir un orden fijo.
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit',
+      }).formatToParts(d);
+      const year = parts.find((p) => p.type === 'year').value;
+      const month = parts.find((p) => p.type === 'month').value;
+      monthKey = `${year}-${month}`;
+      monthLabel = `${MONTHS_ES[parseInt(month, 10) - 1]} ${year}`;
     } else {
       monthKey = 'sin-fecha';
       monthLabel = 'Sin fecha';

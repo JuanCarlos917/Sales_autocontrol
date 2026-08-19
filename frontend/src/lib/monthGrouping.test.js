@@ -48,10 +48,13 @@ describe('groupByMonth', () => {
   });
 
   it('ordena los meses descendente', () => {
+    // Nota: mediodía UTC ('T12:00:00Z') en vez de fecha-sin-hora — una fecha
+    // sin hora se interpreta como medianoche UTC, que en America/Bogota
+    // (UTC-5) cae en el día/mes anterior para el día 1 de cada mes.
     const items = [
-      item('2026-06-01', [{ total: 1, status: 'PAID' }]),
-      item('2026-08-01', [{ total: 1, status: 'PAID' }]),
-      item('2026-07-01', [{ total: 1, status: 'PAID' }]),
+      item('2026-06-01T12:00:00Z', [{ total: 1, status: 'PAID' }]),
+      item('2026-08-01T12:00:00Z', [{ total: 1, status: 'PAID' }]),
+      item('2026-07-01T12:00:00Z', [{ total: 1, status: 'PAID' }]),
     ];
     const keys = groupByMonth(items, opts).map((g) => g.monthKey);
     expect(keys).toEqual(['2026-08', '2026-07', '2026-06']);
@@ -74,6 +77,17 @@ describe('groupByMonth', () => {
     const groups = groupByMonth(items, opts);
     expect(groups[groups.length - 1].monthKey).toBe('sin-fecha');
     expect(groups[groups.length - 1].monthLabel).toBe('Sin fecha');
+  });
+
+  it('el subtotal del mes excluye roles CANCELLED', () => {
+    const items = [
+      item('2026-08-10', [
+        { total: 1000, status: 'PENDING' },
+        { total: 500, status: 'CANCELLED' },
+      ]),
+    ];
+    const aug = groupByMonth(items, opts).find((g) => g.monthKey === '2026-08');
+    expect(aug.subtotal).toBe(1000);
   });
 
   it('no muta la lista de entrada', () => {

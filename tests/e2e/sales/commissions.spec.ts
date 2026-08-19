@@ -574,12 +574,27 @@ test.describe('Comisiones — configuración global', () => {
     // La card de la venta (pendiente) aparece en la página
     await expect(page.getByTestId(`commission-card-${plate}`)).toBeVisible({ timeout: 10_000 });
 
-    // Y está bajo el encabezado del mes actual (YYYY-MM), con count y subtotal
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // Y está bajo el encabezado del mes actual (YYYY-MM) en America/Bogota —
+    // misma zona horaria que usa el helper monthGrouping para agrupar —, con
+    // count y subtotal.
+    // formatToParts (no split del string formateado): el orden año/mes de la
+    // salida de Intl para 'en-CA' varía según la versión de ICU del runtime,
+    // así que buscamos por `type` en vez de asumir un orden fijo — mismo
+    // enfoque que frontend/src/lib/monthGrouping.js.
+    const nowParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit',
+    }).formatToParts(new Date());
+    const yy = nowParts.find((p) => p.type === 'year')!.value;
+    const mm = nowParts.find((p) => p.type === 'month')!.value;
+    const monthKey = `${yy}-${mm}`;
     const group = page.getByTestId(`month-group-${monthKey}`);
     await expect(group).toBeVisible();
-    await expect(group).toContainText(/negocio/);
-    await expect(page.getByTestId(`month-group-subtotal-${monthKey}`)).toContainText(/total/);
+    // La venta sembrada es la única comisión pendiente del mes en una DB de test
+    // recién reseteada (globalSetup resetea la DB antes de correr) → count = 1.
+    await expect(group).toContainText(/1 negocio/);
+    const subtotal = page.getByTestId(`month-group-subtotal-${monthKey}`);
+    await expect(subtotal).toContainText(/total/);
+    // pool = 10% de la ganancia de 10M = 1.000.000
+    await expect(subtotal).toContainText(/1\.000\.000|1,000,000/);
   });
 });
