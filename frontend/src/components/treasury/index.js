@@ -27,3 +27,4 @@ export { default as DebtReconcileModal } from './DebtReconcileModal';
 // Shared (loans + debts)
 export { default as PaymentDetails } from './PaymentDetails';
 export { default as InstallmentSchedule } from './InstallmentSchedule';
+export { default as MonthGroupedGrid } from './MonthGroupedGrid';
