@@ -284,6 +284,17 @@ const addPayment = async (payableId, paymentData, userId) => {
       }
     });
 
+    // 3b. Si la CxP proviene de un gasto, sincronizar su estado "pagado".
+    // Forward-only: al completar el pago el gasto queda pagado; parcial lo deja
+    // pendiente. Espeja expenseService.payExpense para dar consistencia sin
+    // importar por qué vía se pague (Ver todas o el tab del vehículo).
+    if (payable.expenseId) {
+      await tx.expense.update({
+        where: { id: payable.expenseId },
+        data: { paid: newStatus === 'PAID', updatedBy: userId },
+      });
+    }
+
     await writeTreasuryAudit(tx, {
       entityType: 'PAYABLE_PAYMENT',
       entityId: payment.id,

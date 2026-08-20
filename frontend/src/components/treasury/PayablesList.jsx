@@ -148,6 +148,7 @@ export default function PayablesList({
               return (
                 <tr
                   key={p.id}
+                  data-testid={`payable-row-${p.id}`}
                   className={`border-t border-border hover:bg-surface-hover ${
                     overdue ? 'bg-red-500/5' : ''
                   }`}
@@ -191,6 +192,7 @@ export default function PayablesList({
                     {p.status !== 'PAID' && p.status !== 'CANCELLED' && onPayment && (
                       <button
                         onClick={() => handleOpenPayment(p)}
+                        data-testid={`payable-pay-${p.id}`}
                         className={`text-xs px-2 py-1 rounded ${
                           isReceivable
                             ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'

@@ -31,7 +31,7 @@ test.describe('Rol VIEWER — pipeline de vehículos solo lectura', () => {
 
     // Como ADMIN el botón de pago existe (sanity check del fixture).
     await page.goto(`/vehicles/${vehicle.id}?tab=tesoreria`);
-    await expect(page.getByTestId('vehicle-pay-purchase')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid^="payable-pay-"]').first()).toBeVisible({ timeout: 10_000 });
 
     // Bajamos a VIEWER y recargamos para que AuthContext re-lea el rol.
     await setUserRole(ADMIN_EMAIL, 'VIEWER');
@@ -40,7 +40,7 @@ test.describe('Rol VIEWER — pipeline de vehículos solo lectura', () => {
     // Modo consulta: badge visible y el botón de pago oculto.
     await expect(page.getByTestId('viewer-readonly-badge')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('vehicle-tab-tesoreria').click();
-    await expect(page.getByTestId('vehicle-pay-purchase')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="payable-pay-"]')).toHaveCount(0);
   });
 
   test('VIEWER no ve controles de escritura en el detalle (editar/eliminar/vender/+documento)', async ({ page }) => {
