@@ -233,11 +233,11 @@ export default function VehicleDetailPage() {
   const portals = vehicle.publishedPortals || [];
   // CxP del vehículo (pagar): todo lo que no es cuenta por cobrar.
   const cxpDelVehiculo = vehiclePayables.filter((p) => p.type !== 'RECEIVABLE');
-  // Conteo de la pestaña Tesorería: movimientos + CxP de compra abiertas + CxC de venta
-  // (un cruce saldado no genera movimiento pero sí su CxP, y debe contarse mientras esté abierta).
-  const openCxpCount = cxpDelVehiculo.filter((p) => p.status !== 'PAID' && p.status !== 'CANCELLED').length;
+  // Conteo de la pestaña Tesorería: movimientos + todas las CxP del vehículo + CxC de venta.
+  // Se cuenta cada CxP exista o no esté pagada: un cruce saldado no genera movimiento de caja
+  // pero sí deja su CxP (PAID) y debe contarse, igual que se muestra en la lista del tab.
   const treasuryCount = vehicleTransactions.length
-    + openCxpCount
+    + cxpDelVehiculo.length
     + (paymentStatus?.sale ? 1 : 0);
 
   const handleDelete = async () => {
