@@ -13,6 +13,7 @@ import ExpenseDeleteModal from '@/components/expenses/ExpenseDeleteModal';
 import { transactionsApi, accountsApi } from '@/lib/treasuryApi';
 import { vehicleTreasuryApi, payablesApi, expenseTreasuryApi } from '@/lib/payablesApi';
 import { SalePaymentModal, PaymentModal, ExpensePaymentModal } from '@/components/treasury';
+import { PayablesList } from '@/components/treasury';
 import { Pencil, Lock, Clock, StickyNote, Trash2, DollarSign, FileText, Receipt, Wallet, Handshake, X } from 'lucide-react';
 
 const UNDO_WINDOW_MS = 5 * 60 * 1000;
@@ -111,6 +112,8 @@ export default function VehicleDetailPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentModalConfig, setPaymentModalConfig] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState(null);
+  const [vehiclePayables, setVehiclePayables] = useState([]);
+  const [loadingVehiclePayables, setLoadingVehiclePayables] = useState(true);
   const [processingAction, setProcessingAction] = useState(false);
   // Resumen devuelto por el registro de venta — usado para la card "el socio debe pagar $X"
   const [saleSummary, setSaleSummary] = useState(null);
@@ -150,6 +153,17 @@ export default function VehicleDetailPage() {
       setPaymentStatus(data);
     } catch (err) {
       console.error('Error loading payment status:', err);
+    }
+  };
+
+  const loadVehiclePayables = async () => {
+    try {
+      const { data } = await payablesApi.getAll({ vehicleId: id });
+      setVehiclePayables(data || []);
+    } catch (err) {
+      console.error('Error loading vehicle payables:', err);
+    } finally {
+      setLoadingVehiclePayables(false);
     }
   };
 
@@ -195,6 +209,7 @@ export default function VehicleDetailPage() {
     loadAccounts();
     loadPaymentStatus();
     loadPartnerPayables();
+    loadVehiclePayables();
     loadAuditLog();
     loadTimeline();
   }, [id]);
@@ -211,6 +226,7 @@ export default function VehicleDetailPage() {
     loadVehicleTransactions();
     loadPaymentStatus();
     loadPartnerPayables();
+    loadVehiclePayables();
     loadAuditLog();
   };
 
@@ -221,10 +237,12 @@ export default function VehicleDetailPage() {
   const expenses = vehicle.expenses || [];
   const docs = vehicle.documents || [];
   const portals = vehicle.publishedPortals || [];
+  // CxP del vehículo (pagar): todo lo que no es cuenta por cobrar.
+  const cxpDelVehiculo = vehiclePayables.filter((p) => p.type !== 'RECEIVABLE');
   // Conteo de la pestaña Tesorería: movimientos + CxP de compra + CxC de venta
   // (un cruce saldado no genera movimiento pero sí su CxP, y debe contarse).
   const treasuryCount = vehicleTransactions.length
-    + (paymentStatus?.purchase ? 1 : 0)
+    + cxpDelVehiculo.length
     + (paymentStatus?.sale ? 1 : 0);
 
   const handleDelete = async () => {
@@ -295,6 +313,14 @@ export default function VehicleDetailPage() {
     } finally {
       setProcessingAction(false);
     }
+  };
+
+  // Pago de una CxP del vehículo desde la lista unificada. PayablesList maneja
+  // su propio modal; aquí solo persistimos y recargamos (incl. el vehículo, para
+  // refrescar el estado de gastos ahora que el backend sincroniza expense.paid).
+  const handlePayVehiclePayable = async (payableId, paymentData) => {
+    await payablesApi.addPayment(payableId, paymentData);
+    reloadAll();
   };
 
   return (
@@ -562,55 +588,17 @@ export default function VehicleDetailPage() {
 
       {tab === 'tesoreria' && (
         <div className="space-y-6">
-          {/* Estado de Pagos CxC/CxP */}
-          {paymentStatus && (paymentStatus.purchase || paymentStatus.sale) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* CxP - Compra */}
-              {paymentStatus.purchase && (
-                <div className={`p-4 rounded-lg border ${
-                  paymentStatus.purchase.status === 'PAID'
-                    ? 'border-green-500/30 bg-green-500/5'
-                    : 'border-red-500/30 bg-red-500/5'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-[#E6EDF3]">Compra (CxP)</h4>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      paymentStatus.purchase.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
-                      paymentStatus.purchase.status === 'PARTIAL' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-amber-500/20 text-amber-400'
-                    }`}>
-                      {paymentStatus.purchase.status === 'PAID' ? 'Pagado' :
-                       paymentStatus.purchase.status === 'PARTIAL' ? 'Parcial' : 'Pendiente'}
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-[#8B949E]">Total:</span>
-                      <span>{formatCurrency(paymentStatus.purchase.totalAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#8B949E]">Pagado:</span>
-                      <span className="text-green-400">{formatCurrency(paymentStatus.purchase.paidAmount)}</span>
-                    </div>
-                    {paymentStatus.purchase.pendingAmount > 0 && (
-                      <div className="flex justify-between font-semibold border-t border-border pt-1 mt-1">
-                        <span className="text-[#8B949E]">Pendiente:</span>
-                        <span className="text-red-400">{formatCurrency(paymentStatus.purchase.pendingAmount)}</span>
-                      </div>
-                    )}
-                  </div>
-                  {paymentStatus.purchase.pendingAmount > 0 && !isViewer && (
-                    <button
-                      onClick={() => openPaymentForPayable(paymentStatus.purchase, 'expense')}
-                      className="btn-primary w-full mt-3 text-sm bg-red-600 hover:bg-red-700"
-                      data-testid="vehicle-pay-purchase"
-                    >
-                      Registrar Pago
-                    </button>
-                  )}
-                </div>
-              )}
+          {/* CxP del vehículo (pagar) — lista unificada con misma función que "Ver todas" */}
+          <PayablesList
+            type="PAYABLE"
+            payables={cxpDelVehiculo}
+            loading={loadingVehiclePayables}
+            onPayment={isViewer ? undefined : handlePayVehiclePayable}
+          />
 
+          {/* Estado de Pagos CxC/CxP */}
+          {paymentStatus?.sale && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* CxC - Venta */}
               {paymentStatus.sale && (
                 <div className={`p-4 rounded-lg border ${
@@ -661,50 +649,8 @@ export default function VehicleDetailPage() {
 
           {/* Socio — ganancia (PARTNER_SHARE) y comisión que debe (RECEIVABLE). Distinto de
               Inversionista/Comisión (fondo): esto es lo que le corresponde/debe al socio del carro. */}
-          {(partnerSharePayable || partnerCommissionPayable) && (
+          {partnerCommissionPayable && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {partnerSharePayable && (
-                <div
-                  className={`p-4 rounded-lg border ${
-                    partnerSharePayable.status === 'PAID' ? 'border-green-500/30 bg-green-500/5' : 'border-[#BC8CFF]/30 bg-[#BC8CFF]/5'
-                  }`}
-                  data-testid="vehicle-partner-share-card"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-[#E6EDF3] inline-flex items-center gap-1.5">
-                      <Handshake className="w-3.5 h-3.5 text-[#BC8CFF]" /> Socio — Ganancia
-                    </h4>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      partnerSharePayable.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
-                      partnerSharePayable.status === 'PARTIAL' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-[#BC8CFF]/20 text-[#BC8CFF]'
-                    }`}>
-                      {partnerSharePayable.status === 'PAID' ? 'Pagado' :
-                       partnerSharePayable.status === 'PARTIAL' ? 'Parcial' : 'Pendiente'}
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-[#8B949E]">{vehicle.partner?.name || 'Socio'}:</span>
-                      <span data-testid="vehicle-partner-share-amount">{formatCurrency(partnerSharePayable.totalAmount)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#8B949E]">Pagado:</span>
-                      <span className="text-green-400">{formatCurrency(partnerSharePayable.paidAmount)}</span>
-                    </div>
-                  </div>
-                  {parseFloat(partnerSharePayable.totalAmount) - parseFloat(partnerSharePayable.paidAmount) > 0 && !isViewer && (
-                    <button
-                      onClick={() => openPaymentForPayable(partnerSharePayable, 'expense')}
-                      className="btn-primary w-full mt-3 text-sm bg-[#BC8CFF] hover:opacity-90"
-                      data-testid="vehicle-pay-partner-share"
-                    >
-                      Pagar al Socio
-                    </button>
-                  )}
-                </div>
-              )}
-
               {partnerCommissionPayable && (
                 <div
                   className={`p-4 rounded-lg border ${
