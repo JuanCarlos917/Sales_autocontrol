@@ -81,7 +81,7 @@ export default function PayablesList({
         ) : (
           payables.slice(0, 5).map((p) => {
             const pending = parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
-            const overdue = isOverdue(p.dueDate) && p.status !== 'PAID';
+            const overdue = isOverdue(p.dueDate) && p.status !== 'PAID' && p.status !== 'CANCELLED';
             return (
               <div
                 key={p.id}
@@ -144,7 +144,7 @@ export default function PayablesList({
           <tbody>
             {payables.map((p) => {
               const pending = parseFloat(p.totalAmount) - parseFloat(p.paidAmount);
-              const overdue = isOverdue(p.dueDate) && p.status !== 'PAID';
+              const overdue = isOverdue(p.dueDate) && p.status !== 'PAID' && p.status !== 'CANCELLED';
               return (
                 <tr
                   key={p.id}

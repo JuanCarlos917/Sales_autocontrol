@@ -43,10 +43,12 @@ const getAll = async (filters = {}) => {
   if (vehicleId) where.vehicleId = vehicleId;
   if (thirdPartyId) where.thirdPartyId = thirdPartyId;
 
-  // Filtrar vencidos (dueDate < hoy y status != PAID)
+  // Filtrar vencidos (dueDate < hoy y aún abiertas). Se excluyen PAID *y* CANCELLED:
+  // una CxP cancelada con dueDate vieja NO es una cuenta vencida (mismo criterio que
+  // getSummary). Antes usaba { not: 'PAID' }, que dejaba pasar las canceladas.
   if (overdue === 'true' || overdue === true) {
     where.dueDate = { lt: new Date() };
-    where.status = { not: 'PAID' };
+    where.status = { in: ['PENDING', 'PARTIAL'] };
   }
 
   const payables = await prisma.payable.findMany({
