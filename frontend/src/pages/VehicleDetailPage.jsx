@@ -117,9 +117,8 @@ export default function VehicleDetailPage() {
   const [processingAction, setProcessingAction] = useState(false);
   // Resumen devuelto por el registro de venta — usado para la card "el socio debe pagar $X"
   const [saleSummary, setSaleSummary] = useState(null);
-  // CxP/CxC del socio (creadas al vender): ganancia del socio (PARTNER_SHARE)
-  // + comisión que el socio debe (RECEIVABLE) — distintas de las de fondo (Inversionista/Comisión).
-  const [partnerSharePayable, setPartnerSharePayable] = useState(null);
+  // CxC del socio (creadas al vender): comisión que el socio debe (RECEIVABLE)
+  // — distinta de las de fondo (Inversionista/Comisión).
   const [partnerCommissionPayable, setPartnerCommissionPayable] = useState(null);
 
   const loadVehicle = async () => {
@@ -167,17 +166,12 @@ export default function VehicleDetailPage() {
     }
   };
 
-  // Ganancia del socio (PARTNER_SHARE) y comisión que el socio debe (RECEIVABLE, descripción
-  // "Comisión socio venta ..."), ambas creadas por saleService al vender un vehículo con socio.
+  // Comisión que el socio debe (RECEIVABLE, descripción "Comisión socio venta ..."),
+  // creada por saleService al vender un vehículo con socio.
   const loadPartnerPayables = async () => {
     try {
-      const [shareRes, receivablesRes] = await Promise.all([
-        payablesApi.getAll({ vehicleId: id, type: 'PARTNER_SHARE' }),
-        payablesApi.getAll({ vehicleId: id, type: 'RECEIVABLE' }),
-      ]);
-      const share = (shareRes.data || []).find(p => p.status !== 'CANCELLED');
-      setPartnerSharePayable(share || null);
-      const commission = (receivablesRes.data || [])
+      const { data } = await payablesApi.getAll({ vehicleId: id, type: 'RECEIVABLE' });
+      const commission = (data || [])
         .find(p => p.status !== 'CANCELLED' && (p.description || '').startsWith('Comisión socio venta'));
       setPartnerCommissionPayable(commission || null);
     } catch (err) {
@@ -239,10 +233,11 @@ export default function VehicleDetailPage() {
   const portals = vehicle.publishedPortals || [];
   // CxP del vehículo (pagar): todo lo que no es cuenta por cobrar.
   const cxpDelVehiculo = vehiclePayables.filter((p) => p.type !== 'RECEIVABLE');
-  // Conteo de la pestaña Tesorería: movimientos + CxP de compra + CxC de venta
-  // (un cruce saldado no genera movimiento pero sí su CxP, y debe contarse).
+  // Conteo de la pestaña Tesorería: movimientos + CxP de compra abiertas + CxC de venta
+  // (un cruce saldado no genera movimiento pero sí su CxP, y debe contarse mientras esté abierta).
+  const openCxpCount = cxpDelVehiculo.filter((p) => p.status !== 'PAID' && p.status !== 'CANCELLED').length;
   const treasuryCount = vehicleTransactions.length
-    + cxpDelVehiculo.length
+    + openCxpCount
     + (paymentStatus?.sale ? 1 : 0);
 
   const handleDelete = async () => {
