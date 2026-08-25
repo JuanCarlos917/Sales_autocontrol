@@ -212,6 +212,13 @@ enum DocumentType {
   CONTRATO
   FOTO_VEHICULO
   OTRO
+  // Tipos vigentes (agregados 2026-08-25). Los de arriba se conservan para
+  // los documentos existentes, pero ya no se ofrecen en el formulario.
+  FORMULARIO_TRASPASO
+  CONTRATO_MANDATO
+  CONTRATO_COMPRAVENTA
+  CC_PROPIETARIO
+  CC_COMPRADOR
 }
 
 // ══════════════════════════════════════════════════════════════

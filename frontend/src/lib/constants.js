@@ -45,13 +45,20 @@ export const PORTALS = [
 
 export const DOC_TYPES = [
   { id: 'TARJETA_PROPIEDAD', label: 'Tarjeta de Propiedad' },
-  { id: 'SOAT', label: 'SOAT' },
-  { id: 'TECNOMECANICA', label: 'Técnico-mecánica' },
-  { id: 'PERITAJE', label: 'Peritaje' },
-  { id: 'CERTIFICADO_TRADICION', label: 'Cert. Tradición' },
-  { id: 'CONTRATO', label: 'Contrato' },
-  { id: 'FOTO_VEHICULO', label: 'Foto Vehículo' },
-  { id: 'OTRO', label: 'Otro' },
+  { id: 'FORMULARIO_TRASPASO', label: 'Formulario Traspaso' },
+  { id: 'CONTRATO_MANDATO', label: 'Contrato Mandato' },
+  { id: 'CONTRATO_COMPRAVENTA', label: 'Contrato compraventa' },
+  { id: 'CC_PROPIETARIO', label: 'CC Propietario' },
+  { id: 'CC_COMPRADOR', label: 'CC Comprador' },
+  { id: 'OTRO', label: 'Otros' },
+  // Tipos legados: ya no se ofrecen en el formulario, pero se conservan para
+  // etiquetar documentos existentes que aún los usan. Se filtran con `legacy`.
+  { id: 'SOAT', label: 'SOAT', legacy: true },
+  { id: 'TECNOMECANICA', label: 'Técnico-mecánica', legacy: true },
+  { id: 'PERITAJE', label: 'Peritaje', legacy: true },
+  { id: 'CERTIFICADO_TRADICION', label: 'Cert. Tradición', legacy: true },
+  { id: 'CONTRATO', label: 'Contrato', legacy: true },
+  { id: 'FOTO_VEHICULO', label: 'Foto Vehículo', legacy: true },
 ];
 
 // ── Formatters ──

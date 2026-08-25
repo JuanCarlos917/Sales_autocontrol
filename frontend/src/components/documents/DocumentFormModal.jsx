@@ -153,7 +153,7 @@ export default function DocumentFormModal({ vehicleId, onClose }) {
     <Modal onClose={onClose} title="Agregar Documento / Foto" width="max-w-md">
       <div className="space-y-4">
         <Select label="Tipo de Documento" value={docType} onChange={e => setDocType(e.target.value)}
-          options={DOC_TYPES.map(d => ({ value: d.id, label: d.label }))} />
+          options={DOC_TYPES.filter(d => !d.legacy).map(d => ({ value: d.id, label: d.label }))} />
 
         <div>
           <label className="label-sm">Archivo (Foto / PDF)</label>
