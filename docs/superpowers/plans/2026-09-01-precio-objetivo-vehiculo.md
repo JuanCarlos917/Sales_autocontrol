@@ -6,7 +6,7 @@
 
 **Architecture:** El target se calcula (no se persiste) dentro de `calculateVehicleMetrics` en `backend/src/utils/financial.js`, reusando `realCostWithFixed`. El margen sale de un default global en la tabla `Setting` (`targetMarginDefault`), sobreescribible por un campo nuevo `Vehicle.targetMargin`. El agregado vive en `dashboardService.getPipelineTarget()`. El frontend consume los campos nuevos de `metrics` sin recalcular.
 
-**Tech Stack:** Node.js + Express + Prisma + PostgreSQL (backend, CommonJS) · React 18 + Vite + Tailwind (frontend, ES Modules) · Jest (tests backend) · Joi (validación).
+**Tech Stack:** Node.js + Express + Prisma + PostgreSQL (backend, CommonJS) · React 18 + Vite + Tailwind (frontend, ES Modules) · `node:test` + `node:assert/strict` (tests backend — **no hay Jest en el repo**) · Joi (validación).
 
 **Spec:** `docs/superpowers/specs/2026-09-01-precio-objetivo-vehiculo-design.md`
 
@@ -18,6 +18,7 @@
 - Margen almacenado como **fracción decimal** en `[0, 1]` (ej. `0.15`), consistente con `participation`. La UI muestra porcentaje (×100) y convierte al guardar (÷100).
 - Validación con Joi en endpoints. Patrón Controller → Service → Prisma; sin lógica de negocio en controllers.
 - `DEFAULT_TARGET_MARGIN = 0.15` como fallback de código cuando no existe el `Setting`.
+- Tests backend con `node:test` + `node:assert/strict` (runner: `node --test src/`). NO usar Jest — no está instalado. Mockear Prisma inyectando en `require.cache`, como en `src/services/__tests__/payableService.getSummary.test.js`.
 - Stages de inventario **activo** para el agregado: `COMPRADO`, `ALISTAMIENTO`, `PUBLICADO`, `DISPONIBLE` (excluye `NEGOCIANDO` y `VENDIDO`).
 
 ---
@@ -175,7 +176,7 @@ describe('calculateVehicleMetrics — precio objetivo', () => {
 
 - [ ] **Step 2: Correr los tests y verificar que fallan**
 
-Run: `cd backend && npx jest src/utils/__tests__/financial.test.js -t "precio objetivo"`
+Run: `cd backend && node --test src/utils/__tests__/financial.test.js`
 Expected: FAIL — los campos `targetPrice`, `targetStatus`, etc. son `undefined`.
 
 - [ ] **Step 3: Implementar**
@@ -225,7 +226,7 @@ Exportar la constante si el módulo usa exports nombrados (añadir `DEFAULT_TARG
 
 - [ ] **Step 4: Correr los tests y verificar que pasan**
 
-Run: `cd backend && npx jest src/utils/__tests__/financial.test.js`
+Run: `cd backend && node --test src/utils/__tests__/financial.test.js`
 Expected: PASS (incluidos los tests preexistentes).
 
 - [ ] **Step 5: Commit**
@@ -263,7 +264,7 @@ describe('projectProfit — target', () => {
 
 - [ ] **Step 2: Verificar que falla**
 
-Run: `cd backend && npx jest src/utils/__tests__/financial.test.js -t "projectProfit — target"`
+Run: `cd backend && node --test src/utils/__tests__/financial.test.js`
 Expected: FAIL — `targetPrice` undefined.
 
 - [ ] **Step 3: Implementar**
@@ -279,7 +280,7 @@ Añadir `targetPrice` y `targetProfit` al objeto retornado.
 
 - [ ] **Step 4: Verificar que pasa**
 
-Run: `cd backend && npx jest src/utils/__tests__/financial.test.js -t "projectProfit — target"`
+Run: `cd backend && node --test src/utils/__tests__/financial.test.js`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -332,7 +333,7 @@ Aplicar a todos los call sites hallados en el Step 1 (vehicleService y dashboard
 
 - [ ] **Step 3: Verificar que la suite sigue verde**
 
-Run: `cd backend && npx jest`
+Run: `cd backend && node --test src/`
 Expected: PASS (ningún test roto; los metrics ahora incluyen campos target).
 
 - [ ] **Step 4: Commit**
@@ -358,60 +359,74 @@ git commit -m "feat(services): honrar targetMarginDefault en métricas de vehíc
 
 Crear `backend/src/services/__tests__/dashboardService.pipelineTarget.test.js`:
 
+Usa el patrón de mocking del repo (inyección en el require cache), idéntico al de
+`src/services/__tests__/payableService.getSummary.test.js`. **No hay Jest en este
+proyecto**: el runner es `node:test` con `node:assert/strict`.
+
 ```js
+'use strict';
+// getPipelineTarget — agregado de la meta del pipeline sobre el inventario activo.
+// Se reemplaza `../config/database` en el require cache por un prisma falso.
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+let vehiclesFixture = [];
+let lastFindManyArgs = null;
+
+const fakePrisma = {
+  setting: {
+    findUnique: async ({ where }) => (
+      where.key === 'targetMarginDefault' ? { value: '0.15' } : { value: '0' }
+    ),
+  },
+  vehicle: {
+    findMany: async (args) => {
+      lastFindManyArgs = args;
+      return vehiclesFixture;
+    },
+  },
+};
+
+const dbPath = require.resolve('../../config/database');
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: fakePrisma };
+
 const dashboardService = require('../dashboardService');
-const prisma = require('../../config/database');
 
-jest.mock('../../config/database', () => ({
-  setting: { findUnique: jest.fn() },
-  vehicle: { findMany: jest.fn() },
-}));
+test('getPipelineTarget: suma solo stages activos y calcula la brecha', async () => {
+  vehiclesFixture = [
+    { stage: 'PUBLICADO', purchasePrice: 30_000_000, listedPrice: 35_000_000, expenses: [] }, // target 34.5M, MEETS
+    { stage: 'DISPONIBLE', purchasePrice: 20_000_000, listedPrice: 21_000_000, expenses: [] }, // target 23M, PROFIT
+  ];
 
-describe('getPipelineTarget', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    prisma.setting.findUnique.mockImplementation(({ where }) =>
-      Promise.resolve(where.key === 'targetMarginDefault' ? { value: '0.15' } : { value: '0' })
-    );
+  const r = await dashboardService.getPipelineTarget('user1');
+
+  assert.equal(lastFindManyArgs.where.userId, 'user1');
+  assert.deepEqual(lastFindManyArgs.where.stage, {
+    in: ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'],
   });
+  assert.equal(r.vehicleCount, 2);
+  assert.equal(r.sumTargetPrice, 57_500_000); // 34.5M + 23M
+  assert.equal(r.sumListed, 56_000_000); // 35M + 21M
+  assert.equal(r.pipelineGap, -1_500_000); // 56M − 57.5M
+  assert.equal(r.statusCounts.MEETS, 1);
+  assert.equal(r.statusCounts.PROFIT, 1);
+});
 
-  test('suma solo stages activos y calcula la brecha', async () => {
-    prisma.vehicle.findMany.mockResolvedValue([
-      { stage: 'PUBLICADO', purchasePrice: 30000000, listedPrice: 35000000, expenses: [] }, // target 34.5M, MEETS
-      { stage: 'DISPONIBLE', purchasePrice: 20000000, listedPrice: 21000000, expenses: [] }, // target 23M, PROFIT
-    ]);
+test('getPipelineTarget: inventario vacío → ceros sin crash', async () => {
+  vehiclesFixture = [];
 
-    const r = await dashboardService.getPipelineTarget('user1');
+  const r = await dashboardService.getPipelineTarget('user1');
 
-    expect(prisma.vehicle.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          userId: 'user1',
-          stage: { in: ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'] },
-        }),
-      })
-    );
-    expect(r.vehicleCount).toBe(2);
-    expect(r.sumTargetPrice).toBe(57500000); // 34.5M + 23M
-    expect(r.sumListed).toBe(56000000); // 35M + 21M
-    expect(r.pipelineGap).toBe(-1500000); // 56M − 57.5M
-    expect(r.statusCounts.MEETS).toBe(1);
-    expect(r.statusCounts.PROFIT).toBe(1);
-  });
-
-  test('inventario vacío → ceros sin crash', async () => {
-    prisma.vehicle.findMany.mockResolvedValue([]);
-    const r = await dashboardService.getPipelineTarget('user1');
-    expect(r.vehicleCount).toBe(0);
-    expect(r.sumTargetPrice).toBe(0);
-    expect(r.pipelineGap).toBe(0);
-  });
+  assert.equal(r.vehicleCount, 0);
+  assert.equal(r.sumTargetPrice, 0);
+  assert.equal(r.pipelineGap, 0);
 });
 ```
 
 - [ ] **Step 2: Verificar que falla**
 
-Run: `cd backend && npx jest src/services/__tests__/dashboardService.pipelineTarget.test.js`
+Run: `cd backend && node --test src/services/__tests__/dashboardService.pipelineTarget.test.js`
 Expected: FAIL — `getPipelineTarget is not a function`.
 
 - [ ] **Step 3: Implementar**
@@ -457,7 +472,7 @@ En `backend/src/services/dashboardService.js`, dentro de `class DashboardService
 
 - [ ] **Step 4: Verificar que pasa**
 
-Run: `cd backend && npx jest src/services/__tests__/dashboardService.pipelineTarget.test.js`
+Run: `cd backend && node --test src/services/__tests__/dashboardService.pipelineTarget.test.js`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -550,7 +565,7 @@ En `settingsController.js`, dentro de `update`, antes del loop de upsert:
 
 - [ ] **Step 3: Verificar la suite**
 
-Run: `cd backend && npx jest`
+Run: `cd backend && node --test src/`
 Expected: PASS (incluye `settingsController.test.js` existente).
 
 - [ ] **Step 4: Commit**
@@ -814,7 +829,7 @@ El bloque "Meta del pipeline" aparece y muestra las tres cuentas de estado.
 
 Invocar la skill `verification-loop` (build + lint + tests + security). Confirmar cobertura ≥ 80% en la lógica nueva de `financial.js` y `dashboardService.js`.
 
-Run: `cd backend && npx jest --coverage src/utils/financial.js src/services/dashboardService.js`
+Run: `cd backend && node --test src/`
 Expected: PASS, cobertura ≥ 80% en los archivos nuevos/tocados.
 
 - [ ] **Step 4: Commit**
