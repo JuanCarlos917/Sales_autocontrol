@@ -651,3 +651,79 @@ test('dist sin socio: idéntico al comportamiento actual', () => {
   assert.equal(d.taxAmount, 900_000);              // 10% × 9M
   assert.equal(d.profitToDistribute, 5_400_000);   // 9M − 2.7M − 0.9M
 });
+
+// ── calculateVehicleMetrics — precio objetivo ────────────────
+// Base: compra 30M, sin gastos, sin fijos (sin purchaseDate → daysInInventory 0)
+const targetBaseVehicle = {
+  stage: 'PUBLICADO',
+  purchasePrice: 30_000_000,
+  listedPrice: 34_500_000,
+  expenses: [],
+};
+
+test('calculateVehicleMetrics — precio objetivo: usa el margen global cuando el vehículo no tiene override', () => {
+  const m = calculateVehicleMetrics(targetBaseVehicle, 0, [], 0.15);
+  assert.equal(m.effectiveMargin, 0.15);
+  assert.equal(m.isCustomMargin, false);
+  assert.equal(m.targetPrice, 34_500_000); // 30M × 1.15
+  assert.equal(m.targetProfit, 4_500_000);
+});
+
+test('calculateVehicleMetrics — precio objetivo: el override por vehículo tiene prioridad sobre el global', () => {
+  const m = calculateVehicleMetrics({ ...targetBaseVehicle, targetMargin: 0.2 }, 0, [], 0.15);
+  assert.equal(m.effectiveMargin, 0.2);
+  assert.equal(m.isCustomMargin, true);
+  assert.equal(m.targetPrice, 36_000_000); // 30M × 1.20
+});
+
+test('calculateVehicleMetrics — precio objetivo: targetProfit == realCostWithFixed × effectiveMargin', () => {
+  const m = calculateVehicleMetrics(targetBaseVehicle, 0, [], 0.15);
+  assert.equal(m.targetProfit, Math.round(m.realCostWithFixed * m.effectiveMargin));
+});
+
+test('calculateVehicleMetrics — precio objetivo: status MEETS cuando el publicado alcanza o supera el target', () => {
+  const m = calculateVehicleMetrics({ ...targetBaseVehicle, listedPrice: 35_000_000 }, 0, [], 0.15);
+  assert.equal(m.targetStatus, 'MEETS');
+  assert.equal(m.targetGap, 500_000); // 35M − 34.5M
+});
+
+test('calculateVehicleMetrics — precio objetivo: status PROFIT cuando es rentable pero por debajo del target', () => {
+  const m = calculateVehicleMetrics({ ...targetBaseVehicle, listedPrice: 32_000_000 }, 0, [], 0.15);
+  assert.equal(m.targetStatus, 'PROFIT');
+  assert.equal(m.targetGap, -2_500_000);
+});
+
+test('calculateVehicleMetrics — precio objetivo: status BELOW cuando el publicado no cubre el costo', () => {
+  const m = calculateVehicleMetrics({ ...targetBaseVehicle, listedPrice: 29_000_000 }, 0, [], 0.15);
+  assert.equal(m.targetStatus, 'BELOW');
+});
+
+test('calculateVehicleMetrics — precio objetivo: sin listedPrice y no vendido → status y gap null', () => {
+  const m = calculateVehicleMetrics({ ...targetBaseVehicle, listedPrice: null }, 0, [], 0.15);
+  assert.equal(m.targetStatus, null);
+  assert.equal(m.targetGap, null);
+});
+
+test('calculateVehicleMetrics — precio objetivo: vehículo vendido usa salePrice como referencia', () => {
+  const sold = { stage: 'VENDIDO', purchasePrice: 30_000_000, listedPrice: 34_500_000, salePrice: 33_000_000, expenses: [], purchaseDate: '2026-01-01', saleDate: '2026-01-01' };
+  const m = calculateVehicleMetrics(sold, 0, [], 0.15);
+  assert.equal(m.targetStatus, 'PROFIT'); // 33M ≥ costo 30M, < target 34.5M
+  assert.equal(m.targetGap, -1_500_000); // 33M − 34.5M
+});
+
+test('calculateVehicleMetrics — precio objetivo: margen 0 → target == costo, profit 0', () => {
+  const m = calculateVehicleMetrics(targetBaseVehicle, 0, [], 0);
+  assert.equal(m.targetPrice, m.realCostWithFixed);
+  assert.equal(m.targetProfit, 0);
+});
+
+test('calculateVehicleMetrics — precio objetivo: sin costo (realCostWithFixed 0) → targetPrice 0 sin crash', () => {
+  const m = calculateVehicleMetrics({ stage: 'NEGOCIANDO', purchasePrice: 0, listedPrice: null, expenses: [] }, 0, [], 0.15);
+  assert.equal(m.targetPrice, 0);
+  assert.equal(m.targetStatus, null);
+});
+
+test('calculateVehicleMetrics — precio objetivo: default de código 0.15 cuando no se pasa targetMarginDefault', () => {
+  const m = calculateVehicleMetrics(targetBaseVehicle, 0, []);
+  assert.equal(m.effectiveMargin, 0.15);
+});
