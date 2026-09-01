@@ -583,7 +583,7 @@ git commit -m "feat(validation): targetMargin por vehículo y targetMarginDefaul
 - Modify: `frontend/src/pages/SettingsPage.jsx`
 
 **Interfaces:**
-- Consumes: `GET /settings` (devuelve `targetMarginDefault` como fracción string) y `PUT /settings`.
+- Consumes: `GET /settings` (devuelve `targetMarginDefault` como fracción string) y `PUT /settings`, vía `fetchSettings`/`updateSettings` de `useApp()` (`@/contexts/AppContext`) que la página YA usa.
 - Produces: la UI persiste `targetMarginDefault` como fracción decimal.
 
 - [ ] **Step 1: Cargar el valor (fracción → porcentaje)**
@@ -697,14 +697,14 @@ Añadir (dentro de la misma tarjeta o cerca) un control que haga `PATCH /vehicle
                 const raw = e.target.value.trim();
                 const targetMargin = raw === '' ? null : (parseFloat(raw) || 0) / 100;
                 await api.patch(`/vehicles/${vehicle.id}`, { targetMargin });
-                await reload(); // usar la función de recarga existente de la página
+                await loadVehicle();
               }}
             />
             <span className="text-[11px] text-[#8B949E]">vacío = margen global</span>
           </div>
 ```
 
-Ajustar `reload()`/`api` al nombre real que la página ya usa para refrescar tras editar.
+La página ya define `loadVehicle()` (VehicleDetailPage.jsx:124) y ya importa `api` desde `@/lib/api`, `formatCurrency`/`formatPercent` desde `@/lib/constants`. Reusa esos — no crees helpers nuevos ni imports duplicados.
 
 - [ ] **Step 4: Verificar en el navegador**
 
@@ -763,37 +763,58 @@ git commit -m "feat(vehicles-ui): badge de semáforo de meta en la lista"
 ### Task 10: Frontend — bloque "Meta del pipeline" en el dashboard
 
 **Files:**
-- Modify: la página de dashboard que consume `/dashboard/overview` (localizar con grep abajo).
+- Modify: `frontend/src/pages/DashboardPage.jsx`
 
 **Interfaces:**
 - Consumes: `GET /dashboard/pipeline-target` (Task 5).
 - Produces: bloque con suma objetivo vs. publicado, brecha y conteo por estado.
 
-- [ ] **Step 1: Localizar la página de dashboard**
+⚠️ **Colisión de nombres — obligatorio respetar:** `DashboardPage.jsx:38` YA
+desestructura una variable llamada `pipeline` (`const { kpis, pipeline, ... } = dashboard`),
+que es la distribución de vehículos por stage y NO tiene relación con este agregado.
+El estado nuevo se llama **`pipelineTarget`**. No reutilices ni sombrees `pipeline`.
 
-Run: `cd frontend && grep -rln "dashboard/overview\|/dashboard" src/pages src/components`
-Usar esa página como destino.
+La página ya importa `api` desde `@/lib/api` y `formatCurrency` desde `@/lib/constants`;
+reusa esos imports.
 
-- [ ] **Step 2: Fetch del agregado**
+- [ ] **Step 1: Fetch del agregado**
 
-Añadir un `useEffect` que llame `api.get('/dashboard/pipeline-target')` y guarde el resultado en estado.
-
-- [ ] **Step 3: Renderizar el bloque**
+Junto a los otros `useState`/`useEffect` de la página (líneas ~14-27):
 
 ```jsx
-      {pipeline && (
+  const [pipelineTarget, setPipelineTarget] = useState(null);
+
+  useEffect(() => {
+    api.get('/dashboard/pipeline-target')
+      .then(r => setPipelineTarget(r.data))
+      .catch(() => setPipelineTarget(null));
+  }, []);
+```
+
+- [ ] **Step 2: Renderizar el bloque**
+
+```jsx
+      {pipelineTarget && pipelineTarget.vehicleCount > 0 && (
         <div className="p-4 rounded-xl border border-[#30363D]">
           <div className="text-sm font-semibold mb-2">Meta del pipeline</div>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><div className="text-[11px] text-[#8B949E]">Objetivo proyectado</div>{formatCurrency(pipeline.sumTargetPrice)}</div>
-            <div><div className="text-[11px] text-[#8B949E]">Publicado hoy</div>{formatCurrency(pipeline.sumListed)}</div>
+            <div>
+              <div className="text-[11px] text-[#8B949E]">Objetivo proyectado</div>
+              {formatCurrency(pipelineTarget.sumTargetPrice)}
+            </div>
+            <div>
+              <div className="text-[11px] text-[#8B949E]">Publicado hoy</div>
+              {formatCurrency(pipelineTarget.sumListed)}
+            </div>
             <div className="col-span-2">
               <div className="text-[11px] text-[#8B949E]">Brecha</div>
-              <span style={{ color: pipeline.pipelineGap >= 0 ? '#3FB950' : '#F85149' }}>{formatCurrency(pipeline.pipelineGap)}</span>
+              <span style={{ color: pipelineTarget.pipelineGap >= 0 ? '#3FB950' : '#F85149' }}>
+                {formatCurrency(pipelineTarget.pipelineGap)}
+              </span>
             </div>
           </div>
           <div className="text-[11px] text-[#8B949E] mt-2">
-            {pipeline.statusCounts.MEETS} cumplen · {pipeline.statusCounts.PROFIT} bajo meta · {pipeline.statusCounts.BELOW} sin cubrir
+            {pipelineTarget.statusCounts.MEETS} cumplen · {pipelineTarget.statusCounts.PROFIT} bajo meta · {pipelineTarget.statusCounts.BELOW} sin cubrir
           </div>
         </div>
       )}
@@ -806,7 +827,7 @@ Run: frontend en dev → dashboard: el bloque muestra sumas coherentes con el in
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/pages/<DashboardPage>.jsx
+git add frontend/src/pages/DashboardPage.jsx
 git commit -m "feat(dashboard-ui): bloque de meta del pipeline"
 ```
 
