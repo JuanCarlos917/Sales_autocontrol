@@ -92,6 +92,41 @@ class DashboardService {
     const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
     return projectProfit({ ...params, fixedMonthly });
   }
+
+  async getPipelineTarget(userId) {
+    const ACTIVE_STAGES = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'];
+    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
+    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
+    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
+    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+
+    const vehicles = await prisma.vehicle.findMany({
+      where: { userId, stage: { in: ACTIVE_STAGES } },
+      include: { expenses: true },
+    });
+
+    const acc = {
+      vehicleCount: vehicles.length,
+      sumTargetPrice: 0,
+      sumTargetProfit: 0,
+      sumRealCost: 0,
+      sumListed: 0,
+      statusCounts: { MEETS: 0, PROFIT: 0, BELOW: 0, unknown: 0 },
+    };
+
+    for (const v of vehicles) {
+      const m = calculateVehicleMetrics(v, fixedMonthly, [], targetMarginDefault);
+      acc.sumTargetPrice += m.targetPrice;
+      acc.sumTargetProfit += m.targetProfit;
+      acc.sumRealCost += m.realCostWithFixed;
+      acc.sumListed += Number(v.listedPrice || 0);
+      const key = m.targetStatus || 'unknown';
+      acc.statusCounts[key] += 1;
+    }
+
+    acc.pipelineGap = acc.sumListed - acc.sumTargetPrice;
+    return acc;
+  }
 }
 
 module.exports = new DashboardService();
