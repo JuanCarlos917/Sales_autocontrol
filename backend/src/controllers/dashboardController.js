@@ -25,4 +25,11 @@ const getProjection = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { getOverview, getProjection };
+const getPipelineTarget = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getPipelineTarget(req.user.id);
+    res.json(data);
+  } catch (err) { next(err); }
+};
+
+module.exports = { getOverview, getProjection, getPipelineTarget };
