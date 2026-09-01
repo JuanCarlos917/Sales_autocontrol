@@ -159,12 +159,14 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayab
 /**
  * Proyecta la ganancia de un negocio hipotético
  */
-function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedDays, participation = 1, fixedMonthly = 800000 }) {
+function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedDays, participation = 1, fixedMonthly = 800000, targetMargin = DEFAULT_TARGET_MARGIN }) {
   const fixedProrated = (estimatedDays / 30) * fixedMonthly;
   const totalCost = purchasePrice + estimatedExpenses + fixedProrated;
   const netProfit = salePrice - totalCost;
   const roi = totalCost > 0 ? netProfit / totalCost : 0;
   const myProfit = netProfit * participation;
+  const targetPrice = Math.round(totalCost * (1 + targetMargin));
+  const targetProfit = Math.round(totalCost * targetMargin);
 
   return {
     totalCost: Math.round(totalCost),
@@ -172,6 +174,8 @@ function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedD
     netProfit: Math.round(netProfit),
     roi,
     myProfit: Math.round(myProfit),
+    targetPrice,
+    targetProfit,
   };
 }
 

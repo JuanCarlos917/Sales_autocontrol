@@ -727,3 +727,10 @@ test('calculateVehicleMetrics — precio objetivo: default de código 0.15 cuand
   const m = calculateVehicleMetrics(targetBaseVehicle, 0, []);
   assert.equal(m.effectiveMargin, 0.15);
 });
+
+// ── projectProfit — target ───────────────────────────────────
+test('projectProfit — target: calcula targetPrice sobre el totalCost con el margen dado', () => {
+  const r = projectProfit({ purchasePrice: 20_000_000, estimatedExpenses: 0, salePrice: 25_000_000, estimatedDays: 0, targetMargin: 0.15 });
+  assert.equal(r.targetPrice, 23_000_000); // 20M × 1.15
+  assert.equal(r.targetProfit, 3_000_000);
+});
