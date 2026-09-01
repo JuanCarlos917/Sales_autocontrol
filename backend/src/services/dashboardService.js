@@ -10,8 +10,10 @@ class DashboardService {
   async getOverview(userId) {
     const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
     const alertSetting = await prisma.setting.findUnique({ where: { key: 'alertDays' } });
+    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
     const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
     const alertDays = alertSetting ? parseInt(alertSetting.value) : 15;
+    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
 
     const vehicles = await prisma.vehicle.findMany({
       where: { userId },
@@ -20,7 +22,7 @@ class DashboardService {
 
     const all = vehicles.map(v => ({
       vehicle: v,
-      metrics: calculateVehicleMetrics(v, fixedMonthly),
+      metrics: calculateVehicleMetrics(v, fixedMonthly, [], targetMarginDefault),
     }));
 
     const sold = all.filter(x => x.vehicle.stage === 'VENDIDO');
