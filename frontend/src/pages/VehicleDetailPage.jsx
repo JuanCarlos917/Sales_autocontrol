@@ -44,6 +44,13 @@ const AUDIT_FIELD_LABELS = {
 const AUDIT_MONEY_FIELDS = new Set(['negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice', 'partnerContribution', 'receivedVehicleValue']);
 const AUDIT_DATE_FIELDS = new Set(['purchaseDate', 'saleDate']);
 
+// ── Precio objetivo: semáforo de cumplimiento ────────────────────
+const TARGET_STATUS = {
+  MEETS:  { label: 'Cumple meta', color: '#3FB950' },
+  PROFIT: { label: 'Rentable, bajo meta', color: '#D29922' },
+  BELOW:  { label: 'No cubre meta', color: '#F85149' },
+};
+
 function fmtAuditValue(field, val) {
   if (val === null || val === undefined || val === '') return '—';
   if (Array.isArray(val)) return val.length ? val.join(', ') : '—';
@@ -778,6 +785,44 @@ export default function VehicleDetailPage() {
               </>
             )}
           </div>
+
+          {m.targetPrice > 0 && (
+            <div className="p-4 rounded-xl border border-accent/20 bg-accent/5">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] text-[#8B949E]">
+                  Precio Objetivo
+                  <span className="ml-1 text-accent">{m.isCustomMargin ? '(personalizado)' : '(global)'} · {formatPercent(m.effectiveMargin)}</span>
+                </div>
+                {m.targetStatus && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: TARGET_STATUS[m.targetStatus].color + '18', color: TARGET_STATUS[m.targetStatus].color }}>
+                    {TARGET_STATUS[m.targetStatus].label}
+                  </span>
+                )}
+              </div>
+              <div className="text-xl font-bold text-accent mt-1">{formatCurrency(m.targetPrice)}</div>
+              <div className="text-[11px] text-[#8B949E] mt-0.5">
+                Ganancia objetivo: {formatCurrency(m.targetProfit)}
+                {m.targetGap != null && <> · Brecha: {formatCurrency(m.targetGap)}</>}
+              </div>
+              {!isViewer && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="number"
+                    placeholder="Margen % override"
+                    defaultValue={m.isCustomMargin ? Math.round(m.effectiveMargin * 100) : ''}
+                    className="w-32 bg-transparent border border-[#30363D] rounded px-2 py-1 text-sm"
+                    onBlur={async (e) => {
+                      const raw = e.target.value.trim();
+                      const targetMargin = raw === '' ? null : (parseFloat(raw) || 0) / 100;
+                      await api.patch(`/vehicles/${vehicle.id}`, { targetMargin });
+                      await loadVehicle();
+                    }}
+                  />
+                  <span className="text-[11px] text-[#8B949E]">vacío = margen global</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
