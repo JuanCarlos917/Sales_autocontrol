@@ -4,6 +4,8 @@ import { useApp } from '@/contexts/AppContext';
 import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
 import { Car } from 'lucide-react';
 
+const TARGET_DOT = { MEETS: '#3FB950', PROFIT: '#D29922', BELOW: '#F85149' };
+
 export default function VehiclesPage() {
   const { vehicles, fetchVehicles } = useApp();
   const [filter, setFilter] = useState('all');
@@ -49,7 +51,15 @@ export default function VehiclesPage() {
                     <div className="plate-text">{v.plate || 'SIN PLACA'}</div>
                     <div className="text-[13px] text-[#8B949E]">{v.brand} {v.model} {v.year}</div>
                   </div>
-                  <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
+                    {m.targetStatus && (
+                      <span className="stage-badge h-fit" title="Cumplimiento del precio objetivo"
+                        style={{ background: TARGET_DOT[m.targetStatus] + '18', color: TARGET_DOT[m.targetStatus] }}>
+                        Meta
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {portals.length > 0 && (
                   <div className="flex gap-1 flex-wrap mb-2">
