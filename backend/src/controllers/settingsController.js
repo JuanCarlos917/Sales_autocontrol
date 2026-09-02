@@ -15,6 +15,13 @@ const getAll = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
+    if (req.body.targetMarginDefault !== undefined) {
+      const margin = parseFloat(req.body.targetMarginDefault);
+      if (Number.isNaN(margin) || margin < 0 || margin > 1) {
+        return res.status(400).json({ error: 'targetMarginDefault debe estar entre 0 y 1' });
+      }
+    }
+
     const entries = Object.entries(req.body);
     for (const [key, value] of entries) {
       await prisma.setting.upsert({
