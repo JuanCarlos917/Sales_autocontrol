@@ -168,7 +168,7 @@ existentes.
 - `GET /vehicles/:id` y los listados de vehículos → ya devuelven `metrics`;
   ahora incluyen `targetPrice`, `targetProfit`, `effectiveMargin`,
   `isCustomMargin`, `targetGap`, `targetStatus`.
-- `PATCH /vehicles/:id` → acepta `targetMargin` (opcional, nullable). Validación
+- `PUT /vehicles/:id` → acepta `targetMargin` (opcional, nullable). Validación
   Joi en `middleware/validation.js`: `Joi.number().min(0).max(1).allow(null).optional()`.
   Enviar `null` limpia el override y vuelve al margen global.
 - **Settings** — `targetMarginDefault` se edita por el mismo flujo donde hoy se

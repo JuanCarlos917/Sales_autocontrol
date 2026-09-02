@@ -540,7 +540,7 @@ git commit -m "feat(api): endpoint GET /dashboard/pipeline-target"
 - Modify: `backend/src/controllers/settingsController.js` (`update`)
 
 **Interfaces:**
-- Produces: `PATCH /vehicles/:id` acepta `targetMargin` (0–1, nullable); `PUT /settings` rechaza `targetMarginDefault` fuera de `[0,1]`.
+- Produces: `PUT /vehicles/:id` acepta `targetMargin` (0–1, nullable); `PUT /settings` rechaza `targetMarginDefault` fuera de `[0,1]`.
 
 - [ ] **Step 1: Añadir `targetMargin` al schema de update de vehículo**
 
@@ -640,7 +640,7 @@ git commit -m "feat(settings-ui): campo de margen objetivo global"
 - Modify: `frontend/src/pages/VehicleDetailPage.jsx`
 
 **Interfaces:**
-- Consumes: `vehicle.metrics.{targetPrice, targetProfit, effectiveMargin, isCustomMargin, targetGap, targetStatus}` (Task 2) y `PATCH /vehicles/:id` con `targetMargin`.
+- Consumes: `vehicle.metrics.{targetPrice, targetProfit, effectiveMargin, isCustomMargin, targetGap, targetStatus}` (Task 2) y `PUT /vehicles/:id` con `targetMargin`.
 - Produces: tarjeta visual con semáforo + input de override.
 
 - [ ] **Step 1: Helper de color/label del semáforo**
@@ -684,7 +684,7 @@ En la sección financiera (donde se usan los `FinCard`, cerca de la línea 745 t
 
 - [ ] **Step 3: Input de override del margen**
 
-Añadir (dentro de la misma tarjeta o cerca) un control que haga `PATCH /vehicles/:id` con `targetMargin` en fracción (o `null` para volver al global). Reusar el helper `api` y el refresh de vehículo que ya usa la página:
+Añadir (dentro de la misma tarjeta o cerca) un control que haga `PUT /vehicles/:id` con `targetMargin` en fracción (o `null` para volver al global). Reusar el helper `api` y el refresh de vehículo que ya usa la página:
 
 ```jsx
           <div className="mt-2 flex items-center gap-2">
@@ -696,7 +696,7 @@ Añadir (dentro de la misma tarjeta o cerca) un control que haga `PATCH /vehicle
               onBlur={async (e) => {
                 const raw = e.target.value.trim();
                 const targetMargin = raw === '' ? null : (parseFloat(raw) || 0) / 100;
-                await api.patch(`/vehicles/${vehicle.id}`, { targetMargin });
+                await api.put(`/vehicles/${vehicle.id}`, { targetMargin });
                 await loadVehicle();
               }}
             />
