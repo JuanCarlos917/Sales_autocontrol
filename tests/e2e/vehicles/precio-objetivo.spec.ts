@@ -57,4 +57,51 @@ test.describe('Precio objetivo de venta — tarjeta de detalle y meta del pipeli
     // Único vehículo del test, en estado MEETS → 1 cumple, 0 en los otros dos.
     await expect(page.getByText('1 cumplen · 0 bajo meta · 0 sin cubrir')).toBeVisible();
   });
+
+  test('override de margen por vehículo: persiste vía PUT y el badge pasa de "(global)" a "(personalizado)"', async ({ page }) => {
+    const token = await loginAsAdmin(page);
+    const v = await apiCreateVehicle(token, {
+      plate: `OVR${Date.now().toString().slice(-6)}`,
+      stage: 'COMPRADO',
+      negotiatedValue: 20_000_000,
+      purchasePrice: 20_000_000,
+      listedPrice: 40_000_000,
+      supplierId: TEST_SEED_IDS.supplier,
+    });
+
+    await page.goto(`/vehicles/${v.id}?tab=financiero`);
+    await expect(page.getByText('Precio Objetivo')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/\(global\)/)).toBeVisible();
+    await expect(page.getByText(/\(personalizado\)/)).toHaveCount(0);
+
+    // Capturamos la ganancia objetivo mostrada ANTES del override (deriva de
+    // effectiveMargin × costo real, igual que el precio objetivo) para comprobar
+    // después que el número realmente cambió, no solo la etiqueta del badge.
+    const gananciaObjetivo = page.getByText(/Ganancia objetivo:/);
+    const gananciaAntes = await gananciaObjetivo.textContent();
+
+    // Escribe un margen (50%) bien distinto del global (15%) y dispara el guardado
+    // en el blur del input, tal como hace la UI real (onBlur → PUT /vehicles/:id).
+    const marginInput = page.getByPlaceholder('Margen % override');
+    await marginInput.fill('50');
+    await marginInput.blur();
+
+    // Señal 1: el badge pasa de "(global)" a "(personalizado)". Esto SOLO ocurre
+    // si el PUT respondió 200 y loadVehicle() volvió a traer isCustomMargin=true.
+    // Con el bug original (api.patch a una ruta que no existe → 404), la promesa
+    // del onBlur revienta antes de llamar loadVehicle(): el badge se queda en
+    // "(global)" para siempre y este expect agota el timeout y falla el test.
+    await expect(page.getByText(/\(personalizado\)/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/\(global\)/)).toHaveCount(0);
+
+    // Señal 2: el precio/ganancia objetivo cambió de verdad (no solo el badge).
+    await expect(gananciaObjetivo).not.toHaveText(gananciaAntes ?? '');
+
+    // Vaciar el input debe volver a limpiar el override (targetMargin: null) y
+    // el badge debe volver a "(global)".
+    await marginInput.fill('');
+    await marginInput.blur();
+    await expect(page.getByText(/\(global\)/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/\(personalizado\)/)).toHaveCount(0);
+  });
 });

@@ -815,7 +815,7 @@ export default function VehicleDetailPage() {
                     onBlur={async (e) => {
                       const raw = e.target.value.trim();
                       const targetMargin = raw === '' ? null : (parseFloat(raw) || 0) / 100;
-                      await api.patch(`/vehicles/${vehicle.id}`, { targetMargin });
+                      await api.put(`/vehicles/${vehicle.id}`, { targetMargin });
                       await loadVehicle();
                     }}
                   />
