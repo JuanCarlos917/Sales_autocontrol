@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const [commCfg, setCommCfg] = useState(null);
   const [commError, setCommError] = useState('');
   const [commSuccess, setCommSuccess] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [tab, setTab] = useState('negocio');
 
   useEffect(() => {
@@ -48,9 +49,14 @@ export default function SettingsPage() {
     return base;
   }, [role]);
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
+    setSettingsError('');
     const { targetMarginPct, ...rest } = settings;
-    updateSettings({ ...rest, targetMarginDefault: (parseFloat(targetMarginPct) || 0) / 100 });
+    try {
+      await updateSettings({ ...rest, targetMarginDefault: (parseFloat(targetMarginPct) || 0) / 100 });
+    } catch (err) {
+      setSettingsError(err.response?.data?.error || 'Error al guardar la configuración');
+    }
   };
 
   const handleSaveCommissions = async () => {
@@ -125,6 +131,7 @@ export default function SettingsPage() {
             <Input label="Gasto Fijo Mensual (COP)" type="number" value={settings.fixedMonthly} onChange={e => setSettings(p => ({ ...p, fixedMonthly: e.target.value }))} help="Parqueadero, publicidad fija, etc. Se proratea por vehículo." />
             <Input label="Alerta de Días en Inventario" type="number" value={settings.alertDays} onChange={e => setSettings(p => ({ ...p, alertDays: e.target.value }))} help="Después de estos días, el carro muestra alerta amarilla." />
             <Input label="Margen Objetivo (%)" type="number" value={settings.targetMarginPct} onChange={e => setSettings(p => ({ ...p, targetMarginPct: e.target.value }))} help="Ganancia objetivo sobre el costo. Fija el precio objetivo de venta de cada carro." />
+            {settingsError && <p className="text-xs text-[#F85149]">{settingsError}</p>}
             <button onClick={handleSaveSettings} className="btn-primary">Guardar Configuración</button>
           </div>
         </div>
