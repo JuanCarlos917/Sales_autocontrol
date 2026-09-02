@@ -234,6 +234,7 @@ export default function VehicleDetailPage() {
   if (!vehicle) return <div className="text-center text-[#6E7681] py-20">Cargando...</div>;
 
   const m = vehicle.metrics || {};
+  const targetStatusInfo = TARGET_STATUS[m.targetStatus] || null;
   const stage = getStage(vehicle.stage);
   const expenses = vehicle.expenses || [];
   const docs = vehicle.documents || [];
@@ -793,9 +794,9 @@ export default function VehicleDetailPage() {
                   Precio Objetivo
                   <span className="ml-1 text-accent">{m.isCustomMargin ? '(personalizado)' : '(global)'} · {formatPercent(m.effectiveMargin)}</span>
                 </div>
-                {m.targetStatus && (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: TARGET_STATUS[m.targetStatus].color + '18', color: TARGET_STATUS[m.targetStatus].color }}>
-                    {TARGET_STATUS[m.targetStatus].label}
+                {targetStatusInfo && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: targetStatusInfo.color + '18', color: targetStatusInfo.color }}>
+                    {targetStatusInfo.label}
                   </span>
                 )}
               </div>

@@ -42,6 +42,7 @@ export default function VehiclesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(v => {
             const m = v.metrics || {};
+            const targetDotColor = TARGET_DOT[m.targetStatus] || null;
             const stage = getStage(v.stage);
             const portals = v.publishedPortals || [];
             return (
@@ -53,9 +54,9 @@ export default function VehiclesPage() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
-                    {m.targetStatus && (
+                    {targetDotColor && (
                       <span className="stage-badge h-fit" title="Cumplimiento del precio objetivo"
-                        style={{ background: TARGET_DOT[m.targetStatus] + '18', color: TARGET_DOT[m.targetStatus] }}>
+                        style={{ background: targetDotColor + '18', color: targetDotColor }}>
                         Meta
                       </span>
                     )}
