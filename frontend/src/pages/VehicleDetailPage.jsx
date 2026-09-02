@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { EXPENSE_CATEGORIES, PORTALS, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
+import TargetPriceCard from '@/components/vehicles/TargetPriceCard';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
 import DocumentCard from '@/components/documents/DocumentCard';
 import DocumentViewerModal from '@/components/documents/DocumentViewerModal';
@@ -34,7 +35,7 @@ const AUDIT_ACTION_COLORS = {
 const AUDIT_FIELD_LABELS = {
   plate: 'Placa', brand: 'Marca', model: 'Modelo', year: 'Año', color: 'Color', km: 'Kilometraje',
   stage: 'Etapa', negotiatedValue: 'Valor negociado', purchasePrice: 'Precio de compra',
-  listedPrice: 'Precio publicado', salePrice: 'Precio de venta', participation: 'Participación',
+  listedPrice: 'Precio publicado', salePrice: 'Precio de venta', targetMargin: 'Margen objetivo (override)', participation: 'Participación',
   partnerContribution: 'Aporte socio', partnerAssumesExpenses: 'Prorrateo con socio',
   purchaseDate: 'Fecha de compra', saleDate: 'Fecha de venta', notes: 'Notas',
   supplierId: 'Proveedor', partnerId: 'Socio', buyerId: 'Comprador',
@@ -43,13 +44,6 @@ const AUDIT_FIELD_LABELS = {
 };
 const AUDIT_MONEY_FIELDS = new Set(['negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice', 'partnerContribution', 'receivedVehicleValue']);
 const AUDIT_DATE_FIELDS = new Set(['purchaseDate', 'saleDate']);
-
-// ── Precio objetivo: semáforo de cumplimiento ────────────────────
-const TARGET_STATUS = {
-  MEETS:  { label: 'Cumple meta', color: '#3FB950' },
-  PROFIT: { label: 'Rentable, bajo meta', color: '#D29922' },
-  BELOW:  { label: 'No cubre meta', color: '#F85149' },
-};
 
 function fmtAuditValue(field, val) {
   if (val === null || val === undefined || val === '') return '—';
@@ -234,7 +228,6 @@ export default function VehicleDetailPage() {
   if (!vehicle) return <div className="text-center text-[#6E7681] py-20">Cargando...</div>;
 
   const m = vehicle.metrics || {};
-  const targetStatusInfo = TARGET_STATUS[m.targetStatus] || null;
   const stage = getStage(vehicle.stage);
   const expenses = vehicle.expenses || [];
   const docs = vehicle.documents || [];
@@ -787,43 +780,7 @@ export default function VehicleDetailPage() {
             )}
           </div>
 
-          {m.targetPrice > 0 && (
-            <div className="p-4 rounded-xl border border-accent/20 bg-accent/5">
-              <div className="flex items-center justify-between">
-                <div className="text-[11px] text-[#8B949E]">
-                  Precio Objetivo
-                  <span className="ml-1 text-accent">{m.isCustomMargin ? '(personalizado)' : '(global)'} · {formatPercent(m.effectiveMargin)}</span>
-                </div>
-                {targetStatusInfo && (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: targetStatusInfo.color + '18', color: targetStatusInfo.color }}>
-                    {targetStatusInfo.label}
-                  </span>
-                )}
-              </div>
-              <div className="text-xl font-bold text-accent mt-1">{formatCurrency(m.targetPrice)}</div>
-              <div className="text-[11px] text-[#8B949E] mt-0.5">
-                Ganancia objetivo: {formatCurrency(m.targetProfit)}
-                {m.targetGap != null && <> · Brecha: {formatCurrency(m.targetGap)}</>}
-              </div>
-              {!isViewer && (
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    placeholder="Margen % override"
-                    defaultValue={m.isCustomMargin ? Math.round(m.effectiveMargin * 100) : ''}
-                    className="w-32 bg-transparent border border-[#30363D] rounded px-2 py-1 text-sm"
-                    onBlur={async (e) => {
-                      const raw = e.target.value.trim();
-                      const targetMargin = raw === '' ? null : (parseFloat(raw) || 0) / 100;
-                      await api.put(`/vehicles/${vehicle.id}`, { targetMargin });
-                      await loadVehicle();
-                    }}
-                  />
-                  <span className="text-[11px] text-[#8B949E]">vacío = margen global</span>
-                </div>
-              )}
-            </div>
-          )}
+          <TargetPriceCard vehicle={vehicle} metrics={m} isViewer={isViewer} onSaved={loadVehicle} />
         </div>
       )}
 

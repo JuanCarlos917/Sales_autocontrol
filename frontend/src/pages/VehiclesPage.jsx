@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
-import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
+import { STAGES, PORTALS, formatCurrency, getStage, getTargetStatus } from '@/lib/constants';
 import { Car } from 'lucide-react';
-
-const TARGET_DOT = { MEETS: '#3FB950', PROFIT: '#D29922', BELOW: '#F85149' };
 
 export default function VehiclesPage() {
   const { vehicles, fetchVehicles } = useApp();
@@ -42,7 +40,7 @@ export default function VehiclesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(v => {
             const m = v.metrics || {};
-            const targetDotColor = TARGET_DOT[m.targetStatus] || null;
+            const targetStatusInfo = getTargetStatus(m.targetStatus);
             const stage = getStage(v.stage);
             const portals = v.publishedPortals || [];
             return (
@@ -54,9 +52,9 @@ export default function VehiclesPage() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
-                    {targetDotColor && (
-                      <span className="stage-badge h-fit" title="Cumplimiento del precio objetivo"
-                        style={{ background: targetDotColor + '18', color: targetDotColor }}>
+                    {targetStatusInfo && (
+                      <span className="stage-badge h-fit" title={targetStatusInfo.label}
+                        style={{ background: targetStatusInfo.color + '18', color: targetStatusInfo.color }}>
                         Meta
                       </span>
                     )}
