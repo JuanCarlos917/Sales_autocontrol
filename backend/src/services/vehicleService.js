@@ -6,6 +6,7 @@ const prisma = require('../config/database');
 const { AppError } = require('../middleware/errorHandler');
 const { calculateVehicleMetrics, calculateParticipation, calculateDealMetrics } = require('../utils/financial');
 const { loadDealChainNodes, chainMembersFor, rootIdFor } = require('../utils/dealChain');
+const { getMetricsSettings } = require('../utils/settingsHelper');
 const storage = require('../utils/storage');
 
 // Campos de participación/socio que quedan bloqueados después de NEGOCIANDO
@@ -34,7 +35,7 @@ const IDENTITY_FIELDS = ['plate', 'brand', 'model', 'year', 'color', 'km'];
 // Campos escalares que se capturan en el snapshot de auditoría (sin relaciones ni timestamps de sistema).
 const VEHICLE_SNAPSHOT_FIELDS = [
   'id', 'plate', 'brand', 'model', 'year', 'color', 'km', 'stage',
-  'negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice',
+  'negotiatedValue', 'purchasePrice', 'listedPrice', 'salePrice', 'targetMargin',
   'participation', 'partnerContribution', 'partnerAssumesExpenses',
   'purchaseDate', 'saleDate', 'receivedVehicle', 'receivedVehiclePlate',
   'receivedVehicleValue', 'publishedPortals', 'supplierId', 'partnerId',
@@ -175,11 +176,8 @@ class VehicleService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Obtener gasto fijo mensual de settings
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    // Obtener gasto fijo mensual y margen objetivo de settings
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     const withMetrics = vehicles.map(v => ({
       ...v,
@@ -196,10 +194,7 @@ class VehicleService {
 
     if (!vehicle) throw new AppError('Vehículo no encontrado', 404);
 
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     // URL servible para cada documento (S3 prefirmada o /uploads en disco)
     const documents = await Promise.all(
@@ -232,10 +227,7 @@ class VehicleService {
     });
 
     // Calcular métricas antes de retornar
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     return { ...vehicle, metrics: calculateVehicleMetrics(vehicle, fixedMonthly, [], targetMarginDefault) };
   }
@@ -357,10 +349,7 @@ class VehicleService {
     });
 
     // Calcular métricas antes de retornar
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     return { ...vehicle, metrics: calculateVehicleMetrics(vehicle, fixedMonthly, [], targetMarginDefault) };
   }
@@ -516,10 +505,7 @@ class VehicleService {
     }
 
     // Calcular métricas antes de retornar
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     return { ...vehicle, metrics: calculateVehicleMetrics(vehicle, fixedMonthly, [], targetMarginDefault) };
   }

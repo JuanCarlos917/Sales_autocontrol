@@ -4,16 +4,14 @@
 
 const prisma = require('../config/database');
 const { calculateVehicleMetrics, projectProfit } = require('../utils/financial');
+const { getMetricsSettings } = require('../utils/settingsHelper');
 const accountService = require('./accountService');
 
 class DashboardService {
   async getOverview(userId) {
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
     const alertSetting = await prisma.setting.findUnique({ where: { key: 'alertDays' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
     const alertDays = alertSetting ? parseInt(alertSetting.value) : 15;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     const vehicles = await prisma.vehicle.findMany({
       where: { userId },
@@ -95,10 +93,7 @@ class DashboardService {
 
   async getPipelineTarget(userId) {
     const ACTIVE_STAGES = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'];
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
-    const marginSetting = await prisma.setting.findUnique({ where: { key: 'targetMarginDefault' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
-    const targetMarginDefault = marginSetting ? parseFloat(marginSetting.value) : 0.15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     const vehicles = await prisma.vehicle.findMany({
       where: { userId, stage: { in: ACTIVE_STAGES } },
@@ -119,12 +114,12 @@ class DashboardService {
       acc.sumTargetPrice += m.targetPrice;
       acc.sumTargetProfit += m.targetProfit;
       acc.sumRealCost += m.realCostWithFixed;
-      acc.sumListed += Number(v.listedPrice || 0);
+      acc.sumListed += Math.round(Number(v.listedPrice || 0));
       const key = m.targetStatus || 'unknown';
       acc.statusCounts[key] += 1;
     }
 
-    acc.pipelineGap = acc.sumListed - acc.sumTargetPrice;
+    acc.pipelineGap = Math.round(acc.sumListed - acc.sumTargetPrice);
     return acc;
   }
 }

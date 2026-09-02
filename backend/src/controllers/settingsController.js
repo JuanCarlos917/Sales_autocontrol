@@ -15,6 +15,11 @@ const getAll = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
+    // PUT /settings es un endpoint schemaless de key/value (cualquier setting
+    // se guarda con el mismo upsert genérico de abajo), así que no hay un Joi
+    // schema fijo que validar contra — agregar uno aquí implicaría whitelistear
+    // cada key de setting existente. Este guard hecho a mano es la excepción
+    // deliberada para el único campo con una restricción de rango real.
     if (req.body.targetMarginDefault !== undefined) {
       const margin = parseFloat(req.body.targetMarginDefault);
       if (Number.isNaN(margin) || margin < 0 || margin > 1) {
