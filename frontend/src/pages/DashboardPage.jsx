@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const [commSummary, setCommSummary] = useState(null);
   const [investorSummary, setInvestorSummary] = useState(null);
   const [projForm, setProjForm] = useState({ purchasePrice: '', estimatedExpenses: '', salePrice: '', estimatedDays: '20', participation: '1' });
+  const [pipelineTarget, setPipelineTarget] = useState(null);
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
@@ -24,6 +25,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     investorsApi.getSummary().then(r => setInvestorSummary(r.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.get('/dashboard/pipeline-target')
+      .then(r => setPipelineTarget(r.data))
+      .catch(() => setPipelineTarget(null));
   }, []);
 
   const runProjection = async () => {
@@ -132,6 +139,31 @@ export default function DashboardPage() {
       )}
 
       <SocioPendingWidget />
+
+      {pipelineTarget && pipelineTarget.vehicleCount > 0 && (
+        <div className="p-4 rounded-xl border border-[#30363D]">
+          <div className="text-sm font-semibold mb-2">Meta del pipeline</div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-[11px] text-[#8B949E]">Objetivo proyectado</div>
+              {formatCurrency(pipelineTarget.sumTargetPrice)}
+            </div>
+            <div>
+              <div className="text-[11px] text-[#8B949E]">Publicado hoy</div>
+              {formatCurrency(pipelineTarget.sumListed)}
+            </div>
+            <div className="col-span-2">
+              <div className="text-[11px] text-[#8B949E]">Brecha</div>
+              <span style={{ color: pipelineTarget.pipelineGap >= 0 ? '#3FB950' : '#F85149' }}>
+                {formatCurrency(pipelineTarget.pipelineGap)}
+              </span>
+            </div>
+          </div>
+          <div className="text-[11px] text-[#8B949E] mt-2">
+            {pipelineTarget.statusCounts.MEETS} cumplen · {pipelineTarget.statusCounts.PROFIT} bajo meta · {pipelineTarget.statusCounts.BELOW} sin cubrir
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4">
         {/* Pipeline Distribution */}
