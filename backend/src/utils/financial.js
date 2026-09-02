@@ -2,6 +2,8 @@
 // Utils — Cálculos Financieros del Negocio
 // ═══════════════════════════════════════════════════════════════
 
+const DEFAULT_TARGET_MARGIN = 0.15; // fallback si no hay Setting targetMarginDefault
+
 /**
  * Calcula días entre dos fechas (o hasta hoy si no hay fecha final)
  */
@@ -23,7 +25,7 @@ function daysBetween(startDate, endDate = null) {
  *     · partnerAssumesExpenses=true  → socio asume su parte de gastos (pro-rata sobre ganancia neta).
  *     · partnerAssumesExpenses=false → yo asumo 100% de gastos; socio recibe su % sobre ganancia bruta (salePrice - purchasePrice).
  */
-function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayables = []) {
+function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayables = [], targetMarginDefault = DEFAULT_TARGET_MARGIN) {
   // Excluir gastos soft-deleted: no deben contar en el P&L del vehículo
   // (ej. egresos reclasificados a pago de crédito vía reconciliación).
   const expenses = (vehicle.expenses || []).filter((e) => !e.deletedAt);
@@ -106,6 +108,20 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayab
   const partnerContribution = Number(vehicle.partnerContribution || 0);
   const myCapital = Math.max(0, purchasePrice - partnerContribution);
 
+  // ── Precio objetivo (target) ──────────────────────────────────
+  const isCustomMargin = vehicle.targetMargin != null;
+  const effectiveMargin = isCustomMargin ? Number(vehicle.targetMargin) : targetMarginDefault;
+  const targetPrice = Math.round(realCostWithFixed * (1 + effectiveMargin));
+  const targetProfit = Math.round(realCostWithFixed * effectiveMargin);
+  const targetGap = referencePrice > 0 ? Math.round(referencePrice - targetPrice) : null;
+
+  let targetStatus = null;
+  if (referencePrice > 0) {
+    if (referencePrice >= targetPrice) targetStatus = 'MEETS';
+    else if (referencePrice >= realCostWithFixed) targetStatus = 'PROFIT';
+    else targetStatus = 'BELOW';
+  }
+
   return {
     totalExpenses,
     repairs,
@@ -131,18 +147,26 @@ function calculateVehicleMetrics(vehicle, fixedMonthly = 800000, commissionPayab
     myCapital,
     listedDiscount,
     expenseCount: expenses.length,
+    effectiveMargin,
+    isCustomMargin,
+    targetPrice,
+    targetProfit,
+    targetGap,
+    targetStatus,
   };
 }
 
 /**
  * Proyecta la ganancia de un negocio hipotético
  */
-function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedDays, participation = 1, fixedMonthly = 800000 }) {
+function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedDays, participation = 1, fixedMonthly = 800000, targetMargin = DEFAULT_TARGET_MARGIN }) {
   const fixedProrated = (estimatedDays / 30) * fixedMonthly;
   const totalCost = purchasePrice + estimatedExpenses + fixedProrated;
   const netProfit = salePrice - totalCost;
   const roi = totalCost > 0 ? netProfit / totalCost : 0;
   const myProfit = netProfit * participation;
+  const targetPrice = Math.round(totalCost * (1 + targetMargin));
+  const targetProfit = Math.round(totalCost * targetMargin);
 
   return {
     totalCost: Math.round(totalCost),
@@ -150,6 +174,8 @@ function projectProfit({ purchasePrice, estimatedExpenses, salePrice, estimatedD
     netProfit: Math.round(netProfit),
     roi,
     myProfit: Math.round(myProfit),
+    targetPrice,
+    targetProfit,
   };
 }
 
@@ -401,4 +427,4 @@ function calculateSaleDistribution(vehicle, cfg, { sellers = [], investors = [],
   };
 }
 
-module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics, calculateChainGrossProfit, calculateSaleDistribution };
+module.exports = { daysBetween, calculateVehicleMetrics, projectProfit, calculateParticipation, calculateCommissionBase, roundCop, calcLoanInterest, splitLoanPayment, splitFinalPayment, calculateDealMetrics, calculateChainGrossProfit, calculateSaleDistribution, DEFAULT_TARGET_MARGIN };

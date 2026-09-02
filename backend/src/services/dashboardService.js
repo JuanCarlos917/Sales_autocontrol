@@ -4,14 +4,14 @@
 
 const prisma = require('../config/database');
 const { calculateVehicleMetrics, projectProfit } = require('../utils/financial');
+const { getMetricsSettings } = require('../utils/settingsHelper');
 const accountService = require('./accountService');
 
 class DashboardService {
   async getOverview(userId) {
-    const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
     const alertSetting = await prisma.setting.findUnique({ where: { key: 'alertDays' } });
-    const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
     const alertDays = alertSetting ? parseInt(alertSetting.value) : 15;
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
 
     const vehicles = await prisma.vehicle.findMany({
       where: { userId },
@@ -20,7 +20,7 @@ class DashboardService {
 
     const all = vehicles.map(v => ({
       vehicle: v,
-      metrics: calculateVehicleMetrics(v, fixedMonthly),
+      metrics: calculateVehicleMetrics(v, fixedMonthly, [], targetMarginDefault),
     }));
 
     const sold = all.filter(x => x.vehicle.stage === 'VENDIDO');
@@ -89,6 +89,38 @@ class DashboardService {
     const fixedSetting = await prisma.setting.findUnique({ where: { key: 'fixedMonthly' } });
     const fixedMonthly = fixedSetting ? parseFloat(fixedSetting.value) : 800000;
     return projectProfit({ ...params, fixedMonthly });
+  }
+
+  async getPipelineTarget(userId) {
+    const ACTIVE_STAGES = ['COMPRADO', 'ALISTAMIENTO', 'PUBLICADO', 'DISPONIBLE'];
+    const { fixedMonthly, targetMarginDefault } = await getMetricsSettings();
+
+    const vehicles = await prisma.vehicle.findMany({
+      where: { userId, stage: { in: ACTIVE_STAGES } },
+      include: { expenses: true },
+    });
+
+    const acc = {
+      vehicleCount: vehicles.length,
+      sumTargetPrice: 0,
+      sumTargetProfit: 0,
+      sumRealCost: 0,
+      sumListed: 0,
+      statusCounts: { MEETS: 0, PROFIT: 0, BELOW: 0, unknown: 0 },
+    };
+
+    for (const v of vehicles) {
+      const m = calculateVehicleMetrics(v, fixedMonthly, [], targetMarginDefault);
+      acc.sumTargetPrice += m.targetPrice;
+      acc.sumTargetProfit += m.targetProfit;
+      acc.sumRealCost += m.realCostWithFixed;
+      acc.sumListed += Math.round(Number(v.listedPrice || 0));
+      const key = m.targetStatus || 'unknown';
+      acc.statusCounts[key] += 1;
+    }
+
+    acc.pipelineGap = Math.round(acc.sumListed - acc.sumTargetPrice);
+    return acc;
   }
 }
 

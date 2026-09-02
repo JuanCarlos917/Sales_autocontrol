@@ -294,6 +294,54 @@ test('getCommissionConfig: investor_team ausente/corrupto → [] defensivo (no r
 });
 
 // ═══════════════════════════════════════════════════════════════
+// settingsController.update — guard de targetMarginDefault (Task 6).
+// Debe rechazar valores fuera de [0,1] con 400 ANTES del loop de upsert,
+// de forma que ninguna key del payload (ni las válidas) se escriba.
+// ═══════════════════════════════════════════════════════════════
+
+test('update: targetMarginDefault válido (0.15) → 200 y se persiste', async () => {
+  ctx = { upsertCalls: [] };
+  const req = { body: { targetMarginDefault: 0.15 } };
+  const res = mkRes();
+  const next = mkNext();
+
+  await settingsController.update(req, res, next);
+
+  assert.deepEqual(next.calls, []);
+  assert.equal(res.statusCode, 200);
+  assert.equal(ctx.upsertCalls.length, 1);
+  assert.equal(ctx.upsertCalls[0].where.key, 'targetMarginDefault');
+  assert.equal(ctx.upsertCalls[0].update.value, '0.15');
+});
+
+test('update: targetMarginDefault fuera de rango (1.5) → 400 y NO escribe nada', async () => {
+  ctx = { upsertCalls: [] };
+  const req = { body: { targetMarginDefault: 1.5, other_key: 'valor' } };
+  const res = mkRes();
+  const next = mkNext();
+
+  await settingsController.update(req, res, next);
+
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /targetMarginDefault/);
+  assert.match(res.body.error, /0.*1|entre/);
+  assert.equal(ctx.upsertCalls.length, 0, 'no debe persistir ninguna key, ni siquiera las válidas del mismo payload');
+});
+
+test('update: targetMarginDefault no numérico ("abc") → 400 y NO escribe nada', async () => {
+  ctx = { upsertCalls: [] };
+  const req = { body: { targetMarginDefault: 'abc' } };
+  const res = mkRes();
+  const next = mkNext();
+
+  await settingsController.update(req, res, next);
+
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /targetMarginDefault/);
+  assert.equal(ctx.upsertCalls.length, 0);
+});
+
+// ═══════════════════════════════════════════════════════════════
 // STACK REAL: validate(schemas.commissionConfig) middleware + controller.
 //
 // Los tests de arriba llaman al controller directamente, saltándose Joi,

@@ -73,6 +73,7 @@ model Vehicle {
   listedPrice            Decimal? @db.Decimal(15, 2)
   salePrice              Decimal? @db.Decimal(15, 2)
   participation          Decimal  @default(1.0) @db.Decimal(5, 4)
+  targetMargin           Decimal? @db.Decimal(5, 4)
   partnerContribution    Decimal? @db.Decimal(15, 2)
   partnerAssumesExpenses Boolean  @default(true)
 

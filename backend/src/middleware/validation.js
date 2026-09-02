@@ -91,6 +91,7 @@ const vehicleUpdateSchema = Joi.object({
   listedPrice: Joi.number().min(0).allow(null),
   salePrice: Joi.number().min(0).allow(null),
   participation: Joi.number().min(0).max(1),
+  targetMargin: Joi.number().min(0).max(1).allow(null),
   purchaseDate: Joi.date().allow(null),
   saleDate: Joi.date().allow(null),
   // Los campos receivedVehicle* solo pueden grabarse vía POST /vehicles/:id/sell

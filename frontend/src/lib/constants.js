@@ -43,6 +43,15 @@ export const PORTALS = [
   { id: 'otro', label: 'Otro', color: '#64748B' },
 ];
 
+// ── Precio objetivo: semáforo de cumplimiento ────────────────────
+// Compartido entre VehicleDetailPage (tarjeta de detalle) y VehiclesPage
+// (badge del listado) — una sola fuente de verdad para color y etiqueta.
+export const TARGET_STATUS = {
+  MEETS:  { label: 'Cumple meta', color: '#3FB950' },
+  PROFIT: { label: 'Rentable, bajo meta', color: '#D29922' },
+  BELOW:  { label: 'No cubre meta', color: '#F85149' },
+};
+
 export const DOC_TYPES = [
   { id: 'TARJETA_PROPIEDAD', label: 'Tarjeta de Propiedad' },
   { id: 'FORMULARIO_TRASPASO', label: 'Formulario Traspaso' },
@@ -106,3 +115,5 @@ export const getStage = (id) => STAGES.find(s => s.id === id) || STAGES[0];
 export const getCategory = (id) => EXPENSE_CATEGORIES.find(c => c.id === id);
 
 export const getPortal = (id) => PORTALS.find(p => p.id === id);
+
+export const getTargetStatus = (id) => TARGET_STATUS[id] || null;

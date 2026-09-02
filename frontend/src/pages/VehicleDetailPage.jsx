@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { EXPENSE_CATEGORIES, PORTALS, formatCurrency, formatPercent, formatDate, formatDateTime, getStage, getCategory } from '@/lib/constants';
 import VehicleFormModal from '@/components/vehicles/VehicleFormModal';
+import TargetPriceCard from '@/components/vehicles/TargetPriceCard';
 import DocumentFormModal from '@/components/documents/DocumentFormModal';
 import DocumentCard from '@/components/documents/DocumentCard';
 import DocumentViewerModal from '@/components/documents/DocumentViewerModal';
@@ -34,7 +35,7 @@ const AUDIT_ACTION_COLORS = {
 const AUDIT_FIELD_LABELS = {
   plate: 'Placa', brand: 'Marca', model: 'Modelo', year: 'Año', color: 'Color', km: 'Kilometraje',
   stage: 'Etapa', negotiatedValue: 'Valor negociado', purchasePrice: 'Precio de compra',
-  listedPrice: 'Precio publicado', salePrice: 'Precio de venta', participation: 'Participación',
+  listedPrice: 'Precio publicado', salePrice: 'Precio de venta', targetMargin: 'Margen objetivo (override)', participation: 'Participación',
   partnerContribution: 'Aporte socio', partnerAssumesExpenses: 'Prorrateo con socio',
   purchaseDate: 'Fecha de compra', saleDate: 'Fecha de venta', notes: 'Notas',
   supplierId: 'Proveedor', partnerId: 'Socio', buyerId: 'Comprador',
@@ -778,6 +779,8 @@ export default function VehicleDetailPage() {
               </>
             )}
           </div>
+
+          <TargetPriceCard vehicle={vehicle} metrics={m} isViewer={isViewer} onSaved={loadVehicle} />
         </div>
       )}
 

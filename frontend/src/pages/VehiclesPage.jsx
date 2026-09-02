@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
-import { STAGES, PORTALS, formatCurrency, getStage } from '@/lib/constants';
+import { STAGES, PORTALS, formatCurrency, getStage, getTargetStatus } from '@/lib/constants';
 import { Car } from 'lucide-react';
 
 export default function VehiclesPage() {
@@ -40,6 +40,7 @@ export default function VehiclesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filtered.map(v => {
             const m = v.metrics || {};
+            const targetStatusInfo = getTargetStatus(m.targetStatus);
             const stage = getStage(v.stage);
             const portals = v.publishedPortals || [];
             return (
@@ -49,7 +50,15 @@ export default function VehiclesPage() {
                     <div className="plate-text">{v.plate || 'SIN PLACA'}</div>
                     <div className="text-[13px] text-[#8B949E]">{v.brand} {v.model} {v.year}</div>
                   </div>
-                  <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="stage-badge h-fit" style={{ background: stage.color + '18', color: stage.color }}>{stage.label}</span>
+                    {targetStatusInfo && (
+                      <span className="stage-badge h-fit" title={targetStatusInfo.label}
+                        style={{ background: targetStatusInfo.color + '18', color: targetStatusInfo.color }}>
+                        Meta
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {portals.length > 0 && (
                   <div className="flex gap-1 flex-wrap mb-2">

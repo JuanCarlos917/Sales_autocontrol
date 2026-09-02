@@ -9,17 +9,22 @@ import CommissionSplitEditor from '@/components/treasury/CommissionSplitEditor';
 export default function SettingsPage() {
   const { fetchSettings, updateSettings } = useApp();
   const { changePassword, role } = useAuth();
-  const [settings, setSettings] = useState({ fixedMonthly: '800000', alertDays: '15' });
+  const [settings, setSettings] = useState({ fixedMonthly: '800000', alertDays: '15', targetMarginPct: '15' });
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
   const [commCfg, setCommCfg] = useState(null);
   const [commError, setCommError] = useState('');
   const [commSuccess, setCommSuccess] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
   const [tab, setTab] = useState('negocio');
 
   useEffect(() => {
-    fetchSettings().then(s => { if (s) setSettings({ fixedMonthly: s.fixedMonthly || '800000', alertDays: s.alertDays || '15' }); });
+    fetchSettings().then(s => { if (s) setSettings({
+      fixedMonthly: s.fixedMonthly || '800000',
+      alertDays: s.alertDays || '15',
+      targetMarginPct: s.targetMarginDefault != null ? String(Math.round(parseFloat(s.targetMarginDefault) * 100)) : '15',
+    }); });
   }, [fetchSettings]);
 
   useEffect(() => {
@@ -44,7 +49,15 @@ export default function SettingsPage() {
     return base;
   }, [role]);
 
-  const handleSaveSettings = () => { updateSettings(settings); };
+  const handleSaveSettings = async () => {
+    setSettingsError('');
+    const { targetMarginPct, ...rest } = settings;
+    try {
+      await updateSettings({ ...rest, targetMarginDefault: (parseFloat(targetMarginPct) || 0) / 100 });
+    } catch (err) {
+      setSettingsError(err.response?.data?.error || 'Error al guardar la configuración');
+    }
+  };
 
   const handleSaveCommissions = async () => {
     setCommError(''); setCommSuccess(false);
@@ -117,6 +130,8 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <Input label="Gasto Fijo Mensual (COP)" type="number" value={settings.fixedMonthly} onChange={e => setSettings(p => ({ ...p, fixedMonthly: e.target.value }))} help="Parqueadero, publicidad fija, etc. Se proratea por vehículo." />
             <Input label="Alerta de Días en Inventario" type="number" value={settings.alertDays} onChange={e => setSettings(p => ({ ...p, alertDays: e.target.value }))} help="Después de estos días, el carro muestra alerta amarilla." />
+            <Input label="Margen Objetivo (%)" type="number" value={settings.targetMarginPct} onChange={e => setSettings(p => ({ ...p, targetMarginPct: e.target.value }))} help="Ganancia objetivo sobre el costo. Fija el precio objetivo de venta de cada carro." />
+            {settingsError && <p className="text-xs text-[#F85149]">{settingsError}</p>}
             <button onClick={handleSaveSettings} className="btn-primary">Guardar Configuración</button>
           </div>
         </div>
