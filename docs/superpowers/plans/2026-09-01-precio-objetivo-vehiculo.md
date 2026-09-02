@@ -836,26 +836,44 @@ git commit -m "feat(dashboard-ui): bloque de meta del pipeline"
 ### Task 11: E2E + verificación final
 
 **Files:**
-- Create/Modify: test Playwright bajo la convención del proyecto (invocar skill `e2e-testing`).
+- Create: `tests/e2e/vehicles/precio-objetivo.spec.ts`
+
+**Convenciones reales del E2E de este repo (verificadas — no re-derivar):**
+- Playwright vive en la **raíz del repo**, no en `frontend/`: `playwright.config.ts`,
+  `@playwright/test ^1.47.0`, specs en `tests/e2e/<dominio>/*.spec.ts` (**TypeScript**).
+- Comando: `npm run test:e2e` desde la raíz (`test:e2e:headed` / `test:e2e:ui` para depurar).
+- Los specs importan el fixture propio del repo, no `@playwright/test` directo:
+  `import { test, expect } from '../../fixtures/test';`
+- Login por PIN: `const ADMIN_PIN = process.env.ADMIN_PIN || '1234';`
+- Estilo de selectores: `getByRole`, `getByText`, esperas deterministas (`waitForURL`,
+  `toBeVisible`), nunca `waitForTimeout`.
+- No hay tests de componente en el frontend (existe vitest pero solo con un test de
+  utilidad pura, y **no** hay `@testing-library`). No introduzcas testing de componentes.
+
+Invocar la skill `e2e-testing` antes de escribir el spec.
 
 - [ ] **Step 1: E2E de la tarjeta de target**
 
-Cubrir: detalle de un vehículo con `listedPrice` muestra la tarjeta "Precio Objetivo" y el semáforo; fijar override cambia el margen aplicado.
+Crear `tests/e2e/vehicles/precio-objetivo.spec.ts` siguiendo el patrón de
+`tests/e2e/auth/login.spec.ts`. Cubrir: el detalle de un vehículo con `listedPrice`
+muestra la tarjeta "Precio Objetivo" con su semáforo.
 
 - [ ] **Step 2: E2E del bloque de dashboard**
 
-El bloque "Meta del pipeline" aparece y muestra las tres cuentas de estado.
+En el mismo spec: el bloque "Meta del pipeline" aparece en el dashboard y muestra los
+conteos por estado.
 
 - [ ] **Step 3: Verificación completa**
 
-Invocar la skill `verification-loop` (build + lint + tests + security). Confirmar cobertura ≥ 80% en la lógica nueva de `financial.js` y `dashboardService.js`.
+Invocar la skill `verification-loop`.
 
-Run: `cd backend && node --test src/`
-Expected: PASS, cobertura ≥ 80% en los archivos nuevos/tocados.
+Run: `cd backend && node --test src/` → Expected: PASS (304+ tests)
+Run: `cd frontend && npm run build` → Expected: build limpio
+Run: `npm run test:e2e` desde la raíz → Expected: PASS
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/e2e backend
-git commit -m "test(target): e2e de precio objetivo y verificación final"
+git add tests/e2e
+git commit -m "test(target): e2e de precio objetivo y meta del pipeline"
 ```
